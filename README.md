@@ -32,6 +32,7 @@ O pacote `repository/` centraliza todo o acesso a dados para evitar espalhar pre
 - **Segurança**: Spring Security + JWT
 - **Tempo Real**: WebSocket (STOMP)
 - **Validação**: Spring Boot Validation
+- **Documentação**: SpringDoc OpenAPI (Swagger UI)
 - **Utilitário**: Lombok
 
 ## 📦 Dependências e Decisões Técnicas
@@ -57,6 +58,17 @@ O pacote `repository/` centraliza todo o acesso a dados para evitar espalhar pre
 - Melhor performance para cenários de alta concorrência
 - Sem dependência adicional necessária (Jedis requereria dependência extra)
 - Excelente integração com auto-configuração do Spring Boot
+
+### Documentação de API: SpringDoc OpenAPI
+
+**Escolha**: SpringDoc OpenAPI (v3.1.0)
+
+**Justificativa**:
+- Biblioteca oficial e recomendada para Spring Boot
+- Suporte completo a OpenAPI 3 e Swagger UI
+- Integração automática com Spring Boot sem configuração complexa
+- Suporte nativo a Spring Security e JWT
+- Ativa e mantida pela comunidade SpringDoc
 
 ### Estratégia de Profile de Desenvolvimento
 
@@ -145,6 +157,44 @@ com.jogodavelha.game
 - `application.yml` — Configuração principal com padrões de variáveis de ambiente
 - `application-dev.yml` — Profile de desenvolvimento (H2 + Redis local)
 - `application-prod.yml` — Profile de produção (PostgreSQL + Redis habilitado)
+
+## 📚 Documentação da API
+
+O projeto utiliza **SpringDoc OpenAPI** para geração automática de documentação da API com Swagger UI.
+
+### Acesso à Documentação
+
+- **Swagger UI**: `http://localhost:8080/swagger-ui/index.html`
+- **OpenAPI JSON**: `http://localhost:8080/v3/api-docs`
+
+### Configuração de Segurança
+
+A documentação já está configurada com suporte a autenticação JWT:
+- Botão "Authorize" disponível na interface do Swagger
+- Esquema de segurança do tipo `bearer` JWT configurado globalmente
+- Para testar endpoints protegidos, insira o token no formato: `Bearer {token}`
+
+### Convenção de Documentação
+
+**A partir de agora, todo endpoint novo deve ser documentado com anotações OpenAPI** antes do PR. As anotações principais são:
+
+- `@Operation` — Descrição do endpoint e suas operações
+- `@ApiResponse` — Documentação das respostas possíveis (sucesso, erro, etc.)
+- `@Parameter` — Descrição de parâmetros de entrada
+- `@Tag` — Agrupamento de endpoints relacionados
+
+**Exemplo de uso:**
+```java
+@Operation(summary = "Criar nova partida", description = "Cria uma nova partida de Jogo da Velha")
+@ApiResponse(responseCode = "201", description = "Partida criada com sucesso")
+@ApiResponse(responseCode = "400", description = "Dados inválidos")
+@PostMapping("/games")
+public ResponseEntity<Game> createGame(@Valid @RequestBody CreateGameRequest request) {
+    // implementação
+}
+```
+
+Esta convenção será cobrada nos critérios de aceite das próximas tarefas.
 
 ## 🧪 Testes
 

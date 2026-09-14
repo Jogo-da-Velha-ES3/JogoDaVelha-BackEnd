@@ -1,5 +1,6 @@
 com\jogodavelha\game\config\SecurityConfig.class
 com\jogodavelha\game\repository\package-info.class
 com\jogodavelha\game\config\RedisConfig.class
+com\jogodavelha\game\config\OpenApiConfig.class
 com\jogodavelha\game\JogoDaVelhaApplication.class
 com\jogodavelha\game\config\WebSocketConfig.class
