@@ -72,24 +72,86 @@ O pacote `repository/` centraliza todo o acesso a dados para evitar espalhar pre
 
 ### Estratégia de Profile de Desenvolvimento
 
-**Abordagem**: Usar banco de dados H2 em memória e Redis habilitado para desenvolvimento local
+**Abordagem**: Usar PostgreSQL e Redis fornecidos pelo Docker Compose
 
-**Justificativa**:
-- Permite que o projeto compile e rode sem infraestrutura PostgreSQL completa
-- Elimina necessidade de containers Docker locais durante desenvolvimento inicial
-- Profile de desenvolvimento (`application-dev.yml`) usa H2 e tenta conectar ao Redis local
-- Profile de produção usará PostgreSQL e Redis conforme design
-- Segue padrão de configuração baseada em profiles do Spring
+O profile de desenvolvimento (`application-dev.yml`) usa PostgreSQL e Redis. Ao executar via Docker Compose, o backend utiliza os serviços `postgres` e `redis` da mesma rede Docker.
 
 ## 🚀 Configuração e Execução
 
-### Pré-requisitos
+### Configuração do Ambiente
+
+Para rodar o projeto, você precisa configurar as variáveis de ambiente. O projeto utiliza um arquivo `.env` para configuração local.
+
+1. Copie o arquivo de exemplo:
+```bash
+cp .env.example .env
+```
+
+2. Edite o arquivo `.env` com seus valores de desenvolvimento. As variáveis necessárias são:
+- `DB_USER` — Usuário do banco de dados PostgreSQL
+- `DB_PASSWORD` — Senha do banco de dados PostgreSQL
+- `DB_NAME` — Nome do banco de dados PostgreSQL
+- `DB_PORT` — Porta do PostgreSQL (padrão: 5432)
+- `REDIS_PORT` — Porta do Redis (padrão: 6379)
+- `JWT_SECRET` — Chave secreta para assinatura JWT
+- `JWT_EXPIRATION` — Tempo de expiração do token JWT em milissegundos (padrão: 86400000)
+- `SERVER_PORT` — Porta da aplicação (padrão: 8080)
+
+### Como Rodar o Projeto
+
+A forma recomendada de rodar o projeto é usando Docker Compose, que sobe o backend completo com PostgreSQL e Redis sem necessidade de instalar Java, Maven ou bancos de dados na máquina local.
+
+#### Via Docker Compose (Recomendado para o Front-End)
+
+**Pré-requisitos:**
+- Docker Desktop instalado
+
+**Passos:**
+1. Clone o repositório
+2. Copie `.env.example` para `.env` e configure as variáveis
+3. Suba o ambiente:
+```bash
+docker compose up --build
+```
+
+Isso vai:
+- Buildar o backend dentro do Docker (não precisa de Java/Maven instalados)
+- Subir PostgreSQL com persistência de dados via volume
+- Subir Redis
+- Configurar o backend para conectar nos serviços corretamente
+- Expor o backend em `http://localhost:8080`
+
+**Como atualizar o backend:**
+
+`docker compose up` (sem `--build`) **nunca** reflete uma mudança de código — ele só reaproveita a imagem que já existia. Sempre que o código do backend mudar, é preciso rebuildar. O fluxo muda dependendo de quem está atualizando:
+
+- **Você mesmo alterou o código do backend:**
+```bash
+docker compose up --build
+```
+
+- **Você quer pegar uma atualização feita por outra pessoa** (ex.: dev do front-end buscando uma mudança recente na API) — primeiro traga o código novo, só depois rebuilde:
+```bash
+git pull origin dev
+docker compose up --build
+```
+A atualização do backend deve sempre vir da branch `dev` do repositório.
+
+O Docker reaproveita o cache das camadas que não mudaram (ex.: dependências do Maven já baixadas), então o rebuild costuma ser rápido — ele recompila só o que realmente foi alterado.
+
+**Para parar o ambiente:**
+```bash
+docker compose down
+```
+
+Os dados do PostgreSQL são persistidos em um volume nomeado, então não são perdidos ao parar os containers.
+
+#### Via Maven (Desenvolvimento Local)
+
+O profile de desenvolvimento depende de PostgreSQL e Redis. Para executar o backend diretamente pela máquina, esses serviços precisam estar disponíveis localmente ou em containers:
 - Java 25 ou superior
 - Maven 3.6+ (ou usar Maven wrapper)
-
-### Modo Desenvolvimento
-
-O projeto está configurado para rodar em modo de desenvolvimento usando banco de dados H2 em memória e Redis local:
+- PostgreSQL e Redis instalados e rodando
 
 ```bash
 # Usando Maven (se instalado)
@@ -100,29 +162,10 @@ mvn spring-boot:run
 ```
 
 A aplicação iniciará em `http://localhost:8080` com:
-- Console H2 disponível em `http://localhost:8080/h2-console`
+- Swagger UI disponível em `http://localhost:8080/swagger-ui/index.html`
 - Endpoint WebSocket em `ws://localhost:8080/ws`
 
-**Nota**: O Redis local deve estar disponível em `localhost:6379` para o modo de desenvolvimento funcionar completamente.
-
-### Modo Produção
-
-Para produção, configure as seguintes variáveis de ambiente e garanta que PostgreSQL e Redis estejam disponíveis:
-
-```bash
-export DB_URL=jdbc:postgresql://seu-postgres-host:5432/jogodavelha
-export DB_USER=seu-usuario-db
-export DB_PASSWORD=sua-senha-db
-export REDIS_HOST=seu-redis-host
-export REDIS_PORT=6379
-export JWT_SECRET=sua-chave-secreta-producao
-export SPRING_PROFILES_ACTIVE=prod
-```
-
-Depois execute:
-```bash
-mvn spring-boot:run
-```
+**Nota**: PostgreSQL e Redis devem estar disponíveis conforme as variáveis de ambiente configuradas. Para usar os serviços do Docker Compose, execute o backend também pelo Compose.
 
 ## 📁 Estrutura do Projeto
 
@@ -142,11 +185,13 @@ com.jogodavelha.game
 
 ### Variáveis de Ambiente
 
-- `DB_URL` — URL de conexão PostgreSQL
+- `DB_URL` — URL de conexão PostgreSQL (usado internamente pelo Docker Compose)
 - `DB_USER` — Usuário do banco de dados
 - `DB_PASSWORD` — Senha do banco de dados
-- `REDIS_HOST` — Host do servidor Redis
-- `REDIS_PORT` — Porta do servidor Redis
+- `DB_NAME` — Nome do banco de dados
+- `DB_PORT` — Porta do PostgreSQL (padrão: 5432)
+- `REDIS_HOST` — Host do servidor Redis (usado internamente pelo Docker Compose)
+- `REDIS_PORT` — Porta do servidor Redis (padrão: 6379)
 - `JWT_SECRET` — Chave secreta para assinatura JWT
 - `JWT_EXPIRATION` — Tempo de expiração do token JWT (ms)
 - `SERVER_PORT` — Porta da aplicação (padrão: 8080)
@@ -155,8 +200,8 @@ com.jogodavelha.game
 ### Arquivos de Configuração
 
 - `application.yml` — Configuração principal com padrões de variáveis de ambiente
-- `application-dev.yml` — Profile de desenvolvimento (H2 + Redis local)
-- `application-prod.yml` — Profile de produção (PostgreSQL + Redis habilitado)
+- `application-dev.yml` — Profile de desenvolvimento (PostgreSQL + Redis via docker)
+- `application-prod.yml` — Profile de produção (PostgreSQL + Redis)
 
 ## 📚 Documentação da API
 
@@ -209,8 +254,18 @@ mvn test
 2. Implementar lógica de domínio e regras do jogo
 3. Implementar camada de serviço do jogo
 4. Criar controllers REST e handlers WebSocket
-5. Configurar Docker Compose para infraestrutura local (PostgreSQL + Redis)
-6. Configurar Nginx para balanceamento de carga em produção
+5. Configurar Nginx para balanceamento de carga em produção
+
+## 🌐 Plano de Produção Decidido
+
+Para o ambiente de produção, foi decidido o seguinte stack de hospedagem:
+
+- **Backend**: Render (plano gratuito)
+- **PostgreSQL**: Neon (plano gratuito)
+- **Redis**: Upstash (plano gratuito)
+- **Frontend**: A decidir pelo time de frontend
+
+**Nota importante**: Nenhum provedor foi configurado ainda. Esta é apenas a decisão de arquitetura para produção. A configuração e deploy nos provedores serão feitos em uma etapa futura do projeto.
 
 ## ⚠️ Notas Importantes
 
