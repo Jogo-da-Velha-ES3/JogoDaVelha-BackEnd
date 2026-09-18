@@ -99,73 +99,125 @@ cp .env.example .env
 
 ### Como Rodar o Projeto
 
-A forma recomendada de rodar o projeto é usando Docker Compose, que sobe o backend completo com PostgreSQL e Redis sem necessidade de instalar Java, Maven ou bancos de dados na máquina local.
+A forma recomendada de rodar o projeto é usando Docker Compose. Ele cria um ambiente completo com o backend, PostgreSQL e Redis, sem exigir Java, Maven ou os bancos instalados diretamente na máquina.
 
-#### Via Docker Compose (Recomendado para o Front-End)
+#### Via Docker Compose
 
 **Pré-requisitos:**
-- Docker Desktop instalado
+- Docker Desktop instalado e em execução
+- Arquivo `.env` criado na raiz do projeto
 
-**Passos:**
-1. Clone o repositório
-2. Copie `.env.example` para `.env` e configure as variáveis
-3. Suba o ambiente:
+**Primeira execução:**
+
+1. Crie o arquivo de ambiente a partir do exemplo:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+2. Preencha o `.env` com os valores do PostgreSQL, Redis, JWT e da porta da API. O Docker Compose usa esse arquivo para substituir as variáveis presentes no `docker-compose.yml`.
+
+3. Construa a imagem e inicie todos os serviços:
+
 ```bash
 docker compose up --build
 ```
 
-Isso vai:
-- Buildar o backend dentro do Docker (não precisa de Java/Maven instalados)
-- Subir PostgreSQL com persistência de dados via volume
-- Subir Redis
-- Configurar o backend para conectar nos serviços corretamente
-- Expor o backend em `http://localhost:8080`
+O comando inicia três serviços:
+
+- `api`: compila e executa a aplicação Spring Boot usando o profile `dev`.
+- `postgres`: executa o PostgreSQL 16 e armazena os dados no volume Docker `postgres-data`.
+- `redis`: executa o Redis para dados temporários e estado das partidas.
+
+O backend aguarda os healthchecks do PostgreSQL e do Redis antes de iniciar. A API fica disponível em `http://localhost:8080` (ou na porta definida em `SERVER_PORT`).
+
+**Verificar os serviços em execução:**
+
+```bash
+docker compose ps
+```
+
+**Acompanhar os logs do backend:**
+
+```bash
+docker compose logs -f backend
+```
+
+Para acessar os logs de um serviço específico, substitua `api` por `postgres` ou `redis`.
+
+**Acessar a documentação da API:**
+
+- Swagger UI: `http://localhost:8080/swagger-ui/index.html`
+- OpenAPI JSON: `http://localhost:8080/v3/api-docs`
+- WebSocket: `ws://localhost:8080/ws`
 
 **Como atualizar o backend:**
 
-`docker compose up` (sem `--build`) **nunca** reflete uma mudança de código — ele só reaproveita a imagem que já existia. Sempre que o código do backend mudar, é preciso rebuildar. O fluxo muda dependendo de quem está atualizando:
+O código-fonte é copiado para a imagem durante o build. Por isso, `docker compose up` sem `--build` pode reutilizar uma imagem antiga e não refletir alterações na API. Depois de alterar o código, execute:
 
-- **Você mesmo alterou o código do backend:**
 ```bash
 docker compose up --build
 ```
 
-- **Você quer pegar uma atualização feita por outra pessoa** (ex.: dev do front-end buscando uma mudança recente na API) — primeiro traga o código novo, só depois rebuilde:
+**Regra de atualização do Docker:** atualizações e rebuilds da imagem Docker devem ser realizados somente na branch `dev`. Não execute `docker compose up --build` para atualizar a imagem a partir de outras branches.
+
+Para atualizar o código a partir da branch de desenvolvimento:
+
 ```bash
 git pull origin dev
 docker compose up --build
 ```
-A atualização do backend deve sempre vir da branch `dev` do repositório.
 
-O Docker reaproveita o cache das camadas que não mudaram (ex.: dependências do Maven já baixadas), então o rebuild costuma ser rápido — ele recompila só o que realmente foi alterado.
+O Docker reaproveita as camadas que não mudaram, incluindo o download das dependências Maven, tornando os rebuilds seguintes mais rápidos.
 
 **Para parar o ambiente:**
+
 ```bash
 docker compose down
 ```
 
-Os dados do PostgreSQL são persistidos em um volume nomeado, então não são perdidos ao parar os containers.
+Esse comando remove os containers, mas preserva o volume `postgres-data`. Portanto, os dados do PostgreSQL não são apagados.
 
+Para parar e também apagar os dados persistidos, use somente quando isso for intencional:
+
+```bash
+docker compose down -v
+```
+<!--
 #### Via Maven (Desenvolvimento Local)
 
-O profile de desenvolvimento depende de PostgreSQL e Redis. Para executar o backend diretamente pela máquina, esses serviços precisam estar disponíveis localmente ou em containers:
+O profile `dev` usa PostgreSQL e Redis. Ao executar o backend diretamente na máquina, esses serviços precisam estar instalados e em execução localmente, ou disponíveis em containers com as portas publicadas para `localhost`.
+
+**Pré-requisitos:**
+
 - Java 25 ou superior
 - Maven 3.6+ (ou usar Maven wrapper)
 - PostgreSQL e Redis instalados e rodando
 
+O arquivo `.env` não é carregado automaticamente pelo Maven. Configure as variáveis no ambiente do terminal ou na configuração de execução da IDE. Exemplo no PowerShell:
+
+```powershell
+$env:DB_URL = "jdbc:postgresql://localhost:5432/jogodavelha"
+$env:DB_USER = "postgres"
+$env:DB_PASSWORD = "postgres"
+$env:REDIS_HOST = "localhost"
+$env:REDIS_PORT = "6379"
+```
+
+Depois, inicie a aplicação:
+
 ```bash
-# Usando Maven (se instalado)
+# Maven instalado
 mvn spring-boot:run
 
-# Usando Maven wrapper
+# Maven Wrapper no Windows
 .\mvnw.cmd spring-boot:run
 ```
 
-A aplicação iniciará em `http://localhost:8080` com:
-- Swagger UI disponível em `http://localhost:8080/swagger-ui/index.html`
-- Endpoint WebSocket em `ws://localhost:8080/ws`
+A aplicação iniciará em `http://localhost:8080`. Os endpoints de documentação e WebSocket são os mesmos da execução via Docker.
 
-**Nota**: PostgreSQL e Redis devem estar disponíveis conforme as variáveis de ambiente configuradas. Para usar os serviços do Docker Compose, execute o backend também pelo Compose.
+Não execute o backend local e o serviço `backend` do Docker Compose simultaneamente na mesma porta. Se quiser executar o código local usando os bancos do Compose, mantenha apenas `postgres` e `redis` em execução e inicie o backend pelo Maven.
+ -->
 
 ## 📁 Estrutura do Projeto
 
