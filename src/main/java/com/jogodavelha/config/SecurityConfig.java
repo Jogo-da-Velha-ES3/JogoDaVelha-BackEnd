@@ -1,4 +1,4 @@
-package com.jogodavelha.game.config;
+package com.jogodavelha.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

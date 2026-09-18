@@ -1,4 +1,4 @@
-package com.jogodavelha.game;
+package com.jogodavelha;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

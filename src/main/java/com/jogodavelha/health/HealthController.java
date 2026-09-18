@@ -1,4 +1,4 @@
-package com.jogodavelha.game.controller;
+package com.jogodavelha.health;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;

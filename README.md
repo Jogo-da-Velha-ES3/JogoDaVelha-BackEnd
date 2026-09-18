@@ -5,22 +5,46 @@ Backend de um projeto acadêmico de Engenharia de Software III — Jogo da Velha
 
 Backend de jogo multiplayer por turnos usando Spring Boot + Maven, seguindo uma arquitetura modular com PostgreSQL para dados persistentes e Redis para gerenciamento de estado rápido/temporário.
 
+## 📌LEIA ANTES: Regras Gerais do Back-End
+
+**Branch e Git**
+
+- Nunca commitar direto na main/dev — criar branch própria
+(ex: feature/nome-da-tarefa)
+
+- Atualizar sua branch com a dev regularmente (evitar divergência)
+
+- Merge pra dev só via Pull Request, com outra pessoa revisando
+
+**Commits e PR**
+
+- Commits pequenos e com mensagem clara (ex: "fix: corrige validação de login")
+
+- PR focada em uma tarefa só, com descrição rápida do que mudou
+
+**Qualidade**
+
+- Não subir código quebrando o que já funciona (testar antes localmente)
+
+- Não commitar senha, token ou arquivo .env (seguir .env.example)
+
+**Documentação**
+
+- Atualizar o README quando criar/mudar algo importante (endpoint, setup, etc.)
+
+- Endpoints documentados no Swagger (anotações OpenAPI aplicadas).
+
 ## 🏗️ Arquitetura
 
-O projeto está organizado em 4 módulos principais sob o pacote `com.jogodavelha.game`:
+O projeto está organizado em módulos principais sob o pacote `com.jogodavelha`:
 
 - **`auth/`** — Autenticação, cadastro, permissões e geração/validação de JWT
-- **`game/service/`** — Gerenciamento de partidas, entrada/saída de jogadores, controle de turnos
-- **`game/domain/`** — Regras do jogo, validações e transições de estado (camada de validação oficial)
+- **`game/`** — Gerenciamento de partidas, lógica do jogo e serviços
+  - **`game/service/`** — Gerenciamento de partidas, entrada/saída de jogadores, controle de turnos
+  - **`game/logic/`** — Regras do jogo, validações e transições de estado (camada de validação oficial)
 - **`websocket/`** — Gateway de conexões em tempo real (sem persistência)
-- **`repository/`** — Camada de acesso a dados centralizada (repositórios JPA para PostgreSQL, componentes de acesso Redis)
+- **`health/`** — Health check e monitoramento da API
 - **`config/`** — Configurações de Security, WebSocket e Redis
-
-### Decisão de Design: Camada Repository
-
-O pacote `repository/` centraliza todo o acesso a dados para evitar espalhar preocupações de persistência pelas camadas de domain/service. Este pacote contém:
-- Repositórios JPA para dados persistentes (usuários, partidas, histórico)
-- Componentes de acesso Redis para dados temporários/rápidos (estado da partida, turnos, locks)
 
 ## 🛠️ Stack Tecnológico
 
@@ -227,16 +251,59 @@ Não execute o backend local e o serviço `backend` do Docker Compose simultanea
 ## 📁 Estrutura do Projeto
 
 ```
-com.jogodavelha.game
-├── auth/                    # Autenticação e autorização
+com.jogodavelha
+├── auth/                   # Autenticação e autorização
+├── config/                 # Classes de configuração
 ├── game/
 │   ├── service/            # Serviços de gerenciamento de jogo
-│   └── domain/             # Regras e validações do jogo
+│   └── logic/              # Regras e validações do jogo
+├── health/                 # Verificar disponibilidade da API
 ├── websocket/              # Comunicação em tempo real
-├── repository/             # Camada de acesso a dados (PostgreSQL + Redis)
-├── config/                 # Classes de configuração
 └── JogoDaVelhaApplication  # Classe principal da aplicação
 ```
+
+### Organização os domínios
+
+Cada domínio do sistema deve possuir sua própria organização, deve ser criado um pacote próprio para ela dentro de `com.jogodavelha`.
+
+As classes relacionadas ao domínio devem ficar dentro do mesmo pacote, seguindo a separação de responsabilidades entre Controller, Service, Entity/Model, Repository e DTO quando forem necessários.
+
+Por exemplo, para adicionar o domínio de **personagens**:
+
+```text
+com.jogodavelha
+├── auth/
+├── config/
+├── game/
+│   ├── service/ 
+│   └── logic/ 
+├── websocket/
+├── character/
+│   ├── CharacterController.java
+│   ├── CharacterService.java
+│   ├── Character.java
+│   ├── CharacterRepository.java
+│   └── CharacterDTO.java
+└── JogoDaVelhaApplication.java
+```
+
+Nem todo domínio precisa obrigatoriamente possuir todas essas classes. Devem ser criadas apenas as que forem necessárias.
+
+Por exemplo:
+
+* `CharacterController` → recebe e responde às requisições HTTP relacionadas aos personagens.
+* `CharacterService` → contém a lógica do domínio.
+* `Character` → representa a entidade/modelo de um personagem.
+* `CharacterRepository` → responsável pelo acesso aos dados dos personagens.
+* `CharacterDTO` → define os dados utilizados na comunicação entre API e cliente.
+
+**Regra geral:** novas funcionalidades devem ser organizadas por domínio, mantendo juntas as classes que pertencem à mesma responsabilidade e evitando criar pacotes globais separados como `controllers/`, `services/`, `repositories/` e `dtos/` para todo o projeto.
+
+```
+
+Isso deixa a ideia bem mais clara: character é um domínio e dentro dela ficam as diferentes responsabilidades daquele domínio, em vez de espalhar `CharacterController`, `CharacterService`, etc. por vários pacotes globais.
+```
+
 
 ## 🔧 Configuração
 
@@ -307,11 +374,12 @@ mvn test
 
 ## 📝 Próximos Passos
 
-1. Implementar módulo de autenticação (login, cadastro, JWT)
-2. Implementar lógica de domínio e regras do jogo
-3. Implementar camada de serviço do jogo
-4. Criar controllers REST e handlers WebSocket
-5. Configurar Nginx para balanceamento de carga em produção
+1. Implementar lógica de autenticação (login, cadastro, JWT)
+2. Implementar regras do jogo no módulo `game/logic`
+3. Implementar serviços de gerenciamento de partidas no módulo `game/service`
+4. Implementar endpoints REST nos controllers
+5. Implementar handlers WebSocket para comunicação em tempo real
+6. Configurar Nginx para balanceamento de carga em produção
 
 ## 🌐 Plano de Produção Decidido
 
@@ -326,7 +394,9 @@ Para o ambiente de produção, foi decidido o seguinte stack de hospedagem:
 
 ## ⚠️ Notas Importantes
 
-- Todas as validações e transições de estado do jogo devem ocorrer no servidor no módulo `game/domain`
+- Todas as validações e transições de estado do jogo devem ocorrer no servidor no módulo `game/logic`
 - O gateway WebSocket não persiste dados; ele apenas gerencia comunicação em tempo real
 - Redis é usado apenas para estado temporário; dados persistentes vão para PostgreSQL
 - A estrutura do projeto separa claramente as responsabilidades seguindo convenções do Spring Boot
+- As entidades e DTOs utilizam anotações do Lombok (@Data, @NoArgsConstructor, @AllArgsConstructor) para geração automática de getters, setters e construtores
+- A estrutura básica dos arquivos foi criada seguindo a arquitetura de domínios definida
