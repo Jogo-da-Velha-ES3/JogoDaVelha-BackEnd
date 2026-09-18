@@ -151,6 +151,10 @@ Para acessar os logs de um serviço específico, substitua `api` por `postgres` 
 - OpenAPI JSON: `http://localhost:8080/v3/api-docs`
 - WebSocket: `ws://localhost:8080/ws`
 
+Para a tela de carregamento, use `GET /api/health`. Esse endpoint não acessa PostgreSQL
+ou Redis e pode ser chamado para acordar a aplicação após um cold start. Quando a API
+estiver pronta, ele retorna HTTP 200 com `{"status":"UP","message":"API disponível"}`.
+
 **Como atualizar o backend:**
 
 O código-fonte é copiado para a imagem durante o build. Por isso, `docker compose up` sem `--build` pode reutilizar uma imagem antiga e não refletir alterações na API. Depois de alterar o código, execute:
@@ -159,7 +163,8 @@ O código-fonte é copiado para a imagem durante o build. Por isso, `docker comp
 docker compose up --build
 ```
 
-**Regra de atualização do Docker:** atualizações e rebuilds da imagem Docker devem ser realizados somente na branch `dev`. Não execute `docker compose up --build` para atualizar a imagem a partir de outras branches.
+**Regra de atualização do Docker:** o front-end deve sempre consumir a imagem gerada a partir da branch dev (via git pull na dev + docker compose up --build, ou via imagem publicada no Docker Hub a partir da dev). 
+Desenvolvedores de back-end podem rodar docker compose up --build livremente em suas próprias branches de feature para testes locais — isso não deve ser publicado nem repassado ao front-end até ser mergeado na dev.
 
 Para atualizar o código a partir da branch de desenvolvimento:
 
