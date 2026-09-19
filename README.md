@@ -3,7 +3,7 @@ Backend de um projeto acadêmico de Engenharia de Software III — Jogo da Velha
 
 ## 📋 Visão Geral
 
-Backend de jogo multiplayer por turnos usando Spring Boot + Maven, seguindo uma arquitetura modular com PostgreSQL para dados persistentes e Redis para gerenciamento de estado rápido/temporário.
+Backend de jogo da velha multiplayer por turnos usando Spring Boot + Maven, seguindo uma arquitetura modular com PostgreSQL para dados persistentes e Redis para gerenciamento de estado rápido/temporário.
 
 ## 📌LEIA ANTES: Regras Gerais do Back-End
 
@@ -12,7 +12,7 @@ Backend de jogo multiplayer por turnos usando Spring Boot + Maven, seguindo uma 
 - Nunca commitar direto na main/dev — criar branch própria
 (ex: feature/nome-da-tarefa)
 
-- Atualizar sua branch com a dev regularmente (evitar divergência)
+- Atualizar sua branch com a dev regularmente para evitar divergência (git pull origin dev)
 
 - Merge pra dev só via Pull Request, com outra pessoa revisando
 
@@ -154,6 +154,19 @@ O comando inicia três serviços:
 - `redis`: executa o Redis para dados temporários e estado das partidas.
 
 O backend aguarda os healthchecks do PostgreSQL e do Redis antes de iniciar. A API fica disponível em `http://localhost:8080` (ou na porta definida em `SERVER_PORT`).
+
+#### Via IntelliJ IDEA
+
+Para executar o Docker Compose pelo botão **Run** do IntelliJ:
+
+1. Abra **Run > Edit Configurations (três pontos ao lado do botão RUN)**.
+2. Clique em **+ > Docker**.
+3. Em **Compose files**, selecione o arquivo `docker-compose.yml`.
+4. Em **Services**, selecione `postgres`, `redis` e `api`, ou deixe todos os serviços selecionados.
+5. Na opção **Modify Options**, selecione **Build** e depois selecione **Always**. Isso corresponde ao comando `docker compose up --build` e reconstrói as imagens a cada execução.
+6. Clique em **Apply** e depois em **Run**.
+
+Antes de executar, confirme que o Docker Desktop está em execução e que o arquivo `.env` existe na raiz do projeto. Para acelerar execuções sem alterações no `Dockerfile`, a opção **Only missing images** pode ser usada no lugar de **Always**.
 
 **Verificar os serviços em execução:**
 
