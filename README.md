@@ -340,6 +340,281 @@ Isso deixa a ideia bem mais clara: character é um domínio e dentro dela ficam 
 - `application-dev.yml` — Profile de desenvolvimento (PostgreSQL + Redis via docker)
 - `application-prod.yml` — Profile de produção (PostgreSQL + Redis)
 
+## 🗄️ Migrations com Flyway
+
+O projeto utiliza **Flyway** para controlar a evolução do schema PostgreSQL por meio de migrations versionadas.
+
+O **Flyway é a fonte de verdade do schema do banco de dados**. Alterações estruturais no PostgreSQL devem ser realizadas por meio de migrations, garantindo que a estrutura do banco possa ser reproduzida de forma consistente, controlada e rastreável em diferentes ambientes.
+
+### O que é Flyway
+
+Flyway é uma ferramenta open-source de migrations de banco de dados que gerencia automaticamente a execução de scripts SQL versionados.
+
+Ele:
+
+* Detecta quais migrations já foram executadas no banco
+* Executa apenas as migrations pendentes
+* Mantém um histórico das migrations executadas na tabela `flyway_schema_history`
+* Executa as migrations na ordem correta
+* Permite reproduzir a evolução do schema de forma consistente entre ambientes
+
+### Onde ficam as migrations
+
+As migrations ficam no diretório padrão:
+
+```text
+src/main/resources/db/migration/
+```
+
+### Padrão de nomenclatura
+
+O projeto utiliza o seguinte padrão:
+
+```text
+V<número>__<descrição>.sql
+```
+
+Exemplos:
+
+```text
+V1__create_users.sql
+V2__create_games.sql
+V3__create_game_players.sql
+V4__add_status_to_games.sql
+```
+
+Regras:
+
+* O número identifica a versão da migration e deve ser único.
+* Novas migrations devem utilizar uma versão maior que as migrations já existentes.
+* A descrição deve ser curta, clara e utilizar `snake_case`.
+* Utilize `__` (dois underscores) para separar o número da descrição.
+* Migrations já executadas **não devem ser editadas**.
+* Alterações posteriores devem ser realizadas por meio de uma nova migration.
+
+### Regras de desenvolvimento
+
+1. **Toda alteração estrutural no PostgreSQL deve ser feita por migration.** Não altere tabelas, colunas, índices ou constraints manualmente como parte do fluxo normal de desenvolvimento.
+
+2. **Não execute migrations manualmente.** O arquivo SQL deve ser colocado em `src/main/resources/db/migration/` e executado pelo Flyway.
+
+3. **Migrations já executadas não devem ser alteradas.** Alterar uma migration depois de executada pode causar divergência entre ambientes.
+
+4. **Não reutilize versões de migrations.** Cada migration deve possuir uma versão única.
+
+5. **Cada migration deve representar uma mudança lógica coerente.** Alterações relacionadas podem ser agrupadas em uma única migration.
+
+6. **Evite fragmentar alterações relacionadas sem necessidade.** Não crie várias migrations para mudanças que fazem parte de uma única alteração lógica.
+
+7. **Migrations não devem conter lógica de negócio da aplicação.** Elas devem conter somente as alterações necessárias no banco de dados.
+
+8. **Dados persistentes necessários à evolução do schema podem ser incluídos em migrations quando apropriado.** Dados temporários, dados de teste e regras de negócio não devem ser armazenados por migrations.
+
+9. **SQL deve ser compatível com PostgreSQL.**
+
+10. **Teste a migration localmente antes de abrir um Pull Request.**
+
+11. **O nome da migration deve deixar claro o que ela altera.**
+
+12. **Não commite credenciais ou dados sensíveis em migrations.**
+
+### Alterações manuais no banco
+
+Alterações estruturais devem ser realizadas exclusivamente pelo Flyway.
+
+Por exemplo, não faça diretamente no banco:
+
+```sql
+ALTER TABLE users ADD COLUMN username VARCHAR(100);
+```
+
+Em vez disso, crie uma nova migration:
+
+```text
+V5__add_username_to_users.sql
+```
+
+contendo:
+
+```sql
+ALTER TABLE users ADD COLUMN username VARCHAR(100);
+```
+
+Ao iniciar a aplicação, o Flyway detectará a migration pendente, executará o SQL e registrará sua execução na tabela:
+
+```text
+flyway_schema_history
+```
+
+#### E se alguém alterar o banco manualmente?
+
+O Flyway **não detecta nem registra automaticamente alterações realizadas manualmente** no PostgreSQL.
+
+Por exemplo:
+
+```text
+Dev altera o banco manualmente
+        ↓
+PostgreSQL é alterado
+        ↓
+Flyway não registra a alteração
+        ↓
+A migration correspondente continua pendente
+        ↓
+Flyway pode falhar ao tentar executá-la
+```
+
+Portanto, não se deve tentar "corrigir" o histórico do Flyway simplesmente adicionando manualmente um registro em `flyway_schema_history`.
+
+Se uma alteração manual já tiver sido realizada, o estado do banco deve ser corrigido de acordo com a estratégia definida pela equipe antes de prosseguir.
+
+### Separação de responsabilidades
+
+* **PostgreSQL**: responsável pelos dados persistentes, como usuários, partidas e histórico.
+* **Redis**: utilizado para estado temporário e de alta velocidade das partidas, como jogos em andamento, turnos e locks.
+
+As migrations são utilizadas somente para o PostgreSQL. Não são criadas migrations para estruturas ou estado temporário do Redis.
+
+### Fluxo de desenvolvimento
+
+Quando uma alteração no banco for necessária:
+
+```text
+Alteração necessária no banco
+        ↓
+Criar nova migration
+        ↓
+Colocar em src/main/resources/db/migration/
+        ↓
+Executar/testar a aplicação
+        ↓
+Flyway detecta a migration pendente
+        ↓
+Flyway executa a migration
+        ↓
+Flyway registra a execução
+        ↓
+Commit + Pull Request
+```
+
+Quando o backend inicia, o Flyway:
+
+1. Verifica o histórico em `flyway_schema_history`.
+2. Localiza as migrations disponíveis em `db/migration`.
+3. Identifica as migrations que ainda não foram executadas.
+4. Executa as migrations pendentes na ordem correta.
+5. Registra as migrations executadas no histórico.
+
+### Desenvolvimento em equipe
+
+Para evitar conflitos entre desenvolvedores:
+
+* As versões das migrations devem ser coordenadas pela equipe.
+* Uma migration já publicada ou executada não deve ter sua versão reutilizada.
+* Antes de criar uma migration, verifique as migrations existentes na branch atual.
+* Migrations devem passar por code review normalmente.
+* Se duas migrations entrarem em conflito durante o desenvolvimento, a equipe deve resolver o conflito antes do merge.
+* Uma migration já executada em algum ambiente compartilhado não deve ser renomeada ou alterada.
+
+Exemplo:
+
+```text
+V5__create_characters.sql
+V6__add_match_result.sql
+V7__create_match_history.sql
+```
+
+### Relação entre Flyway e Hibernate
+
+O projeto utiliza o **Flyway para alterar o schema** e o **Hibernate/JPA para mapear as Entities e validar o schema existente**.
+
+A configuração do Hibernate utiliza:
+
+```yaml
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+```
+
+O `validate` significa que o Hibernate:
+
+* Não cria tabelas
+* Não altera tabelas
+* Não remove tabelas
+* Não executa migrations
+* Apenas verifica se o schema existente é compatível com as Entities mapeadas
+
+A responsabilidade de alterar o schema pertence exclusivamente ao Flyway.
+
+A arquitetura segue o princípio:
+
+```text
+Flyway
+  ↓
+Cria e altera o schema
+  ↓
+PostgreSQL
+  ↑
+Hibernate/JPA
+  ↓
+Mapeia Entities e valida o schema
+```
+
+### Entities e migrations
+
+Uma tabela pode existir no PostgreSQL sem que uma Entity correspondente tenha sido implementada.
+
+Por exemplo:
+
+```text
+Migration
+V1__create_users.sql
+        ↓
+PostgreSQL
+users
+```
+
+A aplicação pode iniciar mesmo que `User.java` ainda não exista.
+
+Por outro lado, quando uma Entity for implementada, o schema correspondente deverá existir e ser compatível com ela.
+
+Exemplo:
+
+```text
+User.java
+    ↕
+users
+    ↑
+V1__create_users.sql
+```
+
+Com `ddl-auto: validate`, caso a Entity espere uma tabela, coluna ou estrutura que não exista no banco, o Hibernate deverá acusar a inconsistência durante a inicialização.
+
+Isso permite que **Entities e migrations sejam implementadas em tarefas separadas**, desde que o schema e as Entities estejam consistentes quando forem utilizados juntos.
+
+### Princípio geral
+
+A responsabilidade de cada tecnologia deve permanecer bem definida:
+
+```text
+Flyway
+→ Evolução e versionamento do schema
+
+PostgreSQL
+→ Persistência dos dados
+
+Hibernate/JPA
+→ Mapeamento das Entities e validação do schema
+
+Redis
+→ Estado temporário das partidas
+```
+
+**O Hibernate não deve competir com o Flyway pela responsabilidade de gerenciar o schema.**
+
+Qualquer alteração estrutural no PostgreSQL deve passar pelo processo de migration e ser versionada no Git.
+
 ## 📚 Documentação da API
 
 O projeto utiliza **SpringDoc OpenAPI** para geração automática de documentação da API com Swagger UI.

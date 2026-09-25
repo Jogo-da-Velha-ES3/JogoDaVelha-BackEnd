@@ -1,0 +1,2 @@
+# Este arquivo mantém o diretório de migrations no controle de versão
+# As migrations Flyway serão adicionadas aqui seguindo o padrão V{número}__{descrição}.sql
