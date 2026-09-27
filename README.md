@@ -655,6 +655,13 @@ Esta convenção será cobrada nos critérios de aceite das próximas tarefas.
 
 ## 🧪 Testes
 
+A BE-007 possui implementação local concluída e validação isolada documentadas em
+[docs/room/README.md](docs/room/README.md). A migration definitiva de salas ainda
+depende da base de usuários e da coordenação de versões para integração futura;
+implementar a migration real de users está fora do escopo da BE-007.
+Não iniciar essa branch
+contra o banco existente antes de resolver essa dependência.
+
 Execute testes com:
 ```bash
 mvn test
