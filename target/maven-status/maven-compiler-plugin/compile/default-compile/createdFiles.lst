@@ -15,7 +15,6 @@ com\jogodavelha\config\OpenApiConfig.class
 com\jogodavelha\config\SecurityConfig.class
 com\jogodavelha\game\logic\GameValidator.class
 com\jogodavelha\JogoDaVelhaApplication.class
-com\jogodavelha\websocket\WebSocketHandler.class
 com\jogodavelha\game\logic\GameStateManager.class
 com\jogodavelha\auth\RegisterRequest.class
 com\jogodavelha\game\service\TurnService.class
