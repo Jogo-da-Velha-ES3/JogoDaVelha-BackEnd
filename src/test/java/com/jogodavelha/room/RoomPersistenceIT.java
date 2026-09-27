@@ -24,7 +24,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Explicit opt-in: -Dtest=RoomPersistenceIT -Droom.test.port=<isolated container port>. */
+/** Executar com -Dtest=RoomPersistenceIT e -Droom.test.port=<porta do banco descartável>. */
 class RoomPersistenceIT {
     @Configuration
     @EnableTransactionManagement
@@ -64,7 +64,7 @@ class RoomPersistenceIT {
         }
     }
 
-    // Test-only prerequisite, NOT a proposed production users migration.
+    // Cria users apenas para o teste, não para a aplicação.
     public static class V1__TestUsers extends BaseJavaMigration {
         public void migrate(Context context) throws Exception {
             try (var statement = context.getConnection().createStatement()) {
@@ -105,7 +105,7 @@ class RoomPersistenceIT {
             jdbc.update("UPDATE rooms SET status='CLOSED' WHERE id=?", saved.getId());
             assertNotNull(repo.saveAndFlush(new Room("0042", one)).getId());
 
-            // Force collision handling: occupy all codes except one before concurrent calls.
+            // As duas reservas vão disputar o único código livre.
             jdbc.update("INSERT INTO rooms(id,code,status,player1_id) SELECT gen_random_uuid(), lpad(n::text,4,'0'),'WAITING','one' FROM generate_series(0,9999) n WHERE n <> 9999 AND n <> 42");
             var gate = new CountDownLatch(1);
             try (var workers = Executors.newFixedThreadPool(2)) {
