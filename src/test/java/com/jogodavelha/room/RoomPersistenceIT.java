@@ -87,7 +87,7 @@ class RoomPersistenceIT {
             var allocator = context.getBean(RoomCodeAllocator.class);
             var tx = new TransactionTemplate(context.getBean(PlatformTransactionManager.class));
             jdbc.update("INSERT INTO users(id) VALUES ('one'), ('two')");
-            User one = new User("one", null, null, null);
+            User one = new User("one", null, null);
             Room saved = repo.saveAndFlush(new Room("0042", one));
             tx.executeWithoutResult(status -> {
                 Room loaded = repo.findById(saved.getId()).orElseThrow();

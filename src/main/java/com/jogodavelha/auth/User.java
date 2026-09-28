@@ -1,8 +1,9 @@
 package com.jogodavelha.auth;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.NoArgsConstructor;
 
 /**
@@ -11,16 +12,43 @@ import lombok.NoArgsConstructor;
  */
 @Entity
 @Table(name = "users")
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
+@Getter
+@Setter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class User {
-    
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
-    
+
+    @Column(nullable = false, length = 30, unique = true)
     private String username;
+
+    @Column(nullable = false)
     private String password;
+
+    @Column(nullable = false, unique = true)
     private String email;
+
+    @Column(name = "coins_balance", nullable = false)
+    private Integer coinsBalance = 0;
+
+    public User(String username, String password, String email) {
+        this.username = username;
+        this.password = password;
+        this.email = email;
+    }
+
+    /**
+     * Adiciona moedas ao saldo do usuário.
+     *
+     * @param amount Quantidade de moedas a adicionar (deve ser positivo)
+     * @throws IllegalArgumentException se amount for negativo
+     */
+    public void addCoins(int amount) {
+        if (amount < 0) {
+            throw new IllegalArgumentException("Valor de moedas não pode ser negativo");
+        }
+        this.coinsBalance += amount;
+    }
 }

@@ -1,6 +1,7 @@
 package com.jogodavelha.room;
 
 import com.jogodavelha.auth.User;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -8,10 +9,17 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import java.util.UUID;
+
 class RoomCodeAllocatorTest {
     private final RoomRepository rooms = mock(RoomRepository.class);
     private final RoomCodeAllocator allocator = new RoomCodeAllocator(rooms, mock(JdbcTemplate.class));
-    private final User user = new User("u1", "player", "hash", "player@example.test");
+    private final User user = new User("player", "hash", "player@example.test");
+
+    @BeforeEach
+    void setUp() {
+        user.setId(UUID.randomUUID().toString());
+    }
 
     @Test
     void skipsOccupiedCodeBeforePersisting() {
