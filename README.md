@@ -660,6 +660,23 @@ Execute testes com:
 mvn test
 ```
 
+Room foi validada em PostgreSQL isolado. Antes de rodar a aplicação no banco do
+projeto, é preciso integrar as migrations de users e rooms. O arquivo
+`docs/room/create_rooms.sql.example` continua inativo e é usado no teste.
+
+`RoomPersistenceIT` roda separadamente, com Java 25 e um PostgreSQL descartável.
+Não usa DB_URL nem o banco do projeto. O Flyway cria users apenas como fixture de
+teste e aplica o SQL de rooms; o Hibernate mantém `ddl-auto=validate`.
+
+```powershell
+docker run --rm -d --name be007-isolated-validation -e POSTGRES_USER=be007_test -e POSTGRES_PASSWORD=be007_test_only -e POSTGRES_DB=be007_validation -p 127.0.0.1::5432 postgres:16-alpine
+docker port be007-isolated-validation 5432
+# Troque PORTA pelo número retornado acima, nunca pela porta do banco do projeto.
+.\mvnw.cmd test "-Dtest=RoomPersistenceIT" "-Droom.test.port=PORTA"
+# Remove apenas o container descartável e seus dados de teste.
+docker stop be007-isolated-validation
+```
+
 ## 📝 Próximos Passos
 
 1. Implementar lógica de autenticação (login, cadastro, JWT)
