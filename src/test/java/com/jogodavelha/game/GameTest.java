@@ -2,7 +2,6 @@ package com.jogodavelha.game;
 
 import com.jogodavelha.auth.User;
 import com.jogodavelha.room.Room;
-import com.jogodavelha.room.RoomStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -20,9 +19,9 @@ class GameTest {
     @BeforeEach
     void setUp() {
         player1 = new User("player1", "pass", "p1@test.com");
-        player1.setId(UUID.randomUUID().toString());
+        player1.setId(UUID.randomUUID());
         player2 = new User("player2", "pass", "p2@test.com");
-        player2.setId(UUID.randomUUID().toString());
+        player2.setId(UUID.randomUUID());
         room = new Room("1234", player1);
         room.setId(UUID.randomUUID());
         game = new Game(room, player1);
@@ -159,78 +158,22 @@ class GameTest {
     }
 
     @Test
-    void testWinnerGets50CoinsLoserGets10() {
-        int initialP1 = player1.getCoinsBalance();
-        int initialP2 = player2.getCoinsBalance();
-
-        game.registerRoundResult(RoundResult.PLAYER1_WIN);
-        game.registerRoundResult(RoundResult.PLAYER1_WIN);
-
-        assertEquals(initialP1 + Game.COINS_WIN, player1.getCoinsBalance());
-        assertEquals(initialP2 + Game.COINS_LOSS, player2.getCoinsBalance());
+    void testRegisterRoundResultWithNullThrowsException() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            game.registerRoundResult(null);
+        });
     }
 
     @Test
-    void testPlayer2WinsGets50CoinsPlayer1Gets10() {
-        int initialP1 = player1.getCoinsBalance();
-        int initialP2 = player2.getCoinsBalance();
-
-        game.registerRoundResult(RoundResult.PLAYER2_WIN);
-        game.registerRoundResult(RoundResult.PLAYER2_WIN);
-
-        assertEquals(initialP1 + Game.COINS_LOSS, player1.getCoinsBalance());
-        assertEquals(initialP2 + Game.COINS_WIN, player2.getCoinsBalance());
-    }
-
-    @Test
-    void testDrawEachPlayerGets20Coins() {
-        int initialP1 = player1.getCoinsBalance();
-        int initialP2 = player2.getCoinsBalance();
-
-        game.registerRoundResult(RoundResult.DRAW);
-        game.registerRoundResult(RoundResult.DRAW);
-        game.registerRoundResult(RoundResult.DRAW);
-
-        assertEquals(initialP1 + Game.COINS_DRAW, player1.getCoinsBalance());
-        assertEquals(initialP2 + Game.COINS_DRAW, player2.getCoinsBalance());
-    }
-
-    @Test
-    void testDrawFrom1x1EachPlayerGets20Coins() {
-        int initialP1 = player1.getCoinsBalance();
-        int initialP2 = player2.getCoinsBalance();
-
-        game.registerRoundResult(RoundResult.PLAYER1_WIN);
-        game.registerRoundResult(RoundResult.PLAYER2_WIN);
-        game.registerRoundResult(RoundResult.DRAW);
-
-        assertEquals(initialP1 + Game.COINS_DRAW, player1.getCoinsBalance());
-        assertEquals(initialP2 + Game.COINS_DRAW, player2.getCoinsBalance());
-    }
-
-    @Test
-    void testCallingFinishTwiceDoesNotPayTwice() {
-        int initialP1 = player1.getCoinsBalance();
-        int initialP2 = player2.getCoinsBalance();
-
-        game.registerRoundResult(RoundResult.PLAYER1_WIN);
-        game.registerRoundResult(RoundResult.PLAYER1_WIN);
-
-        game.finish(); // Segunda chamada (já foi chamado no registerRoundResult)
-
-        assertEquals(initialP1 + Game.COINS_WIN, player1.getCoinsBalance());
-        assertEquals(initialP2 + Game.COINS_LOSS, player2.getCoinsBalance());
-    }
-
-    @Test
-    void testNoCoinsPaidWhileGameInProgress() {
-        int initialP1 = player1.getCoinsBalance();
-        int initialP2 = player2.getCoinsBalance();
-
-        game.registerRoundResult(RoundResult.PLAYER1_WIN);
-
-        assertEquals(initialP1, player1.getCoinsBalance());
-        assertEquals(initialP2, player2.getCoinsBalance());
+    void testRegisterRoundResultWithoutPlayer2ThrowsException() {
+        Game gameWithoutP2 = new Game(room, player1);
+        assertThrows(IllegalStateException.class, () -> {
+            gameWithoutP2.registerRoundResult(RoundResult.PLAYER1_WIN);
+        });
+        // Verifica que o estado não foi alterado
+        assertEquals(1, gameWithoutP2.getCurrentRound());
+        assertEquals(new Score(0, 0), gameWithoutP2.getScore());
+        assertEquals(GameStatus.IN_PROGRESS, gameWithoutP2.getStatus());
     }
 
     @Test
@@ -244,12 +187,6 @@ class GameTest {
     }
 
     @Test
-    void testFinishWithoutPlayer2ThrowsException() {
-        Game gameWithoutP2 = new Game(room, player1);
-        assertThrows(IllegalStateException.class, gameWithoutP2::finish);
-    }
-
-    @Test
     void testBoardClearedOnRoundAdvance() {
         game.setBoard("XXXX----OOOO----");
         game.registerRoundResult(RoundResult.DRAW);
@@ -257,11 +194,52 @@ class GameTest {
     }
 
     @Test
+    void testGetOutcomeBeforeFinishedThrowsException() {
+        assertThrows(IllegalStateException.class, game::getOutcome);
+    }
+
+    @Test
+    void testGetOutcomeReturnsPlayer1Win() {
+        game.registerRoundResult(RoundResult.PLAYER1_WIN);
+        game.registerRoundResult(RoundResult.PLAYER1_WIN);
+
+        assertEquals(GameOutcome.PLAYER1_WIN, game.getOutcome());
+    }
+
+    @Test
+    void testGetOutcomeReturnsPlayer2Win() {
+        game.registerRoundResult(RoundResult.PLAYER2_WIN);
+        game.registerRoundResult(RoundResult.PLAYER2_WIN);
+
+        assertEquals(GameOutcome.PLAYER2_WIN, game.getOutcome());
+    }
+
+    @Test
+    void testGetOutcomeReturnsDraw() {
+        game.registerRoundResult(RoundResult.DRAW);
+        game.registerRoundResult(RoundResult.DRAW);
+        game.registerRoundResult(RoundResult.DRAW);
+
+        assertEquals(GameOutcome.DRAW, game.getOutcome());
+    }
+
+    @Test
+    void testMarkRewardsGrantedBeforeFinishedThrowsException() {
+        assertThrows(IllegalStateException.class, game::markRewardsGranted);
+    }
+
+    @Test
+    void testMarkRewardsGrantedAfterFinished() {
+        game.registerRoundResult(RoundResult.PLAYER1_WIN);
+        game.registerRoundResult(RoundResult.PLAYER1_WIN);
+
+        game.markRewardsGranted();
+        assertTrue(game.isRewardsGranted());
+    }
+
+    @Test
     void testConstants() {
         assertEquals(5, Game.SUDDEN_DEATH_TURN_SECONDS);
-        assertEquals(50, Game.COINS_WIN);
-        assertEquals(20, Game.COINS_DRAW);
-        assertEquals(10, Game.COINS_LOSS);
         assertEquals(3, Game.MAX_ROUNDS);
         assertEquals("----------------", Game.EMPTY_BOARD);
     }

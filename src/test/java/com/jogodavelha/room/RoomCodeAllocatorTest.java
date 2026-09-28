@@ -1,6 +1,7 @@
 package com.jogodavelha.room;
 
 import com.jogodavelha.auth.User;
+import com.jogodavelha.game.GameRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -13,12 +14,13 @@ import java.util.UUID;
 
 class RoomCodeAllocatorTest {
     private final RoomRepository rooms = mock(RoomRepository.class);
-    private final RoomCodeAllocator allocator = new RoomCodeAllocator(rooms, mock(JdbcTemplate.class));
+    private final GameRepository games = mock(GameRepository.class);
+    private final RoomCodeAllocator allocator = new RoomCodeAllocator(rooms, games, mock(JdbcTemplate.class));
     private final User user = new User("player", "hash", "player@example.test");
 
     @BeforeEach
     void setUp() {
-        user.setId(UUID.randomUUID().toString());
+        user.setId(UUID.randomUUID());
     }
 
     @Test

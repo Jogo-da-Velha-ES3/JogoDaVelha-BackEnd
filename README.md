@@ -613,25 +613,33 @@ A entidade `Game` representa uma partida de Jogo da Velha com suporte a rounds, 
 - `winner`: Vencedor da partida (null em caso de empate)
 - `rewardsGranted`: Flag indicando se recompensas já foram concedidas
 
-**Regras de Rounds:**
+**Divisão de Responsabilidades:**
+- **Entidade Game**: Estado e regras puras da partida (rounds, placar, morte súbita, quem venceu). Sem dependências de Spring e sem alterar outras entidades.
+- **GameService**: Orquestração (buscar no repositório, salvar, @Transactional), pagamento de moedas e idempotência do pagamento.
+
+**Regras de Rounds (implementadas na entidade Game):**
 - Sempre se jogam pelo menos 2 rounds
 - Ao final do round 2, se um jogador tem mais vitórias, ele vence a partida
 - Se as vitórias são iguais (1x1 ou 0x0), ocorre o 3º round em modo morte súbita
 - Ao final do 3º round, quem vencer ganha a partida; se empatar, a partida termina empatada
 - Empate não soma vitória para ninguém, mas conta como round jogado
 
-**Regras de Moedas:**
+**Regras de Moedas (implementadas no GameService):**
 - Vencedor: +50 moedas
 - Perdedor: +10 moedas
 - Empate: +20 moedas para cada jogador
 - Recompensas são concedidas apenas uma vez por partida (flag `rewardsGranted`)
+- O pagamento ocorre dentro da mesma transação que salva Game e User
 
-**Constantes:**
+**Constantes da entidade Game:**
 - `SUDDEN_DEATH_TURN_SECONDS = 5`: Tempo por turno no modo morte súbita
+- `MAX_ROUNDS = 3`: Máximo de rounds por partida
+- `EMPTY_BOARD = "----------------"`: Tabuleiro vazio
+
+**Constantes do GameService:**
 - `COINS_WIN = 50`: Moedas para vencedor
 - `COINS_DRAW = 20`: Moedas para empate
 - `COINS_LOSS = 10`: Moedas para perdedor
-- `MAX_ROUNDS = 3`: Máximo de rounds por partida
 
 ### Princípio geral
 

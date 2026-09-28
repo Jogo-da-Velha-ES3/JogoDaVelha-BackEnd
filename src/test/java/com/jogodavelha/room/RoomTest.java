@@ -13,7 +13,7 @@ class RoomTest {
 
     @BeforeEach
     void setUp() {
-        user.setId(UUID.randomUUID().toString());
+        user.setId(UUID.randomUUID());
     }
 
     @Test

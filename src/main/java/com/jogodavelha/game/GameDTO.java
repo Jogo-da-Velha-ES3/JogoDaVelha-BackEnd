@@ -17,14 +17,14 @@ public class GameDTO {
 
     private UUID id;
     private UUID roomId;
-    private UUID player1Id;
-    private UUID player2Id;
+    private String player1Id;
+    private String player2Id;
     private String board;
     private int currentRound;
     private int victoriesPlayer1;
     private int victoriesPlayer2;
     private boolean suddenDeath;
     private GameStatus status;
-    private UUID winnerId;
+    private String winnerId;
     private boolean rewardsGranted;
 }

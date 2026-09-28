@@ -6,6 +6,8 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.NoArgsConstructor;
 
+import java.util.UUID;
+
 /**
  * Entidade que representa um usuário no sistema.
  * Armazena informações de autenticação e perfil do usuário.
@@ -19,15 +21,15 @@ public class User {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    private String id;
+    private UUID id;
 
     @Column(nullable = false, length = 30, unique = true)
     private String username;
 
-    @Column(nullable = false)
+    @Column(name = "password_hash", nullable = false)
     private String password;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false, length = 255, unique = true)
     private String email;
 
     @Column(name = "coins_balance", nullable = false)

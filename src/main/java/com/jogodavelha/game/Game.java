@@ -5,7 +5,6 @@ import com.jogodavelha.room.Room;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
-import lombok.Setter;
 import lombok.NoArgsConstructor;
 
 import java.util.UUID;
@@ -17,14 +16,10 @@ import java.util.UUID;
 @Entity
 @Table(name = "games")
 @Getter
-@Setter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Game {
 
     public static final int SUDDEN_DEATH_TURN_SECONDS = 5;
-    public static final int COINS_WIN = 50;
-    public static final int COINS_DRAW = 20;
-    public static final int COINS_LOSS = 10;
     public static final int MAX_ROUNDS = 3;
     public static final String EMPTY_BOARD = "----------------";
 
@@ -106,15 +101,56 @@ public class Game {
     }
 
     /**
+     * Retorna o resultado final da partida.
+     *
+     * @return GameOutcome indicando quem venceu ou se houve empate
+     * @throws IllegalStateException se a partida ainda não estiver FINISHED
+     */
+    public GameOutcome getOutcome() {
+        if (status != GameStatus.FINISHED) {
+            throw new IllegalStateException("Não é possível obter resultado de partida em andamento");
+        }
+
+        if (victoriesPlayer1 > victoriesPlayer2) {
+            return GameOutcome.PLAYER1_WIN;
+        } else if (victoriesPlayer2 > victoriesPlayer1) {
+            return GameOutcome.PLAYER2_WIN;
+        } else {
+            return GameOutcome.DRAW;
+        }
+    }
+
+    /**
+     * Marca as recompensas como concedidas.
+     *
+     * @throws IllegalStateException se a partida não estiver FINISHED
+     */
+    public void markRewardsGranted() {
+        if (status != GameStatus.FINISHED) {
+            throw new IllegalStateException("Não é possível marcar recompensas em partida em andamento");
+        }
+        this.rewardsGranted = true;
+    }
+
+    /**
      * Registra o resultado de um round e aplica as regras de rounds.
      * Ao avançar de round, limpa o tabuleiro. Ao entrar no round 3, ativa suddenDeath.
      *
      * @param result O resultado do round
-     * @throws IllegalStateException se a partida já estiver FINISHED
+     * @throws IllegalArgumentException se result for nulo
+     * @throws IllegalStateException se a partida já estiver FINISHED ou player2 não estiver definido
      */
     public void registerRoundResult(RoundResult result) {
+        if (result == null) {
+            throw new IllegalArgumentException("Resultado do round não pode ser nulo");
+        }
+
         if (status == GameStatus.FINISHED) {
             throw new IllegalStateException("Não é possível registrar resultado em partida já encerrada");
+        }
+
+        if (player2 == null) {
+            throw new IllegalStateException("Não é possível registrar round sem ambos os jogadores");
         }
 
         switch (result) {
@@ -126,14 +162,14 @@ public class Game {
         }
 
         // Verifica se a partida deve terminar após o round atual
-        if (currentRound == 2) {
+        if (currentRound == MAX_ROUNDS - 1) {
             if (victoriesPlayer1 > victoriesPlayer2 || victoriesPlayer2 > victoriesPlayer1) {
                 // Alguém tem mais vitórias, partida termina
                 finish();
                 return;
             }
             // Vitórias iguais (1x1 ou 0x0), vai para o round 3
-        } else if (currentRound == 3) {
+        } else if (currentRound == MAX_ROUNDS) {
             // Após o round 3, sempre encerra a partida
             finish();
             return;
@@ -144,22 +180,18 @@ public class Game {
         clearBoard();
 
         // Ativa sudden death no round 3
-        if (currentRound == 3) {
+        if (currentRound == MAX_ROUNDS) {
             suddenDeath = true;
         }
     }
 
     /**
-     * Encerra a partida, define o vencedor e concede recompensas.
+     * Encerra a partida e define o vencedor.
+     * Método privado - só chamado por registerRoundResult.
      */
-    public void finish() {
+    private void finish() {
         if (status == GameStatus.FINISHED) {
             return;
-        }
-
-        // Valida que ambos os jogadores estão definidos
-        if (player2 == null) {
-            throw new IllegalStateException("Não é possível encerrar partida sem ambos os jogadores");
         }
 
         status = GameStatus.FINISHED;
@@ -171,35 +203,6 @@ public class Game {
             winner = player2;
         }
         // Empate: winner permanece null
-
-        grantRewards();
-    }
-
-    /**
-     * Concede recompensas em moedas aos jogadores.
-     * Vencedor: +50, Perdedor: +10, Empate: +20 para cada.
-     * Só concede se rewardsGranted for false.
-     */
-    public void grantRewards() {
-        if (rewardsGranted) {
-            return;
-        }
-
-        if (victoriesPlayer1 == victoriesPlayer2) {
-            // Empate: +20 para cada
-            player1.addCoins(COINS_DRAW);
-            player2.addCoins(COINS_DRAW);
-        } else if (victoriesPlayer1 > victoriesPlayer2) {
-            // Player1 venceu
-            player1.addCoins(COINS_WIN);
-            player2.addCoins(COINS_LOSS);
-        } else {
-            // Player2 venceu
-            player2.addCoins(COINS_WIN);
-            player1.addCoins(COINS_LOSS);
-        }
-
-        rewardsGranted = true;
     }
 
     /**
@@ -207,5 +210,13 @@ public class Game {
      */
     private void clearBoard() {
         this.board = EMPTY_BOARD;
+    }
+
+    /**
+     * Define o tabuleiro com um estado específico.
+     * Método protegido para uso em testes.
+     */
+    protected void setBoard(String board) {
+        this.board = board;
     }
 }

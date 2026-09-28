@@ -7,7 +7,9 @@ com\jogodavelha\game\GameDTO.class
 com\jogodavelha\config\WebSocketConfig.class
 com\jogodavelha\game\logic\MoveValidator.class
 com\jogodavelha\websocket\WebSocketService.class
+com\jogodavelha\game\GameOutcome.class
 com\jogodavelha\game\service\GameService.class
+com\jogodavelha\game\service\GameService$1.class
 com\jogodavelha\auth\AuthService.class
 com\jogodavelha\game\GameRepository.class
 com\jogodavelha\game\Game$1.class
@@ -27,6 +29,7 @@ com\jogodavelha\game\service\TurnService.class
 com\jogodavelha\game\Game.class
 com\jogodavelha\config\RedisConfig.class
 com\jogodavelha\room\RoomStatus.class
+com\jogodavelha\game\GameNotFoundException.class
 com\jogodavelha\game\GameStatus.class
 com\jogodavelha\health\HealthController.class
 com\jogodavelha\auth\AuthController.class
