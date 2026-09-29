@@ -1,6 +1,7 @@
 package com.jogodavelha.room;
 
 import com.jogodavelha.auth.User;
+import com.jogodavelha.game.GameRepository;
 import jakarta.persistence.EntityManagerFactory;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.migration.BaseJavaMigration;
@@ -60,7 +61,7 @@ class RoomPersistenceIT {
         }
         @Bean JdbcTemplate jdbcTemplate(DataSource ds) { return new JdbcTemplate(ds); }
         @Bean RoomCodeAllocator allocator(RoomRepository repo, JdbcTemplate jdbc) {
-            return new RoomCodeAllocator(repo, jdbc);
+            return new RoomCodeAllocator(repo, org.mockito.Mockito.mock(GameRepository.class), jdbc);
         }
     }
 
@@ -68,7 +69,7 @@ class RoomPersistenceIT {
     public static class V1__TestUsers extends BaseJavaMigration {
         public void migrate(Context context) throws Exception {
             try (var statement = context.getConnection().createStatement()) {
-                statement.execute("CREATE TABLE users (id varchar(255) PRIMARY KEY, username varchar(255), password varchar(255), email varchar(255))");
+                statement.execute("CREATE TABLE users (id uuid PRIMARY KEY, username varchar(255), password varchar(255), email varchar(255))");
             }
         }
     }
@@ -86,27 +87,32 @@ class RoomPersistenceIT {
             var repo = context.getBean(RoomRepository.class);
             var allocator = context.getBean(RoomCodeAllocator.class);
             var tx = new TransactionTemplate(context.getBean(PlatformTransactionManager.class));
-            jdbc.update("INSERT INTO users(id) VALUES ('one'), ('two')");
-            User one = new User("one", null, null, null);
+            UUID oneId = UUID.randomUUID();
+            UUID twoId = UUID.randomUUID();
+            jdbc.update("INSERT INTO users(id) VALUES (?), (?)", oneId, twoId);
+            User one = new User("one", null, null);
+            one.setId(oneId);
+            User two = new User("two", null, null);
+            two.setId(twoId);
             Room saved = repo.saveAndFlush(new Room("0042", one));
             tx.executeWithoutResult(status -> {
                 Room loaded = repo.findById(saved.getId()).orElseThrow();
                 assertEquals("0042", loaded.getCode());
-                assertEquals("one", loaded.getPlayer1().getId());
+                assertEquals(oneId, loaded.getPlayer1().getId());
                 assertNull(loaded.getPlayer2());
             });
             assertSqlState("23505", () -> repo.saveAndFlush(new Room("0042", one)));
-            assertSqlState("23503", () -> jdbc.update("INSERT INTO rooms(id,code,status,player1_id) VALUES (?, '0043','WAITING','missing')", UUID.randomUUID()));
-            assertSqlState("23514", () -> jdbc.update("UPDATE rooms SET player2_id='one' WHERE id=?", saved.getId()));
+            assertSqlState("23503", () -> jdbc.update("INSERT INTO rooms(id,code,status,player1_id) VALUES (?, '0043','WAITING',?)", UUID.randomUUID(), UUID.randomUUID()));
+            assertSqlState("23514", () -> jdbc.update("UPDATE rooms SET player2_id=? WHERE id=?", oneId, saved.getId()));
             assertSqlState("23514", () -> jdbc.update("UPDATE rooms SET status='IN_GAME' WHERE id=?", saved.getId()));
             assertSqlState("23514", () -> jdbc.update("UPDATE rooms SET code='ABCD' WHERE id=?", saved.getId()));
-            jdbc.update("UPDATE rooms SET player2_id='two', status='IN_GAME' WHERE id=?", saved.getId());
+            jdbc.update("UPDATE rooms SET player2_id=?, status='IN_GAME' WHERE id=?", twoId, saved.getId());
             assertSqlState("23505", () -> repo.saveAndFlush(new Room("0042", one)));
             jdbc.update("UPDATE rooms SET status='CLOSED' WHERE id=?", saved.getId());
             assertNotNull(repo.saveAndFlush(new Room("0042", one)).getId());
 
             // As duas reservas vão disputar o único código livre.
-            jdbc.update("INSERT INTO rooms(id,code,status,player1_id) SELECT gen_random_uuid(), lpad(n::text,4,'0'),'WAITING','one' FROM generate_series(0,9999) n WHERE n <> 9999 AND n <> 42");
+            jdbc.update("INSERT INTO rooms(id,code,status,player1_id) SELECT gen_random_uuid(), lpad(n::text,4,'0'),'WAITING',? FROM generate_series(0,9999) n WHERE n <> 9999 AND n <> 42", oneId);
             var gate = new CountDownLatch(1);
             try (var workers = Executors.newFixedThreadPool(2)) {
                 Callable<Boolean> request = () -> {

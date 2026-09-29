@@ -18,8 +18,17 @@ Este módulo contém os componentes principais relacionados às partidas de Jogo
 - Coordenação com módulos de serviço e lógica
 - Integração com WebSocket para comunicação em tempo real
 
+## Participação em partidas
+
+Um usuário pode ter somente uma participação ativa por vez. Ao reservar uma sala,
+`RoomCodeAllocator` verifica se ele já participa de uma partida `IN_PROGRESS` ou
+de uma sala nos estados `WAITING` ou `IN_GAME`. Em caso positivo, a reserva é
+rejeitada. A verificação e a reserva são executadas na mesma transação, que
+serializa as reservas concorrentes.
+
+Essa regra está aplicada ao fluxo de reserva de sala. O módulo ainda não possui
+um fluxo implementado para entrar em uma sala existente.
+
 ## Notas
 
 Este módulo segue a arquitetura de domínios definida no projeto, onde cada domínio possui suas próprias classes de Controller, Service, Entity, Repository e DTO conforme necessário.
-
-As entidades e DTOs utilizam anotações do Lombok (@Data, @NoArgsConstructor, @AllArgsConstructor) para geração automática de getters, setters e construtores.

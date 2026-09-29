@@ -1,11 +1,20 @@
 package com.jogodavelha.room;
 
 import com.jogodavelha.auth.User;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import java.util.UUID;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class RoomTest {
-    private final User user = new User("u1", "player", "hash", "player@example.test");
+    private final User user = new User("player", "hash", "player@example.test");
+
+    @BeforeEach
+    void setUp() {
+        user.setId(UUID.randomUUID());
+    }
 
     @Test
     void preservesLeadingZerosAndStartsWaiting() {

@@ -378,8 +378,8 @@ Exemplos:
 
 ```text
 V1__create_users.sql
-V2__create_games.sql
-V3__create_game_players.sql
+V2__create_rooms.sql
+V3__create_games.sql
 V4__add_status_to_games.sql
 ```
 
@@ -592,6 +592,54 @@ V1__create_users.sql
 Com `ddl-auto: validate`, caso a Entity espere uma tabela, coluna ou estrutura que não exista no banco, o Hibernate deverá acusar a inconsistência durante a inicialização.
 
 Isso permite que **Entities e migrations sejam implementadas em tarefas separadas**, desde que o schema e as Entities estejam consistentes quando forem utilizados juntos.
+
+### Modelo de Dados
+
+#### Entidade Game (Partidas)
+
+A entidade `Game` representa uma partida de Jogo da Velha com suporte a rounds, morte súbita e recompensas em moedas.
+
+**Campos principais:**
+- `id`: UUID identificador da partida
+- `room`: Sala (Room) associada à partida
+- `player1`: Jogador 1 (User, obrigatório)
+- `player2`: Jogador 2 (User, opcional)
+- `board`: String de 16 caracteres representando o tabuleiro 4x4 ('X', 'O' ou '-' para vazio)
+- `currentRound`: Round atual (1-3)
+- `victoriesPlayer1`: Contagem de vitórias do jogador 1
+- `victoriesPlayer2`: Contagem de vitórias do jogador 2
+- `suddenDeath`: Flag indicando modo morte súbita (ativo apenas no round 3)
+- `status`: Status da partida (IN_PROGRESS, FINISHED)
+- `winner`: Vencedor da partida (null em caso de empate)
+- `rewardsGranted`: Flag indicando se recompensas já foram concedidas
+
+**Divisão de Responsabilidades:**
+- **Entidade Game**: Estado e regras puras da partida (rounds, placar, morte súbita, quem venceu). Sem dependências de Spring e sem alterar outras entidades.
+- **GameService**: Orquestração (buscar no repositório, salvar, @Transactional), pagamento de moedas e idempotência do pagamento.
+
+**Regras de Rounds (implementadas na entidade Game):**
+- Sempre se jogam pelo menos 2 rounds
+- Ao final do round 2, se um jogador tem mais vitórias, ele vence a partida
+- Se as vitórias são iguais (1x1 ou 0x0), ocorre o 3º round em modo morte súbita
+- Ao final do 3º round, quem vencer ganha a partida; se empatar, a partida termina empatada
+- Empate não soma vitória para ninguém, mas conta como round jogado
+
+**Regras de Moedas (implementadas no GameService):**
+- Vencedor: +50 moedas
+- Perdedor: +10 moedas
+- Empate: +20 moedas para cada jogador
+- Recompensas são concedidas apenas uma vez por partida (flag `rewardsGranted`)
+- O pagamento ocorre dentro da mesma transação que salva Game e User
+
+**Constantes da entidade Game:**
+- `SUDDEN_DEATH_TURN_SECONDS = 5`: Tempo por turno no modo morte súbita
+- `MAX_ROUNDS = 3`: Máximo de rounds por partida
+- `EMPTY_BOARD = "----------------"`: Tabuleiro vazio
+
+**Constantes do GameService:**
+- `COINS_WIN = 50`: Moedas para vencedor
+- `COINS_DRAW = 20`: Moedas para empate
+- `COINS_LOSS = 10`: Moedas para perdedor
 
 ### Princípio geral
 
