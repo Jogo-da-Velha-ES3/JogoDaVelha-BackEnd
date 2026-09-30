@@ -45,4 +45,24 @@ public class Room {
         this.player1 = player1;
         this.status = RoomStatus.WAITING;
     }
+
+    public void join(User player) {
+        if (player == null || player.getId() == null) {
+            throw new IllegalArgumentException("O jogador deve possuir um ID.");
+        }
+        if (status != RoomStatus.WAITING) {
+            throw new IllegalStateException("A sala não está aguardando jogadores.");
+        }
+        if (player1.getId().equals(player.getId())) {
+            throw new IllegalStateException("Jogador já está nesta sala.");
+        }
+        if (player2 != null) {
+            throw new IllegalStateException("A sala está cheia.");
+        }
+        player2 = player;
+    }
+
+    public boolean isReadyToStart() {
+        return status == RoomStatus.WAITING && player1 != null && player2 != null;
+    }
 }

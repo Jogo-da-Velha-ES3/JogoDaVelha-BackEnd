@@ -703,6 +703,14 @@ Esta convenção será cobrada nos critérios de aceite das próximas tarefas.
 
 ## 🧪 Testes
 
+O `RoomService` da BE-008 cria salas com `createRoom(playerId)` e permite entrada
+com `joinRoom(code, playerId)`. Código inválido ou sala inexistente gera
+`IllegalArgumentException`; sala cheia, partida iniciada ou jogador ocupado gera
+`IllegalStateException`. O controller da BE-009 deve tratar esses erros.
+Com dois jogadores, `isReadyToStart()` retorna true e a sala permanece WAITING
+até o início da partida. Criação e entrada compartilham o lock já usado na BE-007.
+Esta tarefa não altera migrations.
+
 Execute testes com:
 ```bash
 mvn test

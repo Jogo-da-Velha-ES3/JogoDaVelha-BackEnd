@@ -15,7 +15,7 @@ import java.util.Locale;
 @Service
 @RequiredArgsConstructor
 public class RoomCodeAllocator {
-    private static final List<RoomStatus> ACTIVE = List.of(RoomStatus.WAITING, RoomStatus.IN_GAME);
+    static final List<RoomStatus> ACTIVE = List.of(RoomStatus.WAITING, RoomStatus.IN_GAME);
     private final RoomRepository rooms;
     private final GameRepository gameRepository;
     private final JdbcTemplate jdbc;
@@ -23,19 +23,8 @@ public class RoomCodeAllocator {
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public Room reserve(User player1) {
-        // Serializa as reservas entre instâncias até o fim da transação.
-        jdbc.query("SELECT pg_advisory_xact_lock(7007)", rs -> { });
-
-        // Verifica se o jogador já está em uma partida ativa
-        gameRepository.findActiveGameByPlayerId(player1.getId()).ifPresent(game -> {
-            throw new IllegalStateException("Jogador já está em uma partida ativa");
-        });
-
-        // Uma sala aguardando também reserva a participação do jogador.
-        if (rooms.existsByStatusInAndPlayer1IdOrStatusInAndPlayer2Id(
-                ACTIVE, player1.getId(), ACTIVE, player1.getId())) {
-            throw new IllegalStateException("Jogador já está em uma sala ativa");
-        }
+        lockMembership();
+        requireAvailablePlayer(player1);
 
         int start = random.nextInt(10_000);
         for (int offset = 0; offset < 10_000; offset++) {
@@ -45,5 +34,21 @@ public class RoomCodeAllocator {
             }
         }
         throw new IllegalStateException("Não há códigos de sala disponíveis.");
+    }
+
+    void lockMembership() {
+        // Criação e entrada usam o mesmo lock até o fim da transação.
+        jdbc.query("SELECT pg_advisory_xact_lock(7007)", rs -> { });
+    }
+
+    void requireAvailablePlayer(User player1) {
+        gameRepository.findActiveGameByPlayerId(player1.getId()).ifPresent(game -> {
+            throw new IllegalStateException("Jogador já está em uma partida ativa");
+        });
+
+        if (rooms.existsByStatusInAndPlayer1IdOrStatusInAndPlayer2Id(
+                ACTIVE, player1.getId(), ACTIVE, player1.getId())) {
+            throw new IllegalStateException("Jogador já está em uma sala ativa");
+        }
     }
 }
