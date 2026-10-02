@@ -44,10 +44,12 @@ services:
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       REDIS_HOST: redis
-      REDIS_PORT: 6379
+      REDIS_PORT: ${REDIS_PORT}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRATION: ${JWT_EXPIRATION}
       SERVER_PORT: 8080
+      GAME_STATE_TTL: ${GAME_STATE_TTL}
+      GAME_STATE_UPDATE_MAX_RETRIES: ${GAME_STATE_UPDATE_MAX_RETRIES}
     depends_on:
       postgres:
         condition: service_healthy

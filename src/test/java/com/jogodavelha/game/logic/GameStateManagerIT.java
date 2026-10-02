@@ -17,11 +17,9 @@ import org.testcontainers.utility.DockerImageName;
 
 import java.time.Duration;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -365,5 +363,57 @@ class GameStateManagerIT {
         var gameStateOpt = gameStateManager.find(gameId);
         assertTrue(gameStateOpt.isPresent());
         assertEquals(gameId, gameStateOpt.get().getGameId());
+    }
+
+    @Test
+    void testConcurrentCreateWithSameGameIdAllowsOnlyOne() throws Exception {
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            for (int i = 0; i < 50; i++) {
+                UUID id = UUID.randomUUID();
+                UUID playerA = UUID.randomUUID();
+                UUID playerB = UUID.randomUUID();
+
+                CyclicBarrier barrier = new CyclicBarrier(2);
+                AtomicInteger successCount = new AtomicInteger();
+                AtomicInteger failureCount = new AtomicInteger();
+                AtomicReference<UUID> winner = new AtomicReference<>();
+
+                Callable<Void> createA = createTask(id, playerA, barrier, successCount, failureCount, winner);
+                Callable<Void> createB = createTask(id, playerB, barrier, successCount, failureCount, winner);
+
+                Future<Void> futureA = executor.submit(createA);
+                Future<Void> futureB = executor.submit(createB);
+                futureA.get(10, TimeUnit.SECONDS);
+                futureB.get(10, TimeUnit.SECONDS);
+
+                assertEquals(1, successCount.get(), "Exatamente uma criação deve ter sucesso (rodada " + i + ")");
+                assertEquals(1, failureCount.get(), "Exatamente uma criação deve falhar (rodada " + i + ")");
+
+                GameState state = gameStateManager.find(id).orElseThrow();
+                assertEquals(winner.get(), state.getFirstPlayerId(),
+                        "O estado salvo deve ser o do vencedor, sem sobrescrita (rodada " + i + ")");
+                assertEquals(0L, state.getVersion());
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private Callable<Void> createTask(UUID id, UUID playerId, CyclicBarrier barrier,
+                                      AtomicInteger successCount, AtomicInteger failureCount,
+                                      AtomicReference<UUID> winner) {
+        return () -> {
+            barrier.await(); // as duas threads largam juntas
+            try {
+                gameStateManager.create(id, playerId, 10000);
+                winner.set(playerId);
+                successCount.incrementAndGet();
+            } catch (IllegalStateException e) {
+                failureCount.incrementAndGet();
+            }
+            return null;
+        };
     }
 }

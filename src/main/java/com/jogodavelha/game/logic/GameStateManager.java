@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 import java.util.Collections;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 /**
@@ -80,15 +81,20 @@ public class GameStateManager {
     public void create(UUID gameId, UUID firstPlayerId, long turnDurationMillis) {
         String key = buildKey(gameId);
         
-        Boolean alreadyExists = redisTemplate.hasKey(key);
-        if (Boolean.TRUE.equals(alreadyExists)) {
-            throw new IllegalStateException("Estado da partida já existe: " + gameId);
-        }
-        
         GameState gameState = GameState.createInitial(gameId, firstPlayerId, turnDurationMillis);
         String json = serialize(gameState);
-        
-        redisTemplate.opsForValue().set(key, json, stateTtlMillis, java.util.concurrent.TimeUnit.MILLISECONDS);
+
+        Boolean success = redisTemplate.opsForValue().setIfAbsent(
+            key,
+            json,
+            stateTtlMillis,
+            TimeUnit.MILLISECONDS
+        );
+
+        if (!Boolean.TRUE.equals(success)) {
+            throw new IllegalStateException("Estado da partida já existe: " + gameId);
+        }
+
         log.debug("Estado inicial criado para partida {}", gameId);
     }
 
