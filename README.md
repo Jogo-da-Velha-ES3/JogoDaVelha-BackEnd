@@ -10,7 +10,7 @@ Backend de jogo da velha multiplayer por turnos usando Spring Boot + Maven, segu
 **Branch e Git**
 
 - Nunca commitar direto na main/dev — criar branch própria
-(ex: feat/nome-da-tarefa)
+(ex: feat/nome-da-tarefa ; refactor/nome-da-tarefa ; fix/nome-da-tarefa)
 
 - Atualizar sua branch com a dev regularmente para evitar divergência (git pull origin dev)
 
@@ -33,6 +33,15 @@ Backend de jogo da velha multiplayer por turnos usando Spring Boot + Maven, segu
 - Atualizar o README quando criar/mudar algo importante (endpoint, setup, etc.)
 
 - Endpoints documentados no Swagger (anotações OpenAPI aplicadas).
+
+📋 Guia Rápido de Prefixos de branches (Padrão de Mercado)
+Para manter o repositório limpo e seguro, a convenção internacional utiliza estas abreviações e palavras cheias:
+• feat/ (Abreviação de Feature): Para novas funcionalidades.
+• fix/ (Abreviação de Bugfix): Para correção de erros.
+• refactor/ (Palavra cheia): Para melhorias de código sem alterar comportamento.
+• docs/ (Abreviação de Documentation): Para alterações em README, wikis ou comentários.
+• chore/ (Palavra cheia): Para tarefas repetitivas ou configurações (ex: atualizar o .gitignore).
+
 
 ## 🏗️ Arquitetura
 
