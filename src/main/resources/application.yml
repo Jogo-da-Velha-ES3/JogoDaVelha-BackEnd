@@ -17,3 +17,9 @@ server:
 jwt:
   secret: ${JWT_SECRET:your-secret-key-change-in-production}
   expiration: ${JWT_EXPIRATION:86400000}
+
+game:
+  state:
+    ttl: ${GAME_STATE_TTL:1800000}
+    update:
+      max-retries: ${GAME_STATE_UPDATE_MAX_RETRIES:5}
