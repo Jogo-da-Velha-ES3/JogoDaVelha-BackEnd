@@ -10,7 +10,7 @@ Backend de jogo da velha multiplayer por turnos usando Spring Boot + Maven, segu
 **Branch e Git**
 
 - Nunca commitar direto na main/dev — criar branch própria
-(ex: feature/nome-da-tarefa)
+(ex: feat/nome-da-tarefa)
 
 - Atualizar sua branch com a dev regularmente para evitar divergência (git pull origin dev)
 
