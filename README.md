@@ -816,6 +816,19 @@ public ResponseEntity<Game> createGame(@Valid @RequestBody CreateGameRequest req
 
 Esta convenção será cobrada nos critérios de aceite das próximas tarefas.
 
+## Validação de jogadas (BE-018)
+
+`MoveValidator.validate(state, playerId, position, blockedPositions)` rejeita casa
+ocupada, jogador fora do turno e casa bloqueada por Escudo. As posições vão de 0
+a 15, da esquerda para a direita, linha por linha. O estado e os bloqueios devem
+vir do backend, não do cliente. `blockedPositions` contém as casas bloqueadas
+para aquele jogador; use `Set.of()` quando não houver bloqueios.
+
+O método apenas valida, sem alterar o tabuleiro ou acessar Redis. Ao implementar
+a BE-023, chame-o dentro de `GameStateManager.update`, antes de aplicar a jogada,
+para que a validação seja refeita se houver conflito de versão. Os efeitos e a
+duração do Escudo ficam na BE-014. Esta tarefa não altera migrations.
+
 ## 🧪 Testes
 
 O `RoomService` da BE-008 cria salas com `createRoom(playerId)` e permite entrada
