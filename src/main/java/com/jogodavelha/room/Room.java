@@ -60,9 +60,16 @@ public class Room {
             throw new IllegalStateException("A sala está cheia.");
         }
         player2 = player;
+        startIfFull();
+    }
+
+    public void startIfFull() {
+        if (status == RoomStatus.WAITING && player1 != null && player2 != null) {
+            status = RoomStatus.IN_GAME;
+        }
     }
 
     public boolean isReadyToStart() {
-        return status == RoomStatus.WAITING && player1 != null && player2 != null;
+        return (status == RoomStatus.WAITING || status == RoomStatus.IN_GAME) && player1 != null && player2 != null;
     }
 }

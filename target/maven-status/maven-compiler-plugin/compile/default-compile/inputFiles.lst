@@ -30,8 +30,14 @@ C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\j
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\JogoDaVelhaApplication.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\room\Room.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\room\RoomCodeAllocator.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\room\RoomController.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\room\RoomDTO.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\room\RoomExceptionHandler.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\room\RoomRepository.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\room\RoomService.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\room\RoomStatus.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\skill\Skill.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\skill\SkillCategory.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\skill\SkillRepository.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\websocket\GameMessage.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\websocket\WebSocketService.java

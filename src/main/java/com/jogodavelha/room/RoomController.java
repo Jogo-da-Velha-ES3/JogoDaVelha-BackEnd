@@ -57,7 +57,7 @@ public class RoomController {
     public ResponseEntity<RoomDTO> joinRoom(
             @Parameter(description = "Código de 4 dígitos da sala")
             @PathVariable String code,
-            @Parameter(description = "ID do jogador que está na sala")
+            @Parameter(description = "ID do jogador que deseja entrar na sala")
             @RequestParam UUID playerId
     ) {
         RoomDTO roomDTO = RoomDTO.from(roomService.joinRoom(code, playerId));

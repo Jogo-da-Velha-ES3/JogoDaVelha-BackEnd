@@ -43,14 +43,14 @@ class RoomServiceTest {
     }
 
     @Test
-    void secondPlayerMakesRoomReadyWithoutStartingGame() {
+    void secondPlayerMakesRoomReadyAndStartsGame() {
         prepareJoin();
         when(rooms.saveAndFlush(room)).thenReturn(room);
 
         assertSame(room, service.joinRoom("0042", guest.getId()));
         assertSame(guest, room.getPlayer2());
         assertTrue(room.isReadyToStart());
-        assertEquals(RoomStatus.WAITING, room.getStatus());
+        assertEquals(RoomStatus.IN_GAME, room.getStatus());
         var order = inOrder(allocator, rooms);
         order.verify(allocator).lockMembership();
         order.verify(rooms).findByCodeAndStatusIn("0042", RoomCodeAllocator.ACTIVE);
@@ -84,8 +84,21 @@ class RoomServiceTest {
         prepareJoin();
         User second = player("second");
         room.join(second);
-        assertJoinRejected("A sala está cheia.");
+        assertJoinRejected("A partida desta sala já foi iniciada.");
         assertSame(second, room.getPlayer2());
+    }
+
+    @Test
+    void rejectsThirdPlayerWhenRoomIsInGame() {
+        prepareJoin();
+        User second = player("second");
+        User third = player("third");
+        room.join(second);
+        room.setStatus(RoomStatus.IN_GAME);
+        when(users.findById(third.getId())).thenReturn(Optional.of(third));
+        var error = assertThrows(IllegalStateException.class, () -> service.joinRoom("0042", third.getId()));
+        assertEquals("A partida desta sala já foi iniciada.", error.getMessage());
+        verify(rooms, never()).saveAndFlush(any());
     }
 
     @Test
