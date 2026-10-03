@@ -121,6 +121,10 @@ cp .env.example .env
 - `JWT_EXPIRATION` — Tempo de expiração do token JWT em milissegundos (padrão: 86400000)
 - `SERVER_PORT` — Porta da aplicação (padrão: 8080)
 
+**⚠️ NOVAS VARIÁVEIS (adicionar ao .env existente):**
+- `GAME_STATE_TTL` — TTL em milissegundos para estado da partida (padrão: 1800000 = 30 minutos)
+- `GAME_STATE_UPDATE_MAX_RETRIES` — Máximo de tentativas de retry em conflitos (padrão: 5)
+
 ### Como Rodar o Projeto
 
 A forma recomendada de rodar o projeto é usando Docker Compose. Ele cria um ambiente completo com o backend, PostgreSQL e Redis, sem exigir Java, Maven ou os bancos instalados diretamente na máquina.
@@ -334,6 +338,10 @@ Isso deixa a ideia bem mais clara: character é um domínio e dentro dela ficam 
 - `SERVER_PORT` — Porta da aplicação (padrão: 8080)
 - `SPRING_PROFILES_ACTIVE` — Profile ativo (padrão: dev)
 
+**⚠️ NOVAS VARIÁVEIS (BE-017):**
+- `GAME_STATE_TTL` — TTL em milissegundos para estado da partida (padrão: 1800000)
+- `GAME_STATE_UPDATE_MAX_RETRIES` — Máximo de tentativas de retry em conflitos (padrão: 5)
+
 ### Arquivos de Configuração
 
 - `application.yml` — Configuração principal com padrões de variáveis de ambiente
@@ -474,6 +482,104 @@ Se uma alteração manual já tiver sido realizada, o estado do banco deve ser c
 * **Redis**: utilizado para estado temporário e de alta velocidade das partidas, como jogos em andamento, turnos e locks.
 
 As migrations são utilizadas somente para o PostgreSQL. Não são criadas migrations para estruturas ou estado temporário do Redis.
+
+## 🎮 Estado da Partida em Redis
+
+### ⚠️ Atualização Necessária: Novas Variáveis de Ambiente
+
+A tarefa BE-017 adicionou novas variáveis de ambiente para configuração do estado da partida em Redis. Se você já tem um arquivo `.env`, adicione as seguintes variáveis:
+
+```bash
+# Game State Configuration (NOVAS VARIÁVEIS - BE-017)
+GAME_STATE_TTL=
+GAME_STATE_UPDATE_MAX_RETRIES=
+```
+
+Ou copie o arquivo atualizado de exemplo e preencha os valores:
+```bash
+cp .env.example .env
+```
+
+O Redis é utilizado para armazenar o estado ativo das partidas em andamento, proporcionando acesso rápido e suporte a alta concorrência.
+
+### GameStateManager
+
+O `GameStateManager` é o único ponto de acesso ao Redis para estado de partida. Ele gerencia o estado do round em curso com as seguintes responsabilidades:
+
+- **Criação**: Cria o estado inicial da partida com grid vazio, turno definido e prazo calculado
+- **Leitura**: Busca o estado atual de uma partida
+- **Atualização**: Atualiza o estado de forma atômica com controle de versão (compare-and-set)
+- **Remoção**: Remove o estado ao fim da partida
+
+### Modelo GameState
+
+O modelo `GameState` representa o estado ativo da partida com os seguintes campos:
+
+- `gameId` (UUID): Identificador da partida
+- `board` (String[16]): Grid 4x4 representado como string (ex: `"----------------"`)
+- `firstPlayerId` (UUID): ID do jogador que começa a partida
+- `currentTurnPlayerId` (UUID): ID do jogador com o turno atual
+- `turnDurationMillis` (long): Duração do turno em milissegundos
+- `turnDeadlineEpochMillis` (long): Prazo do turno em epoch millis
+- `roundNumber` (int): Número do round atual (cópia de leitura rápida)
+- `suddenDeath` (boolean): Flag de morte súbita (cópia de leitura rápida)
+- `version` (long): Versão para controle otimista de concorrência
+
+O modelo é serializável em JSON e tolerante a campos novos e ausentes, permitindo extensibilidade futura sem quebrar estados já gravados.
+
+### Controle de Concorrência
+
+O `GameStateManager` utiliza controle otimista de concorrência com o seguinte fluxo:
+
+1. Lê o estado atual
+2. Aplica o mutator (função de modificação)
+3. Tenta gravar de forma atômica se a versão não mudou (compare-and-set via script Lua)
+4. Em conflito, relê e tenta novamente (máximo de tentativas configurável)
+5. Ao estourar as tentativas, lança `ConcurrentStateModificationException`
+
+### Configuração
+
+As seguintes propriedades configuram o comportamento do `GameStateManager`:
+
+- `game.state.ttl`: TTL em milissegundos para partidas abandonadas (padrão: 1800000 = 30 minutos)
+- `game.state.update.max-retries`: Número máximo de tentativas de retry em conflitos (padrão: 5)
+
+Essas propriedades podem ser configuradas via variáveis de ambiente:
+
+- `GAME_STATE_TTL`: TTL para estado da partida
+- `GAME_STATE_UPDATE_MAX_RETRIES`: Máximo de tentativas de retry
+
+### Chaves Redis
+
+As chaves seguem o padrão: `game:state:{gameId}`
+
+Exemplo: `game:state:550e8400-e29b-41d4-a716-446655440000`
+
+### Segurança
+
+O Redis **não** deve ficar exposto publicamente. No docker-compose.yml, o serviço Redis tem a porta publicada apenas para `127.0.0.1` (localhost), permitindo acesso local para desenvolvimento mas não exposto para fora da máquina. Host e credenciais são configurados via variáveis de ambiente, considerando serviços gerenciados como Upstash para produção (BE-033).
+
+### Testes
+
+Os testes de integração do `GameStateManager` utilizam Testcontainers Redis para garantir que o comportamento seja testado em um ambiente real de Redis. Para rodar os testes de integração, é necessário ter o Docker Desktop em execução:
+
+```bash
+# Rodar apenas testes unitários (não requer Docker)
+mvn test -Dtest=GameStateTest
+
+# Rodar testes de integração (requer Docker Desktop em execução)
+mvn test -Dtest=GameStateManagerIT
+```
+
+Os testes incluem:
+- Criação e leitura de estado
+- Atualização com sucesso
+- Conflito de concorrência com retry
+- Estouro de tentativas de retry
+- TTL configurado e renovado
+- Expiração de TTL
+- Testes de concorrência com 2 e 10 threads simultâneas
+- Desserialização tolerante a campos novos e ausentes
 
 ### Fluxo de desenvolvimento
 
