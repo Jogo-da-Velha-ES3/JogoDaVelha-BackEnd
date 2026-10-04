@@ -10,7 +10,7 @@ Backend de jogo da velha multiplayer por turnos usando Spring Boot + Maven, segu
 **Branch e Git**
 
 - Nunca commitar direto na main/dev — criar branch própria
-(ex: feat/nome-da-tarefa)
+(ex: feat/nome-da-tarefa ; refactor/nome-da-tarefa ; fix/nome-da-tarefa)
 
 - Atualizar sua branch com a dev regularmente para evitar divergência (git pull origin dev)
 
@@ -33,6 +33,15 @@ Backend de jogo da velha multiplayer por turnos usando Spring Boot + Maven, segu
 - Atualizar o README quando criar/mudar algo importante (endpoint, setup, etc.)
 
 - Endpoints documentados no Swagger (anotações OpenAPI aplicadas).
+
+#### Guia Rápido de Prefixos de branches (Padrão de Mercado)
+Para manter o repositório limpo e seguro, a convenção internacional utiliza estas abreviações e palavras cheias:
+- feat/ (Abreviação de Feature): Para novas funcionalidades.
+- fix/ (Abreviação de Bugfix): Para correção de erros.
+- refactor/ (Palavra cheia): Para melhorias de código sem alterar comportamento.
+- docs/ (Abreviação de Documentation): Para alterações em README, wikis ou comentários.
+- chore/ (Palavra cheia): Para tarefas repetitivas ou configurações (ex: atualizar o .gitignore).
+
 
 ## 🏗️ Arquitetura
 
@@ -806,6 +815,19 @@ public ResponseEntity<Game> createGame(@Valid @RequestBody CreateGameRequest req
 ```
 
 Esta convenção será cobrada nos critérios de aceite das próximas tarefas.
+
+## Validação de jogadas (BE-018)
+
+`MoveValidator.validate(state, playerId, position, blockedPositions)` rejeita casa
+ocupada, jogador fora do turno e casa bloqueada por Escudo. As posições vão de 0
+a 15, da esquerda para a direita, linha por linha. O estado e os bloqueios devem
+vir do backend, não do cliente. `blockedPositions` contém as casas bloqueadas
+para aquele jogador; use `Set.of()` quando não houver bloqueios.
+
+O método apenas valida, sem alterar o tabuleiro ou acessar Redis. Ao implementar
+a BE-023, chame-o dentro de `GameStateManager.update`, antes de aplicar a jogada,
+para que a validação seja refeita se houver conflito de versão. Os efeitos e a
+duração do Escudo ficam na BE-014. Esta tarefa não altera migrations.
 
 ## 🧪 Testes
 
