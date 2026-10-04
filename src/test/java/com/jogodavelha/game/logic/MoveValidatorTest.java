@@ -60,8 +60,10 @@ class MoveValidatorTest {
     void rejectsStateWithoutCurrentPlayer() {
         state.setCurrentTurnPlayerId(null);
 
-        assertThrows(IllegalStateException.class,
+        var error = assertThrows(IllegalStateException.class,
                 () -> validator.validate(state, playerId, 0, Set.of()));
+
+        assertEquals("Não é o turno deste jogador.", error.getMessage());
     }
 
     @Test

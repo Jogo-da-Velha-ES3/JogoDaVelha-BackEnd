@@ -4,9 +4,11 @@ import org.springframework.stereotype.Component;
 
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Component
 public class MoveValidator {
+    private static final Pattern VALID_BOARD = Pattern.compile("[XO-]{" + GameState.BOARD_SIZE + "}");
 
     public void validate(GameState state, UUID playerId, int position, Set<Integer> blockedPositions) {
         if (state == null || playerId == null || blockedPositions == null) {
@@ -17,10 +19,10 @@ public class MoveValidator {
         }
 
         String board = state.getBoard();
-        if (board == null || !board.matches("[XO-]{" + GameState.BOARD_SIZE + "}")) {
+        if (board == null || !VALID_BOARD.matcher(board).matches()) {
             throw new IllegalStateException("O tabuleiro deve conter 16 casas com X, O ou -.");
         }
-        if (!playerId.equals(state.getCurrentTurnPlayerId())) {
+        if (state.getCurrentTurnPlayerId() == null || !playerId.equals(state.getCurrentTurnPlayerId())) {
             throw new IllegalStateException("Não é o turno deste jogador.");
         }
         if (board.charAt(position) != '-') {
