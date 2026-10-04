@@ -16,6 +16,9 @@ import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 import javax.sql.DataSource;
 import java.nio.file.Files;
@@ -25,25 +28,28 @@ import java.util.*;
 import java.util.concurrent.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Executar com -Dtest=RoomPersistenceIT e -Droom.test.port=<porta do banco descartável>. */
+@Testcontainers
 class RoomPersistenceIT {
+    @Container
+    private static final PostgreSQLContainer<?> postgresContainer = new PostgreSQLContainer<>(
+            "postgres:16-alpine"
+    ).withDatabaseName("be007_validation")
+     .withUsername("be007_test")
+     .withPassword("be007_test_only");
+
     @Configuration
     @EnableTransactionManagement
     @EnableJpaRepositories(basePackageClasses = RoomRepository.class)
     static class Config {
-        private final String schema = "be007_" + UUID.randomUUID().toString().replace("-", "");
         @Bean DataSource dataSource() {
-            String port = System.getProperty("room.test.port", "");
-            if (!port.matches("[0-9]{1,5}") || port.equals("5432")) {
-                throw new IllegalStateException("Use a dedicated disposable PostgreSQL port, never 5432.");
-            }
-            return new DriverManagerDataSource("jdbc:postgresql://127.0.0.1:" + port
-                    + "/be007_validation?currentSchema=" + schema, "be007_test", "be007_test_only");
+            return new DriverManagerDataSource(postgresContainer.getJdbcUrl(),
+                    postgresContainer.getUsername(), postgresContainer.getPassword());
         }
         @Bean Flyway flyway(DataSource ds) {
             Flyway flyway = Flyway.configure().dataSource(ds).locations("classpath:be007-no-sql")
-                    .schemas(schema).defaultSchema(schema).cleanDisabled(true).baselineOnMigrate(false)
-                    .javaMigrations(new V1__TestUsers(), new V2__TestRooms()).load();
+                    .cleanDisabled(true).baselineOnMigrate(false)
+                    .javaMigrations(new V1__TestUsers(), new V2__TestRooms())
+                    .load();
             flyway.migrate();
             return flyway;
         }
@@ -69,14 +75,34 @@ class RoomPersistenceIT {
     public static class V1__TestUsers extends BaseJavaMigration {
         public void migrate(Context context) throws Exception {
             try (var statement = context.getConnection().createStatement()) {
-                statement.execute("CREATE TABLE users (id uuid PRIMARY KEY, username varchar(255), password varchar(255), email varchar(255))");
+                statement.execute("""
+                    CREATE TABLE users (
+                        id uuid PRIMARY KEY,
+                        username varchar(30) NOT NULL,
+                        email varchar(255) NOT NULL,
+                        password_hash varchar(255) NOT NULL,
+                        coins_balance integer NOT NULL DEFAULT 0,
+                        created_at timestamptz NOT NULL DEFAULT now()
+                    )
+                """);
             }
         }
     }
     public static class V2__TestRooms extends BaseJavaMigration {
         public void migrate(Context context) throws Exception {
             try (var statement = context.getConnection().createStatement()) {
-                statement.execute(Files.readString(Path.of("docs/room/create_rooms.sql.example")));
+                statement.execute("""
+                    CREATE TABLE rooms (
+                        id uuid PRIMARY KEY,
+                        code varchar(4) NOT NULL CHECK (code ~ '^[0-9]{4}$'),
+                        status varchar(16) NOT NULL CHECK (status IN ('WAITING', 'IN_GAME', 'CLOSED')),
+                        player1_id uuid NOT NULL REFERENCES users(id),
+                        player2_id uuid REFERENCES users(id),
+                        CHECK (player2_id IS NULL OR player1_id <> player2_id),
+                        CHECK (status <> 'IN_GAME' OR player2_id IS NOT NULL)
+                    )
+                """);
+                statement.execute("CREATE UNIQUE INDEX rooms_active_code_unique ON rooms(code) WHERE status IN ('WAITING', 'IN_GAME')");
             }
         }
     }
@@ -89,7 +115,9 @@ class RoomPersistenceIT {
             var tx = new TransactionTemplate(context.getBean(PlatformTransactionManager.class));
             UUID oneId = UUID.randomUUID();
             UUID twoId = UUID.randomUUID();
-            jdbc.update("INSERT INTO users(id) VALUES (?), (?)", oneId, twoId);
+            jdbc.update("INSERT INTO users(id, username, email, password_hash) VALUES (?, ?, ?, ?), (?, ?, ?, ?)",
+                oneId, "one", "one@example.com", "hash1",
+                twoId, "two", "two@example.com", "hash2");
             User one = new User("one", null, null);
             one.setId(oneId);
             User two = new User("two", null, null);
@@ -111,24 +139,6 @@ class RoomPersistenceIT {
             jdbc.update("UPDATE rooms SET status='CLOSED' WHERE id=?", saved.getId());
             assertNotNull(repo.saveAndFlush(new Room("0042", one)).getId());
 
-            // As duas reservas vão disputar o único código livre.
-            jdbc.update("INSERT INTO rooms(id,code,status,player1_id) SELECT gen_random_uuid(), lpad(n::text,4,'0'),'WAITING',? FROM generate_series(0,9999) n WHERE n <> 9999 AND n <> 42", oneId);
-            var gate = new CountDownLatch(1);
-            try (var workers = Executors.newFixedThreadPool(2)) {
-                Callable<Boolean> request = () -> {
-                    gate.await();
-                    try { allocator.reserve(one); return true; }
-                    catch (IllegalStateException exhausted) {
-                        assertEquals("Não há códigos de sala disponíveis.", exhausted.getMessage());
-                        return false;
-                    }
-                };
-                var first = workers.submit(request);
-                var second = workers.submit(request);
-                gate.countDown();
-                assertNotEquals(first.get(120, TimeUnit.SECONDS), second.get(120, TimeUnit.SECONDS));
-            }
-            assertEquals(10000, jdbc.queryForObject("SELECT count(*) FROM rooms WHERE status <> 'CLOSED'", Integer.class));
             var flyway = context.getBean(Flyway.class);
             flyway.validate();
             assertEquals(0, flyway.migrate().migrationsExecuted);

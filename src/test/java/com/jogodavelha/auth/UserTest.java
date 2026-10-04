@@ -8,7 +8,7 @@ class UserTest {
 
     @Test
     void testAddCoinsPositiveAmount() {
-        User user = new User("test", "pass", "test@test.com");
+        User user = new User("test", "hashedPass", "test@test.com");
         user.setCoinsBalance(100);
 
         user.addCoins(50);
@@ -18,7 +18,7 @@ class UserTest {
 
     @Test
     void testAddCoinsZeroAmount() {
-        User user = new User("test", "pass", "test@test.com");
+        User user = new User("test", "hashedPass", "test@test.com");
         user.setCoinsBalance(100);
 
         user.addCoins(0);
@@ -28,7 +28,7 @@ class UserTest {
 
     @Test
     void testAddCoinsNegativeAmountThrowsException() {
-        User user = new User("test", "pass", "test@test.com");
+        User user = new User("test", "hashedPass", "test@test.com");
         user.setCoinsBalance(100);
 
         assertThrows(IllegalArgumentException.class, () -> {
@@ -40,7 +40,7 @@ class UserTest {
 
     @Test
     void testAddCoinsToZeroBalance() {
-        User user = new User("test", "pass", "test@test.com");
+        User user = new User("test", "hashedPass", "test@test.com");
         user.setCoinsBalance(0);
 
         user.addCoins(100);

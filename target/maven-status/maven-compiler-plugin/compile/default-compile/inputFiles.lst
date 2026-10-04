@@ -1,8 +1,10 @@
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\auth\AuthController.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\auth\AuthService.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\auth\EmailAlreadyExistsException.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\auth\LoginRequest.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\auth\RegisterRequest.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\auth\User.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\auth\UsernameAlreadyExistsException.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\auth\UserRepository.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\config\OpenApiConfig.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\config\RedisConfig.java
