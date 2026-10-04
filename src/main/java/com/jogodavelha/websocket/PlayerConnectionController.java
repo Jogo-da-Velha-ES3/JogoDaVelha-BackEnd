@@ -4,9 +4,9 @@ import com.jogodavelha.game.PlayerSessionRegistry;
 import com.jogodavelha.game.service.PlayerService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
+import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.RequestMapping;
 
 import java.util.UUID;
 
@@ -21,7 +21,7 @@ public class PlayerConnectionController {
     TODO: substituir o recebimento de playerId no payload pela extração do usuário
      autenticado, quando o módulo de autenticação existir.
     */
-    @RequestMapping("/room/{code}/connect")
+    @MessageMapping("/room/{code}/connect")
     public void connect(
             @DestinationVariable String code,
             PlayerConnectRequest request,
