@@ -492,6 +492,39 @@ Se uma alteração manual já tiver sido realizada, o estado do banco deve ser c
 
 As migrations são utilizadas somente para o PostgreSQL. Não são criadas migrations para estruturas ou estado temporário do Redis.
 
+## 🔐 Autenticação e Cadastro
+
+### Cadastro de Usuário
+
+O módulo `auth/` implementa o cadastro de usuários com as seguintes validações e regras:
+
+**Regras de Validação (RegisterRequest):**
+- **username**: Obrigatório, entre 3 e 15 caracteres (após trim), aceita qualquer caractere (incluindo emojis e caracteres especiais)
+- **email**: Obrigatório, formato válido com TLD de pelo menos 2 letras (ex: `user@example.com`), máximo 254 caracteres, normalizado para minúsculas
+- **password**: Obrigatório, entre 6 e 72 caracteres (limite do BCrypt)
+
+**Segurança:**
+- Senhas são hasheadas com BCrypt antes de persistir no banco
+- A senha nunca é armazenada em texto plano, logada ou retornada em respostas
+- Username é case-insensitive (ex: "Victor" e "victor" são considerados duplicados)
+- E-mail é case-insensitive e normalizado para minúsculas
+
+**Exceções de Domínio:**
+- `UsernameAlreadyExistsException`: Lançada quando o username já está em uso (será mapeada para HTTP 409 na BE-006)
+- `EmailAlreadyExistsException`: Lançada quando o e-mail já está em uso (será mapeada para HTTP 409 na BE-006)
+
+**Estrutura da Tabela `users`:**
+- `id`: UUID (PRIMARY KEY)
+- `username`: VARCHAR(30) NOT NULL (índice único case-insensitive via `lower(username)`)
+- `email`: VARCHAR(255) NOT NULL (único)
+- `password_hash`: VARCHAR(255) NOT NULL (hash BCrypt)
+- `coins_balance`: INTEGER NOT NULL DEFAULT 0 (CHECK >= 0)
+- `created_at`: TIMESTAMPTZ NOT NULL DEFAULT now()
+
+**Migrations:**
+- `V1__create_users.sql`: Criação inicial da tabela users
+- `V10__add_case_insensitive_username_index.sql`: Adiciona índice único case-insensitive em username
+
 ## 🎮 Estado da Partida em Redis
 
 ### ⚠️ Atualização Necessária: Novas Variáveis de Ambiente
