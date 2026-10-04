@@ -27,7 +27,7 @@ public class User {
     private String username;
 
     @Column(name = "password_hash", nullable = false)
-    private String password;
+    private String passwordHash;
 
     @Column(nullable = false, length = 255, unique = true)
     private String email;
@@ -35,9 +35,9 @@ public class User {
     @Column(name = "coins_balance", nullable = false)
     private Integer coinsBalance = 0;
 
-    public User(String username, String password, String email) {
+    public User(String username, String passwordHash, String email) {
         this.username = username;
-        this.password = password;
+        this.passwordHash = passwordHash;
         this.email = email;
     }
 

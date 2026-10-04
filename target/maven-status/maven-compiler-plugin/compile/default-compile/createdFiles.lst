@@ -13,6 +13,7 @@ com\jogodavelha\game\logic\GameValidator.class
 com\jogodavelha\game\Score.class
 com\jogodavelha\game\logic\GameStateManager.class
 com\jogodavelha\auth\RegisterRequest.class
+com\jogodavelha\skill\SkillRepository.class
 com\jogodavelha\game\logic\GameState$GameStateBuilder.class
 com\jogodavelha\game\service\TurnService.class
 com\jogodavelha\game\Game.class
@@ -32,13 +33,17 @@ com\jogodavelha\game\service\GameService$1.class
 com\jogodavelha\health\HealthController$HealthResponse.class
 com\jogodavelha\config\OpenApiConfig.class
 com\jogodavelha\room\RoomService.class
+com\jogodavelha\auth\UsernameAlreadyExistsException.class
 com\jogodavelha\config\SecurityConfig.class
 com\jogodavelha\JogoDaVelhaApplication.class
 com\jogodavelha\room\Room.class
+com\jogodavelha\auth\EmailAlreadyExistsException.class
 com\jogodavelha\game\logic\GameState.class
 com\jogodavelha\room\RoomRepository.class
+com\jogodavelha\skill\Skill.class
 com\jogodavelha\config\RedisConfig.class
 com\jogodavelha\room\RoomDTO.class
 com\jogodavelha\room\RoomExceptionHandler.class
 com\jogodavelha\health\HealthController.class
 com\jogodavelha\auth\AuthController.class
+com\jogodavelha\skill\SkillCategory.class
