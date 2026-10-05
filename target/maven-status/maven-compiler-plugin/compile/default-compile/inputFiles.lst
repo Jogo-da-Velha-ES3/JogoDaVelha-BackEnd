@@ -1,11 +1,18 @@
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\auth\AuthController.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\auth\AuthService.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\auth\EmailAlreadyExistsException.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\auth\InvalidCredentialsException.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\auth\JwtService.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\auth\LoginRequest.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\auth\LoginResult.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\auth\RegisterRequest.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\auth\User.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\auth\UsernameAlreadyExistsException.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\auth\UserRepository.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\character\Character.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\character\CharacterRepository.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\character\CharacterSymbol.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\config\JwtProperties.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\config\OpenApiConfig.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\config\RedisConfig.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\config\SecurityConfig.java
@@ -23,6 +30,8 @@ C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\j
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\logic\GameStateNotFoundException.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\logic\GameValidator.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\logic\MoveValidator.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\PlayerDisconnectionListener.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\PlayerSessionRegistry.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\RoundResult.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\Score.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\service\GameService.java
@@ -42,4 +51,5 @@ C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\j
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\skill\SkillCategory.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\skill\SkillRepository.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\websocket\GameMessage.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\websocket\PlayerConnectionController.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\websocket\WebSocketService.java

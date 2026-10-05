@@ -17,10 +17,12 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
 
-    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.jwtService = jwtService;
     }
 
     /**
@@ -60,5 +62,39 @@ public class AuthService {
             }
             throw e;
         }
+    }
+
+    /**
+     * Autentica um usuário usando e-mail ou username e senha.
+     *
+     * @param request DTO com as credenciais (identifier = e-mail ou username)
+     * @return LoginResult contendo o token JWT e o usuário autenticado
+     * @throws InvalidCredentialsException se as credenciais forem inválidas
+     * @throws jakarta.validation.ConstraintViolationException se a validação falhar
+     * <p>
+     * NOTA: Esta exceção será mapeada para HTTP 401 (Unauthorized) na BE-006.
+     */
+    @Transactional(readOnly = true)
+    public LoginResult login(@Valid LoginRequest request) {
+        String identifier = request.identifier().trim();
+        String normalizedEmail = identifier.toLowerCase();
+
+        // Tenta buscar por e-mail primeiro
+        User user = userRepository.findByEmail(normalizedEmail)
+                .orElseGet(() -> userRepository.findByUsernameIgnoreCase(identifier)
+                        .orElse(null));
+
+        if (user == null) {
+            // Executa um BCrypt dummy para evitar timing attacks
+            passwordEncoder.matches(request.password(), "$2a$10$dummyhashhashhashhashhashhashhashhashhashhashhashhash");
+            throw new InvalidCredentialsException("Credenciais inválidas");
+        }
+
+        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            throw new InvalidCredentialsException("Credenciais inválidas");
+        }
+
+        String token = jwtService.generateToken(user);
+        return new LoginResult(token, user);
     }
 }
