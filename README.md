@@ -126,8 +126,8 @@ cp .env.example .env
 - `DB_NAME` — Nome do banco de dados PostgreSQL
 - `DB_PORT` — Porta do PostgreSQL (padrão: 5432)
 - `REDIS_PORT` — Porta do Redis (padrão: 6379)
-- `JWT_SECRET` — Chave secreta para assinatura JWT
-- `JWT_EXPIRATION` — Tempo de expiração do token JWT em milissegundos (padrão: 86400000)
+- `JWT_SECRET` — Chave secreta para assinatura JWT (mínimo 32 bytes, gere com `openssl rand -base64 32`)
+- `JWT_EXPIRATION` — Tempo de expiração do token JWT em milissegundos (ex: 86400000 = 24 horas)
 - `SERVER_PORT` — Porta da aplicação (padrão: 8080)
 
 **⚠️ NOVAS VARIÁVEIS (adicionar ao .env existente):**
@@ -342,8 +342,8 @@ Isso deixa a ideia bem mais clara: character é um domínio e dentro dela ficam 
 - `DB_PORT` — Porta do PostgreSQL (padrão: 5432)
 - `REDIS_HOST` — Host do servidor Redis (usado internamente pelo Docker Compose)
 - `REDIS_PORT` — Porta do servidor Redis (padrão: 6379)
-- `JWT_SECRET` — Chave secreta para assinatura JWT
-- `JWT_EXPIRATION` — Tempo de expiração do token JWT (ms)
+- `JWT_SECRET` — Chave secreta para assinatura JWT (mínimo 32 bytes, gere com `openssl rand -base64 32`)
+- `JWT_EXPIRATION` — Tempo de expiração do token JWT em milissegundos (ex: 86400000 = 24 horas)
 - `SERVER_PORT` — Porta da aplicação (padrão: 8080)
 - `SPRING_PROFILES_ACTIVE` — Profile ativo (padrão: dev)
 
@@ -518,6 +518,42 @@ O módulo `auth/` implementa o cadastro de usuários com as seguintes validaçõ
 - `username`: VARCHAR(30) NOT NULL (índice único case-insensitive via `lower(username)`)
 - `email`: VARCHAR(255) NOT NULL (único)
 - `password_hash`: VARCHAR(255) NOT NULL (hash BCrypt)
+
+### Login e Geração de JWT
+
+O módulo `auth/` implementa autenticação via login com geração de tokens JWT.
+
+**Formato do Login (LoginRequest):**
+- **identifier**: Obrigatório, pode ser e-mail ou username (máximo 254 caracteres)
+- **password**: Obrigatório (validação apenas de presença, sem restrição de tamanho no login)
+
+**Regras de Autenticação:**
+- O identifier é trimado e testado primeiro como e-mail (busca case-insensitive em minúsculas)
+- Se não encontrar por e-mail, busca por username (case-insensitive via `lower(username)`)
+- Não é decidido "é e-mail ou username" por presença de "@" ou regex, pois username aceita qualquer caractere
+- E-mail tem prioridade sobre username quando o identifier coincide com ambos
+- Senha incorreta e usuário inexistente lançam a mesma exceção genérica para evitar enumeração
+- BCrypt dummy é executado quando usuário não existe para reduzir timing attacks
+
+**Geração do Token JWT:**
+- Algoritmo: HS256
+- Subject: ID do usuário (UUID em String)
+- Claims mínimas: apenas subject, issuedAt e expiration (sem e-mail, username ou senha)
+- Expiração: configurável via `JWT_EXPIRATION` (em milissegundos)
+- Validação de token em requisições será implementada na BE-005 (filtro JWT)
+
+**Configuração JWT (Variáveis de Ambiente):**
+- `JWT_SECRET`: Chave secreta para assinatura JWT (mínimo 32 bytes para HS256)
+  - A aplicação falha ao iniciar se o secret for ausente ou menor que 32 bytes (fail fast)
+  - Para desenvolvimento, gere um secret com: `openssl rand -base64 32`
+  - Nunca use o valor do .env.example em produção
+- `JWT_EXPIRATION`: Tempo de expiração do token em milissegundos
+  - Exemplo: 86400000 = 24 horas, 3600000 = 1 hora
+
+**Exceções de Domínio:**
+- `InvalidCredentialsException`: Lançada quando as credenciais são inválidas (será mapeada para HTTP 401 na BE-006)
+  - Mensagem genérica "Credenciais inválidas" para usuário inexistente ou senha incorreta
+  - Não indica se o usuário existe para evitar enumeração
 - `coins_balance`: INTEGER NOT NULL DEFAULT 0 (CHECK >= 0)
 - `created_at`: TIMESTAMPTZ NOT NULL DEFAULT now()
 
