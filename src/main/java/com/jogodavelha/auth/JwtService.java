@@ -9,6 +9,7 @@ import javax.crypto.SecretKey;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Date;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -45,5 +46,24 @@ public class JwtService {
                 .expiration(Date.from(expiration))
                 .signWith(key)
                 .compact();
+    }
+
+    /** Validates a signed token using the same key and clock as token generation. */
+    public Optional<UUID> extractUserId(String token) {
+        if (token == null || token.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            String subject = Jwts.parser()
+                    .verifyWith(key)
+                    .clock(() -> Date.from(clock.instant()))
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload()
+                    .getSubject();
+            return Optional.ofNullable(subject).map(UUID::fromString);
+        } catch (JwtException | IllegalArgumentException | NullPointerException exception) {
+            return Optional.empty();
+        }
     }
 }

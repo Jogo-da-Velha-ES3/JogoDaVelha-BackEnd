@@ -967,3 +967,11 @@ Para o ambiente de produção, foi decidido o seguinte stack de hospedagem:
 - A estrutura do projeto separa claramente as responsabilidades seguindo convenções do Spring Boot
 - As entidades e DTOs utilizam anotações do Lombok (@Data, @NoArgsConstructor, @AllArgsConstructor) para geração automática de getters, setters e construtores
 - A estrutura básica dos arquivos foi criada seguindo a arquitetura de domínios definida
+
+## Autenticação JWT
+
+Rotas protegidas exigem o cabeçalho `Authorization: Bearer <token>`. O token é obtido pelo fluxo de autenticação (`POST /auth/login` e `POST /auth/register`). Tokens válidos autenticam o UUID do usuário; o filtro não consulta o banco. Requisições sem token ou com token inválido recebem HTTP 401 e um corpo JSON com a mensagem genérica `Autenticação necessária ou token inválido`.
+
+Rotas públicas: `/auth/**`, `GET /api/health`, `/v3/api-docs/**`, `/swagger-ui/**`, `/swagger-ui.html` e `/ws/**`. O handshake HTTP WebSocket está aberto; autenticação STOMP ainda não está implementada, portanto qualquer cliente pode conectar, assinar `/topic/**` e publicar em `/app/**`.
+
+CORS ainda não está configurado (BE-034): preflight OPTIONS de outras origens não é tratado; a lista de origens permitidas do `WebSocketConfig` é independente e também deve ser revisada.
