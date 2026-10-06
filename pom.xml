@@ -116,6 +116,13 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- Spring MVC test support (split out from the general test starter in Boot 4) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!-- Spring Security Test -->
         <dependency>
             <groupId>org.springframework.security</groupId>
