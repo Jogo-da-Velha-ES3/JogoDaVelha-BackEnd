@@ -898,6 +898,15 @@ a BE-023, chame-o dentro de `GameStateManager.update`, antes de aplicar a jogada
 para que a validação seja refeita se houver conflito de versão. Os efeitos e a
 duração do Escudo ficam na BE-014. Esta tarefa não altera migrations.
 
+## Vitória e empate (BE-019)
+
+`GameValidator.findWinner(board)` retorna o símbolo X ou O quando há quatro iguais
+em uma linha, coluna ou diagonal do grid 4x4; sem vencedor, retorna `Optional.empty()`.
+`isDraw(board)` só retorna true quando as 16 casas estão ocupadas e não há vencedor.
+Ambos recebem o tabuleiro de `GameState.getBoard()`, com X, O e - para casa vazia,
+e rejeitam formato inválido com `IllegalArgumentException`. Não alteram o estado
+nem acessam banco ou Redis. A integração com as jogadas fica na BE-023.
+
 ## 🧪 Testes
 
 O `RoomService` da BE-008 cria salas com `createRoom(playerId)` e permite entrada
