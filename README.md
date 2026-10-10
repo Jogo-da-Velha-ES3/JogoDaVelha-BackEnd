@@ -595,15 +595,30 @@ O modelo `GameState` representa o estado ativo da partida com os seguintes campo
 
 - `gameId` (UUID): Identificador da partida
 - `board` (String[16]): Grid 4x4 representado como string (ex: `"----------------"`)
+- `player1Id` / `player2Id` (UUID): Jogadores da partida; P1 usa X e P2 usa O
 - `firstPlayerId` (UUID): ID do jogador que começa a partida
 - `currentTurnPlayerId` (UUID): ID do jogador com o turno atual
 - `turnDurationMillis` (long): Duração do turno em milissegundos
 - `turnDeadlineEpochMillis` (long): Prazo do turno em epoch millis
 - `roundNumber` (int): Número do round atual (cópia de leitura rápida)
 - `suddenDeath` (boolean): Flag de morte súbita (cópia de leitura rápida)
+- `player1ConsecutiveTimeouts` / `player2ConsecutiveTimeouts` (int): Timeouts consecutivos de cada jogador
 - `version` (long): Versão para controle otimista de concorrência
 
 O modelo é serializável em JSON e tolerante a campos novos e ausentes, permitindo extensibilidade futura sem quebrar estados já gravados.
+
+Na BE-017.1, use `create(gameId, player1Id, player2Id, turnDurationMillis)` para criar
+o estado completo. O primeiro jogador é sorteado uma vez com `SecureRandom`, que
+pode ser passado ao construtor do manager nos testes. `firstPlayerId` guarda quem
+começou o round 1; os rounds seguintes alternam a partir dele, sem trocar as marcas.
+`getPlayerSymbol` e `getOpponentId` consultam esse mapeamento.
+
+`startRound(round, durationMillis, startedAtMillis)` limpa o tabuleiro, define o
+primeiro turno e o prazo e ativa morte súbita no round 3. Não zera os contadores
+de timeout nem altera o placar, que continua na entidade `Game`. Use `recordTimeout`
+e `resetTimeouts` para atualizar o contador de um jogador. A decisão de W.O. fica
+na BE-021. A criação antiga com apenas um jogador continua disponível por
+compatibilidade, mas não permite os helpers que precisam dos dois participantes.
 
 ### Controle de Concorrência
 
@@ -614,6 +629,9 @@ O `GameStateManager` utiliza controle otimista de concorrência com o seguinte f
 3. Tenta gravar de forma atômica se a versão não mudou (compare-and-set via script Lua)
 4. Em conflito, relê e tenta novamente (máximo de tentativas configurável)
 5. Ao estourar as tentativas, lança `ConcurrentStateModificationException`
+
+O mutator pode executar mais de uma vez. Não faça broadcast, sorteio ou persistência
+dentro dele. Calcule o horário e qualquer sorteio antes de chamar `update`.
 
 ### Configuração
 
