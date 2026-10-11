@@ -4,11 +4,15 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class GameStateTest {
 
@@ -171,5 +175,130 @@ class GameStateTest {
         assertEquals(2, state.getRoundNumber());
         assertTrue(state.isSuddenDeath());
         assertEquals(5L, state.getVersion());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void createsBothPlayersWithFixedSymbolsAndRandomStarter(boolean player1Starts) {
+        GameState state = completeState(player1Starts);
+        assertEquals(player1Id, state.getPlayer1Id());
+        assertEquals(player2Id, state.getPlayer2Id());
+        assertEquals(player1Starts ? player1Id : player2Id, state.getFirstPlayerId());
+        assertEquals(state.getFirstPlayerId(), state.getCurrentTurnPlayerId());
+        assertEquals('X', state.getPlayerSymbol(player1Id));
+        assertEquals('O', state.getPlayerSymbol(player2Id));
+        assertEquals(player2Id, state.getOpponentId(player1Id));
+        assertEquals(player1Id, state.getOpponentId(player2Id));
+        assertEquals(0, state.getConsecutiveTimeouts(player1Id));
+        assertEquals(0, state.getConsecutiveTimeouts(player2Id));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void roundsAlternateWithoutNewDrawOrResettingTimeouts(boolean player1Starts) {
+        SecureRandom random = mock(SecureRandom.class);
+        when(random.nextBoolean()).thenReturn(player1Starts);
+        GameState state = GameState.createInitial(gameId, player1Id, player2Id, 10000, random);
+        UUID firstPlayer = state.getFirstPlayerId();
+        state.recordTimeout(player1Id);
+        state.recordTimeout(player1Id);
+        state.recordTimeout(player2Id);
+        state.setVersion(7);
+        for (int round = 1; round <= 3; round++) {
+            state.setBoard("XXOO------------");
+            long duration = round == 3 ? 5000 : 10000;
+            state.startRound(round, duration, 100000);
+            assertEquals(GameState.EMPTY_BOARD, state.getBoard());
+            assertEquals(round, state.getRoundNumber());
+            assertEquals(round == 3, state.isSuddenDeath());
+            assertEquals(firstPlayer, state.getFirstPlayerId());
+            assertEquals(round == 2 ? state.getOpponentId(firstPlayer) : firstPlayer,
+                    state.getCurrentTurnPlayerId());
+            assertEquals(duration, state.getTurnDurationMillis());
+            assertEquals(100000 + duration, state.getTurnDeadlineEpochMillis());
+            assertEquals(2, state.getConsecutiveTimeouts(player1Id));
+            assertEquals(1, state.getConsecutiveTimeouts(player2Id));
+            assertEquals('X', state.getPlayerSymbol(player1Id));
+            assertEquals('O', state.getPlayerSymbol(player2Id));
+            assertEquals(7, state.getVersion());
+        }
+        verify(random, times(1)).nextBoolean();
+    }
+
+    @Test
+    void resetsOnlyTheSelectedPlayersTimeouts() {
+        GameState state = completeState(true);
+        state.recordTimeout(player1Id);
+        state.recordTimeout(player2Id);
+        state.recordTimeout(player2Id);
+        state.resetTimeouts(player1Id);
+        assertEquals(0, state.getConsecutiveTimeouts(player1Id));
+        assertEquals(2, state.getConsecutiveTimeouts(player2Id));
+        state.resetTimeouts(player2Id);
+        assertEquals(0, state.getConsecutiveTimeouts(player2Id));
+    }
+
+    @Test
+    void serializesPlayersAndTimeouts() throws JsonProcessingException {
+        GameState state = completeState(false);
+        state.recordTimeout(player1Id);
+        state.recordTimeout(player2Id);
+        state.recordTimeout(player2Id);
+        state.startRound(2, 10000, 100000);
+        GameState restored = objectMapper.readValue(objectMapper.writeValueAsString(state), GameState.class);
+        assertEquals(state.getPlayer1Id(), restored.getPlayer1Id());
+        assertEquals(state.getPlayer2Id(), restored.getPlayer2Id());
+        assertEquals(state.getFirstPlayerId(), restored.getFirstPlayerId());
+        assertEquals(state.getCurrentTurnPlayerId(), restored.getCurrentTurnPlayerId());
+        assertEquals(1, restored.getConsecutiveTimeouts(player1Id));
+        assertEquals(2, restored.getConsecutiveTimeouts(player2Id));
+        assertEquals('X', restored.getPlayerSymbol(player1Id));
+        assertEquals('O', restored.getPlayerSymbol(player2Id));
+    }
+
+    @Test
+    void rejectsInvalidParticipantsAndDurationBeforeDrawing() {
+        SecureRandom random = mock(SecureRandom.class);
+        assertThrows(IllegalArgumentException.class,
+                () -> GameState.createInitial(gameId, player1Id, player1Id, 10000, random));
+        assertThrows(IllegalArgumentException.class,
+                () -> GameState.createInitial(gameId, null, player2Id, 10000, random));
+        assertThrows(IllegalArgumentException.class,
+                () -> GameState.createInitial(gameId, player1Id, null, 10000, random));
+        assertThrows(IllegalArgumentException.class,
+                () -> GameState.createInitial(null, player1Id, player2Id, 10000, random));
+        assertThrows(IllegalArgumentException.class,
+                () -> GameState.createInitial(gameId, player1Id, player2Id, 0, random));
+        verifyNoInteractions(random);
+    }
+
+    @Test
+    void rejectsUnknownPlayerWithoutChangingTimeouts() {
+        GameState state = completeState(true);
+        UUID outsider = UUID.randomUUID();
+        assertThrows(IllegalArgumentException.class, () -> state.getPlayerSymbol(outsider));
+        assertThrows(IllegalArgumentException.class, () -> state.getOpponentId(outsider));
+        assertThrows(IllegalArgumentException.class, () -> state.getConsecutiveTimeouts(outsider));
+        assertThrows(IllegalArgumentException.class, () -> state.recordTimeout(outsider));
+        assertThrows(IllegalArgumentException.class, () -> state.resetTimeouts(outsider));
+        assertThrows(IllegalArgumentException.class, () -> state.getPlayerSymbol(null));
+        assertEquals(0, state.getConsecutiveTimeouts(player1Id));
+        assertEquals(0, state.getConsecutiveTimeouts(player2Id));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 4})
+    void rejectsInvalidRoundWithoutClearingBoard(int round) {
+        GameState state = completeState(true);
+        state.setBoard("X---------------");
+        assertThrows(IllegalArgumentException.class, () -> state.startRound(round, 10000, 100000));
+        assertEquals("X---------------", state.getBoard());
+        assertEquals(1, state.getRoundNumber());
+    }
+
+    private GameState completeState(boolean player1Starts) {
+        SecureRandom random = mock(SecureRandom.class);
+        when(random.nextBoolean()).thenReturn(player1Starts);
+        return GameState.createInitial(gameId, player1Id, player2Id, 10000, random);
     }
 }
