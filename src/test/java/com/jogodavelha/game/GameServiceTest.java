@@ -9,6 +9,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -207,5 +209,74 @@ class GameServiceTest {
         assertEquals(50, GameService.COINS_WIN);
         assertEquals(20, GameService.COINS_DRAW);
         assertEquals(10, GameService.COINS_LOSS);
+        assertEquals(30, GameService.COINS_FORFEIT_WIN);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void forfeitPaysOnlyTheWinnerOnceEvenIfTheLoserWasLeading(boolean player1Loses) {
+        User loser = player1Loses ? player1 : player2;
+        User winner = player1Loses ? player2 : player1;
+        loser.addCoins(100);
+        winner.addCoins(40);
+        game.registerRoundResult(player1Loses ? RoundResult.PLAYER1_WIN : RoundResult.PLAYER2_WIN);
+        when(gameRepository.findById(gameId)).thenReturn(Optional.of(game));
+        when(gameRepository.save(game)).thenReturn(game);
+
+        Game finished = gameService.forfeit(gameId, loser);
+
+        assertSame(game, finished);
+        assertEquals(GameStatus.FINISHED, finished.getStatus());
+        assertEquals(GameEndReason.FORFEIT_TIMEOUT, finished.getEndReason());
+        assertSame(winner, finished.getWinner());
+        assertTrue(finished.isRewardsGranted());
+        assertNotNull(finished.getStartedAt());
+        assertNotNull(finished.getFinishedAt());
+        assertEquals(70, winner.getCoinsBalance());
+        assertEquals(100, loser.getCoinsBalance());
+        var finishedAt = finished.getFinishedAt();
+
+        assertThrows(IllegalStateException.class, () -> gameService.forfeit(gameId, loser));
+        assertEquals(70, winner.getCoinsBalance());
+        assertEquals(100, loser.getCoinsBalance());
+        assertEquals(finishedAt, finished.getFinishedAt());
+        verify(gameRepository, times(2)).findById(gameId);
+        verify(gameRepository, times(1)).save(game);
+    }
+
+    @Test
+    void forfeitOfMissingGameDoesNotSaveOrPay() {
+        when(gameRepository.findById(gameId)).thenReturn(Optional.empty());
+        assertThrows(GameNotFoundException.class, () -> gameService.forfeit(gameId, player1));
+        verify(gameRepository, never()).save(any());
+        assertEquals(0, player1.getCoinsBalance());
+        assertEquals(0, player2.getCoinsBalance());
+    }
+
+    @Test
+    void forfeitOfUnknownPlayerDoesNotSaveOrPay() {
+        User unknown = new User("unknown", "pass", "unknown@test.com");
+        unknown.setId(UUID.randomUUID());
+        when(gameRepository.findById(gameId)).thenReturn(Optional.of(game));
+        assertThrows(IllegalArgumentException.class, () -> gameService.forfeit(gameId, unknown));
+        verify(gameRepository, never()).save(any());
+        assertEquals(GameStatus.IN_PROGRESS, game.getStatus());
+        assertFalse(game.isRewardsGranted());
+        assertEquals(0, player1.getCoinsBalance());
+        assertEquals(0, player2.getCoinsBalance());
+    }
+
+    @Test
+    void forfeitCannotReplaceAnAlreadyPaidNormalResult() {
+        when(gameRepository.findById(gameId)).thenReturn(Optional.of(game));
+        when(gameRepository.save(game)).thenReturn(game);
+        gameService.registerRoundResult(gameId, RoundResult.PLAYER1_WIN);
+        gameService.registerRoundResult(gameId, RoundResult.PLAYER1_WIN);
+        assertThrows(IllegalStateException.class, () -> gameService.forfeit(gameId, player1));
+        assertEquals(GameEndReason.NORMAL, game.getEndReason());
+        assertSame(player1, game.getWinner());
+        assertEquals(50, player1.getCoinsBalance());
+        assertEquals(10, player2.getCoinsBalance());
+        verify(gameRepository, times(2)).save(game);
     }
 }

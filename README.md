@@ -814,6 +814,8 @@ A entidade `Game` representa uma partida de Jogo da Velha com suporte a rounds, 
 - `status`: Status da partida (IN_PROGRESS, FINISHED)
 - `winner`: Vencedor da partida (null em caso de empate)
 - `rewardsGranted`: Flag indicando se recompensas já foram concedidas
+- `endReason`: Motivo do encerramento (`NORMAL` ou `FORFEIT_TIMEOUT`)
+- `startedAt` / `finishedAt`: Instantes de início e término da partida
 
 **Divisão de Responsabilidades:**
 - **Entidade Game**: Estado e regras puras da partida (rounds, placar, morte súbita, quem venceu). Sem dependências de Spring e sem alterar outras entidades.
@@ -825,11 +827,14 @@ A entidade `Game` representa uma partida de Jogo da Velha com suporte a rounds, 
 - Se as vitórias são iguais (1x1 ou 0x0), ocorre o 3º round em modo morte súbita
 - Ao final do 3º round, quem vencer ganha a partida; se empatar, a partida termina empatada
 - Empate não soma vitória para ninguém, mas conta como round jogado
+- `Game.forfeit(loser)` encerra a partida inteira por timeout. O outro jogador
+  vence, mesmo se estiver atrás no placar; o placar e o round atual são preservados.
 
 **Regras de Moedas (implementadas no GameService):**
 - Vencedor: +50 moedas
 - Perdedor: +10 moedas
 - Empate: +20 moedas para cada jogador
+- W.O. por timeout: +30 moedas ao vencedor e nenhuma ao perdedor
 - Recompensas são concedidas apenas uma vez por partida (flag `rewardsGranted`)
 - O pagamento ocorre dentro da mesma transação que salva Game e User
 
@@ -842,6 +847,21 @@ A entidade `Game` representa uma partida de Jogo da Velha com suporte a rounds, 
 - `COINS_WIN = 50`: Moedas para vencedor
 - `COINS_DRAW = 20`: Moedas para empate
 - `COINS_LOSS = 10`: Moedas para perdedor
+- `COINS_FORFEIT_WIN = 30`: Moedas para vencedor por W.O.
+
+A BE-016.1 adiciona `GameService.forfeit(gameId, loser)` para encerrar e pagar
+as recompensas na mesma transação. Uma nova tentativa de encerrar uma partida
+finalizada é rejeitada, sem novo pagamento; `rewardsGranted` continua protegendo
+o pagamento de uma partida já recompensada.
+
+`startedAt` é preenchido na criação e `finishedAt` no encerramento, inclusive no
+empate e no W.O. A migration V11 adiciona esses campos sem alterar migrations
+anteriores. As datas de partidas antigas ficam `NULL`, pois não há registro para
+recuperá-las. Não use essas datas desconhecidas para inferir a ordem do histórico.
+
+A V11 foi validada com Flyway em PostgreSQL descartável, tanto em schema vazio
+quanto na atualização de V10 com partidas existentes. O mapeamento JPA também
+foi validado, sem usar o banco do projeto.
 
 ### Princípio geral
 

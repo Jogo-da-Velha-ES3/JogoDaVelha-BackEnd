@@ -8,6 +8,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -67,6 +68,16 @@ public class Game {
     @Column(name = "rewards_granted", nullable = false)
     private boolean rewardsGranted = false;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "end_reason", nullable = false, length = 16)
+    private GameEndReason endReason = GameEndReason.NORMAL;
+
+    @Column(name = "started_at")
+    private Instant startedAt;
+
+    @Column(name = "finished_at")
+    private Instant finishedAt;
+
     public Game(Room room, User player1) {
         if (room == null || room.getId() == null) {
             throw new IllegalArgumentException("Room não pode ser nula");
@@ -76,6 +87,7 @@ public class Game {
         }
         this.room = room;
         this.player1 = player1;
+        this.startedAt = Instant.now();
     }
 
     public void setPlayer2(User player2) {
@@ -113,13 +125,38 @@ public class Game {
             throw new IllegalStateException("Não é possível obter resultado de partida em andamento");
         }
 
-        if (victoriesPlayer1 > victoriesPlayer2) {
-            return GameOutcome.PLAYER1_WIN;
-        } else if (victoriesPlayer2 > victoriesPlayer1) {
-            return GameOutcome.PLAYER2_WIN;
-        } else {
+        if (winner == null) {
             return GameOutcome.DRAW;
         }
+        if (player1.getId().equals(winner.getId())) {
+            return GameOutcome.PLAYER1_WIN;
+        }
+        return GameOutcome.PLAYER2_WIN;
+    }
+
+    /** Encerra a partida por timeout, sem alterar o placar dos rounds já jogados. */
+    public void forfeit(User loser) {
+        if (status == GameStatus.FINISHED) {
+            throw new IllegalStateException("A partida já foi encerrada.");
+        }
+        if (player2 == null) {
+            throw new IllegalStateException("W.O. exige os dois jogadores.");
+        }
+        if (loser == null || loser.getId() == null) {
+            throw new IllegalArgumentException("O perdedor deve ser um jogador da partida.");
+        }
+        User forfeitWinner;
+        if (player1.getId().equals(loser.getId())) {
+            forfeitWinner = player2;
+        } else if (player2.getId().equals(loser.getId())) {
+            forfeitWinner = player1;
+        } else {
+            throw new IllegalArgumentException("O perdedor não pertence à partida.");
+        }
+        winner = forfeitWinner;
+        endReason = GameEndReason.FORFEIT_TIMEOUT;
+        finishedAt = Instant.now();
+        status = GameStatus.FINISHED;
     }
 
     /**
@@ -197,6 +234,8 @@ public class Game {
         }
 
         status = GameStatus.FINISHED;
+        endReason = GameEndReason.NORMAL;
+        finishedAt = Instant.now();
 
         // Define o vencedor com base no placar
         if (victoriesPlayer1 > victoriesPlayer2) {
