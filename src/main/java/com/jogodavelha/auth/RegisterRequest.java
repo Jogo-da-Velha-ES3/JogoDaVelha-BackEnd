@@ -1,5 +1,6 @@
 package com.jogodavelha.auth;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -19,8 +20,9 @@ public record RegisterRequest(
         String password,
 
         @NotBlank(message = "E-mail é obrigatório")
-        @Email(message = "E-mail inválido")
         @Size(max = 254, message = "E-mail deve ter no máximo 254 caracteres")
+        @Email(message = "E-mail inválido")
+        @Schema(example = "teste@exemplo.com")
         @Pattern(regexp = "^[\\w.-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$", message = "E-mail deve ter formato válido com domínio e TLD de pelo menos 2 letras")
         String email
 ) {
