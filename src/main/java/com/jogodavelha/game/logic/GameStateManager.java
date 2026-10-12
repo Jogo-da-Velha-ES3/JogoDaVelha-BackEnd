@@ -4,13 +4,16 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
+import java.security.SecureRandom;
 import java.util.Collections;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -32,15 +35,23 @@ public class GameStateManager {
     private final long stateTtlMillis;
     private final int maxRetries;
     private final RedisScript<Boolean> compareAndSetScript;
+    private final SecureRandom random;
 
+    @Autowired
     public GameStateManager(RedisTemplate<String, Object> redisTemplate, ObjectMapper objectMapper,
                             @Value("${game.state.ttl:1800000}") long stateTtlMillis,
                             @Value("${game.state.update.max-retries:5}") int maxRetries) {
+        this(redisTemplate, objectMapper, stateTtlMillis, maxRetries, new SecureRandom());
+    }
+
+    public GameStateManager(RedisTemplate<String, Object> redisTemplate, ObjectMapper objectMapper,
+                            long stateTtlMillis, int maxRetries, SecureRandom random) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.stateTtlMillis = stateTtlMillis;
         this.maxRetries = maxRetries;
         this.compareAndSetScript = createCompareAndSetScript();
+        this.random = Objects.requireNonNull(random);
     }
 
     private RedisScript<Boolean> createCompareAndSetScript() {
@@ -79,9 +90,16 @@ public class GameStateManager {
      * @throws IllegalStateException se já existir estado para este gameId
      */
     public void create(UUID gameId, UUID firstPlayerId, long turnDurationMillis) {
+        saveInitial(GameState.createInitial(gameId, firstPlayerId, turnDurationMillis));
+    }
+
+    public void create(UUID gameId, UUID player1Id, UUID player2Id, long turnDurationMillis) {
+        saveInitial(GameState.createInitial(gameId, player1Id, player2Id, turnDurationMillis, random));
+    }
+
+    private void saveInitial(GameState gameState) {
+        UUID gameId = gameState.getGameId();
         String key = buildKey(gameId);
-        
-        GameState gameState = GameState.createInitial(gameId, firstPlayerId, turnDurationMillis);
         String json = serialize(gameState);
 
         Boolean success = redisTemplate.opsForValue().setIfAbsent(
@@ -122,6 +140,8 @@ public class GameStateManager {
 
     /**
      * Atualiza o estado de uma partida de forma atômica com controle de versão.
+     * Em conflito, o mutator é reexecutado sobre o estado relido. Ele deve ser puro:
+     * sem broadcast, sorteio ou persistência. Calcule horários e sorteios antes da chamada.
      *
      * @param gameId ID da partida
      * @param mutator função que aplica modificações ao estado
