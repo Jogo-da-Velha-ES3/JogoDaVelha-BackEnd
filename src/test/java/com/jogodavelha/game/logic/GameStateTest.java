@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.security.SecureRandom;
@@ -40,6 +41,7 @@ class GameStateTest {
         assertEquals(10000, state.getTurnDurationMillis());
         assertEquals(1, state.getRoundNumber());
         assertFalse(state.isSuddenDeath());
+        assertEquals(GamePhase.PLAYING, state.getPhase());
         assertEquals(0L, state.getVersion());
     }
 
@@ -96,6 +98,7 @@ class GameStateTest {
         assertEquals(original.getTurnDeadlineEpochMillis(), deserialized.getTurnDeadlineEpochMillis());
         assertEquals(original.getRoundNumber(), deserialized.getRoundNumber());
         assertEquals(original.isSuddenDeath(), deserialized.isSuddenDeath());
+        assertEquals(original.getPhase(), deserialized.getPhase());
         assertEquals(original.getVersion(), deserialized.getVersion());
     }
 
@@ -144,6 +147,7 @@ class GameStateTest {
         assertEquals(gameId, state.getGameId());
         assertEquals(GameState.EMPTY_BOARD, state.getBoard());
         assertEquals(player1Id, state.getFirstPlayerId());
+        assertEquals(GamePhase.PLAYING, state.getPhase());
     }
 
     @Test
@@ -175,6 +179,7 @@ class GameStateTest {
         assertEquals(2, state.getRoundNumber());
         assertTrue(state.isSuddenDeath());
         assertEquals(5L, state.getVersion());
+        assertEquals(GamePhase.PLAYING, state.getPhase());
     }
 
     @ParameterizedTest
@@ -206,10 +211,12 @@ class GameStateTest {
         state.setVersion(7);
         for (int round = 1; round <= 3; round++) {
             state.setBoard("XXOO------------");
+            state.setPhase(GamePhase.ROUND_FINISHED);
             long duration = round == 3 ? 5000 : 10000;
             state.startRound(round, duration, 100000);
             assertEquals(GameState.EMPTY_BOARD, state.getBoard());
             assertEquals(round, state.getRoundNumber());
+            assertEquals(GamePhase.PLAYING, state.getPhase());
             assertEquals(round == 3, state.isSuddenDeath());
             assertEquals(firstPlayer, state.getFirstPlayerId());
             assertEquals(round == 2 ? state.getOpponentId(firstPlayer) : firstPlayer,
@@ -300,5 +307,16 @@ class GameStateTest {
         SecureRandom random = mock(SecureRandom.class);
         when(random.nextBoolean()).thenReturn(player1Starts);
         return GameState.createInitial(gameId, player1Id, player2Id, 10000, random);
+    }
+
+    @ParameterizedTest
+    @EnumSource(GamePhase.class)
+    void serializesPhase(GamePhase phase) throws JsonProcessingException {
+        GameState state = completeState(true);
+        state.setPhase(phase);
+
+        GameState restored = objectMapper.readValue(objectMapper.writeValueAsString(state), GameState.class);
+
+        assertEquals(phase, restored.getPhase());
     }
 }

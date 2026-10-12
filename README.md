@@ -602,10 +602,15 @@ O modelo `GameState` representa o estado ativo da partida com os seguintes campo
 - `turnDeadlineEpochMillis` (long): Prazo do turno em epoch millis
 - `roundNumber` (int): Número do round atual (cópia de leitura rápida)
 - `suddenDeath` (boolean): Flag de morte súbita (cópia de leitura rápida)
+- `phase` (GamePhase): DRAFT, PLAYING, ROUND_FINISHED ou FINISHED
 - `player1ConsecutiveTimeouts` / `player2ConsecutiveTimeouts` (int): Timeouts consecutivos de cada jogador
 - `version` (long): Versão para controle otimista de concorrência
 
 O modelo é serializável em JSON e tolerante a campos novos e ausentes, permitindo extensibilidade futura sem quebrar estados já gravados.
+
+Estados antigos sem `phase` são lidos como PLAYING. `startRound` também define
+PLAYING. As mudanças para Draft e encerramento serão feitas pelos fluxos das
+BE-037 e BE-038; o campo sozinho não executa essas transições.
 
 Na BE-017.1, use `create(gameId, player1Id, player2Id, turnDurationMillis)` para criar
 o estado completo. O primeiro jogador é sorteado uma vez com `SecureRandom`, que
@@ -923,27 +928,42 @@ public ResponseEntity<Game> createGame(@Valid @RequestBody CreateGameRequest req
 
 Esta convenção será cobrada nos critérios de aceite das próximas tarefas.
 
-## Validação de jogadas (BE-018)
+## Validação de jogadas (BE-018 e BE-018.1)
 
 `MoveValidator.validate(state, playerId, position, blockedPositions)` rejeita casa
-ocupada, jogador fora do turno e casa bloqueada por Escudo. As posições vão de 0
-a 15, da esquerda para a direita, linha por linha. O estado e os bloqueios devem
-vir do backend, não do cliente. `blockedPositions` contém as casas bloqueadas
-para aquele jogador; use `Set.of()` quando não houver bloqueios.
+ocupada, jogador fora do turno, casa bloqueada por Escudo, turno expirado, Draft
+e round ou partida encerrados. No instante do prazo, o turno já está expirado.
+As rejeições usam `MoveValidationException`, com o motivo em `getCode()`.
+As posições vão de 0 a 15, da esquerda para a direita, linha por linha. O estado
+e os bloqueios devem vir do backend, não do cliente. `blockedPositions` contém
+as casas bloqueadas para aquele jogador; use `Set.of()` quando não houver bloqueios.
 
-O método apenas valida, sem alterar o tabuleiro ou acessar Redis. Ao implementar
-a BE-023, chame-o dentro de `GameStateManager.update`, antes de aplicar a jogada,
-para que a validação seja refeita se houver conflito de versão. Os efeitos e a
-duração do Escudo ficam na BE-014. Esta tarefa não altera migrations.
+O método apenas valida, sem alterar o estado ou acessar Redis. Ao implementar
+a BE-023, calcule o horário no servidor antes de `GameStateManager.update` e use
+`validate(state, playerId, position, blockedPositions, nowMillis)` dentro do update,
+antes de aplicar a jogada, para que a validação seja refeita se houver conflito
+de versão. Os efeitos e a duração do Escudo ficam na BE-014. Esta tarefa não
+altera migrations.
 
-## Vitória e empate (BE-019)
+## Vitória e empate (BE-019 e BE-018.1)
 
 `GameValidator.findWinner(board)` retorna o símbolo X ou O quando há quatro iguais
 em uma linha, coluna ou diagonal do grid 4x4; sem vencedor, retorna `Optional.empty()`.
-`isDraw(board)` só retorna true quando as 16 casas estão ocupadas e não há vencedor.
-Ambos recebem o tabuleiro de `GameState.getBoard()`, com X, O e - para casa vazia,
-e rejeitam formato inválido com `IllegalArgumentException`. Não alteram o estado
-nem acessam banco ou Redis. A integração com as jogadas fica na BE-023.
+Essa assinatura antiga não considera efeitos. Para gameplay, use
+`resolveWinner(board, frozenPositions, actor)`: peças congeladas não contam para
+uma linha, e a marca de quem agiu (X ou O) tem prioridade sobre a do oponente.
+Use `state.getPlayerSymbol(playerId)` para obter a marca.
+
+`isDraw(board, frozenPositions)` só retorna true com as 16 casas ocupadas e sem
+vencedor pelas mesmas regras. Peças congeladas continuam ocupando casas.
+`isDraw(board)` mantém a chamada sem efeitos. Os métodos rejeitam tabuleiro,
+marca ou posições inválidos com `IllegalArgumentException` e não alteram o estado.
+
+A BE-014 controla a duração dos efeitos. Ao remover um congelamento, uma linha
+que continuou intacta pode vencer na próxima conferência, mesmo sem nova peça.
+O fluxo deve encerrar o round ao encontrar um vencedor, sem conferir de novo um
+round já encerrado. A chamada nas jogadas fica na BE-023 e no timeout na BE-020.
+Essas integrações ainda não estão implementadas. Esta tarefa não altera migrations.
 
 ## 🧪 Testes
 
