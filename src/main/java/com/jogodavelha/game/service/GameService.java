@@ -1,5 +1,6 @@
 package com.jogodavelha.game.service;
 
+import com.jogodavelha.auth.User;
 import com.jogodavelha.game.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -18,6 +19,7 @@ public class GameService {
     public static final int COINS_WIN = 50;
     public static final int COINS_DRAW = 20;
     public static final int COINS_LOSS = 10;
+    public static final int COINS_FORFEIT_WIN = 30;
 
     private final GameRepository gameRepository;
 
@@ -44,15 +46,30 @@ public class GameService {
         return gameRepository.save(game);
     }
 
+    @Transactional
+    public Game forfeit(UUID gameId, User loser) {
+        Game game = gameRepository.findById(gameId)
+                .orElseThrow(() -> new GameNotFoundException(gameId));
+        game.forfeit(loser);
+        grantRewards(game);
+        return gameRepository.save(game);
+    }
+
     /**
      * Concede recompensas em moedas aos jogadores.
-     * Vencedor: +50, Perdedor: +10, Empate: +20 para cada.
+     * Normal: 50/10/20 para vitória/derrota/empate. W.O.: 30 apenas ao vencedor.
      * Só concede se rewardsGranted for false.
      *
      * @param game A partida finalizada
      */
     private void grantRewards(Game game) {
         if (game.isRewardsGranted()) {
+            return;
+        }
+
+        if (game.getEndReason() == GameEndReason.FORFEIT_TIMEOUT) {
+            game.getWinner().addCoins(COINS_FORFEIT_WIN);
+            game.markRewardsGranted();
             return;
         }
 

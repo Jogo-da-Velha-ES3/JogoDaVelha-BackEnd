@@ -4,7 +4,11 @@ import com.jogodavelha.auth.User;
 import com.jogodavelha.room.Room;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -37,6 +41,9 @@ class GameTest {
         assertEquals(GameStatus.IN_PROGRESS, game.getStatus());
         assertNull(game.getWinner());
         assertFalse(game.isRewardsGranted());
+        assertEquals(GameEndReason.NORMAL, game.getEndReason());
+        assertNotNull(game.getStartedAt());
+        assertNull(game.getFinishedAt());
     }
 
     @Test
@@ -242,5 +249,115 @@ class GameTest {
         assertEquals(5, Game.SUDDEN_DEATH_TURN_SECONDS);
         assertEquals(3, Game.MAX_ROUNDS);
         assertEquals("----------------", Game.EMPTY_BOARD);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void forfeitOverridesTheScoreWithoutChangingIt(boolean player1Loses) {
+        User loser = player1Loses ? player1 : player2;
+        User expectedWinner = player1Loses ? player2 : player1;
+        game.registerRoundResult(player1Loses ? RoundResult.PLAYER1_WIN : RoundResult.PLAYER2_WIN);
+        Score score = game.getScore();
+        game.setBoard("X---------------");
+        Instant startedAt = game.getStartedAt();
+        Instant before = Instant.now();
+
+        game.forfeit(loser);
+
+        assertEquals(GameStatus.FINISHED, game.getStatus());
+        assertEquals(GameEndReason.FORFEIT_TIMEOUT, game.getEndReason());
+        assertSame(expectedWinner, game.getWinner());
+        assertEquals(player1Loses ? GameOutcome.PLAYER2_WIN : GameOutcome.PLAYER1_WIN, game.getOutcome());
+        assertEquals(score, game.getScore());
+        assertEquals(2, game.getCurrentRound());
+        assertEquals("X---------------", game.getBoard());
+        assertEquals(startedAt, game.getStartedAt());
+        assertFalse(game.getFinishedAt().isBefore(before));
+        assertFalse(game.getFinishedAt().isAfter(Instant.now()));
+        assertFalse(game.isRewardsGranted());
+        assertEquals(0, player1.getCoinsBalance());
+        assertEquals(0, player2.getCoinsBalance());
+    }
+
+    @Test
+    void forfeitCanEndTheFirstRound() {
+        game.forfeit(player1);
+        assertEquals(1, game.getCurrentRound());
+        assertEquals(new Score(0, 0), game.getScore());
+        assertEquals(GameOutcome.PLAYER2_WIN, game.getOutcome());
+    }
+
+    @Test
+    void forfeitCanEndSuddenDeath() {
+        game.registerRoundResult(RoundResult.DRAW);
+        game.registerRoundResult(RoundResult.DRAW);
+        game.forfeit(player2);
+        assertEquals(GameStatus.FINISHED, game.getStatus());
+        assertEquals(3, game.getCurrentRound());
+        assertTrue(game.isSuddenDeath());
+        assertEquals(GameOutcome.PLAYER1_WIN, game.getOutcome());
+    }
+
+    @Test
+    void forfeitMatchesTheLoserById() {
+        User samePlayer = new User("other-instance", "pass", "other@test.com");
+        samePlayer.setId(player1.getId());
+        game.forfeit(samePlayer);
+        assertSame(player2, game.getWinner());
+    }
+
+    @Test
+    void forfeitRejectsMissingOrUnknownLoserWithoutChangingState() {
+        User unknown = new User("unknown", "pass", "unknown@test.com");
+        assertThrows(IllegalArgumentException.class, () -> game.forfeit(null));
+        assertThrows(IllegalArgumentException.class, () -> game.forfeit(unknown));
+        unknown.setId(UUID.randomUUID());
+        assertThrows(IllegalArgumentException.class, () -> game.forfeit(unknown));
+        assertEquals(GameStatus.IN_PROGRESS, game.getStatus());
+        assertEquals(GameEndReason.NORMAL, game.getEndReason());
+        assertNull(game.getWinner());
+        assertNull(game.getFinishedAt());
+    }
+
+    @Test
+    void forfeitRequiresBothPlayers() {
+        Game incomplete = new Game(room, player1);
+        assertThrows(IllegalStateException.class, () -> incomplete.forfeit(player1));
+        assertEquals(GameStatus.IN_PROGRESS, incomplete.getStatus());
+        assertNull(incomplete.getFinishedAt());
+    }
+
+    @Test
+    void finishedGameCannotBeChangedByAnotherForfeitOrRound() {
+        game.forfeit(player1);
+        Instant finishedAt = game.getFinishedAt();
+        assertThrows(IllegalStateException.class, () -> game.forfeit(player2));
+        assertThrows(IllegalStateException.class, () -> game.registerRoundResult(RoundResult.PLAYER1_WIN));
+        assertSame(player2, game.getWinner());
+        assertEquals(finishedAt, game.getFinishedAt());
+        assertEquals(GameEndReason.FORFEIT_TIMEOUT, game.getEndReason());
+    }
+
+    @ParameterizedTest
+    @EnumSource(RoundResult.class)
+    void normalFinishRecordsDatesAndReason(RoundResult result) {
+        Instant startedAt = game.getStartedAt();
+        game.registerRoundResult(result);
+        assertNull(game.getFinishedAt());
+        Instant before = Instant.now();
+        game.registerRoundResult(result);
+        if (result == RoundResult.DRAW) {
+            assertNull(game.getFinishedAt());
+            game.registerRoundResult(result);
+        }
+        assertEquals(GameStatus.FINISHED, game.getStatus());
+        assertEquals(GameEndReason.NORMAL, game.getEndReason());
+        assertEquals(startedAt, game.getStartedAt());
+        assertFalse(game.getFinishedAt().isBefore(before));
+        assertFalse(game.getFinishedAt().isAfter(Instant.now()));
+        Instant finishedAt = game.getFinishedAt();
+        assertThrows(IllegalStateException.class, () -> game.forfeit(player1));
+        assertEquals(finishedAt, game.getFinishedAt());
+        assertEquals(GameEndReason.NORMAL, game.getEndReason());
     }
 }
