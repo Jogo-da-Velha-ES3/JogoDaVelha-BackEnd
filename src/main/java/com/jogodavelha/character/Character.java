@@ -29,8 +29,13 @@ public class Character {
     @Column(name = "price_coins", nullable = false)
     private Integer priceCoins;
 
-    public Character(String name, CharacterSymbol symbol) {
+    public Character(
+            String name,
+            CharacterSymbol symbol,
+            Integer priceCoins
+    ) {
         this.name = name;
         this.symbol = symbol;
+        this.priceCoins = priceCoins;
     }
 }

@@ -1,5 +1,10 @@
 package com.jogodavelha.auth;
 
+import com.jogodavelha.character.Character;
+import com.jogodavelha.character.CharacterRepository;
+import com.jogodavelha.character.CharacterSymbol;
+import com.jogodavelha.character.UserCharacterRepository;
+
 import com.jogodavelha.config.JwtProperties;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -36,6 +41,12 @@ class AuthServiceTest {
     @Mock
     private JwtService jwtService;
 
+    @Mock
+    private CharacterRepository characterRepository;
+
+    @Mock
+    private UserCharacterRepository userCharacterRepository;
+
     @InjectMocks
     private AuthService authService;
 
@@ -44,14 +55,49 @@ class AuthServiceTest {
 
     @BeforeEach
     void setUp() {
-        validRequest = new RegisterRequest("testuser", "password123", "test@example.com");
+        validRequest = new RegisterRequest(
+                "testuser",
+                "password123",
+                "test@example.com"
+        );
 
-        testUser = new User("testuser", "$2a$10$hashedPassword", "test@example.com");
+        testUser = new User(
+                "testuser",
+                "$2a$10$hashedPassword",
+                "test@example.com"
+        );
+
         testUser.setId(UUID.randomUUID());
+    }
+
+    private void mockDefaultCharacters() {
+
+        Character xCharacter =
+                new Character(
+                        "X",
+                        CharacterSymbol.X,
+                        0
+                );
+
+        Character oCharacter =
+                new Character(
+                        "O",
+                        CharacterSymbol.O,
+                        0
+                );
+
+        when(characterRepository.findBySymbol(CharacterSymbol.X))
+                .thenReturn(Optional.of(xCharacter));
+
+        when(characterRepository.findBySymbol(CharacterSymbol.O))
+                .thenReturn(Optional.of(oCharacter));
     }
 
     @Test
     void testRegisterSuccess() {
+
+        mockDefaultCharacters();
+
         when(userRepository.existsByUsernameIgnoreCase("testuser")).thenReturn(false);
         when(userRepository.existsByEmail("test@example.com")).thenReturn(false);
         when(passwordEncoder.encode("password123")).thenReturn("$2a$10$hashedPassword");
@@ -102,6 +148,7 @@ class AuthServiceTest {
 
     @Test
     void testRegisterNormalizesUsername() {
+        mockDefaultCharacters();
         RegisterRequest requestWithSpaces = new RegisterRequest("  testuser  ", "password123", "test@example.com");
         when(userRepository.existsByUsernameIgnoreCase("testuser")).thenReturn(false);
         when(userRepository.existsByEmail("test@example.com")).thenReturn(false);
@@ -116,6 +163,7 @@ class AuthServiceTest {
 
     @Test
     void testRegisterNormalizesEmail() {
+        mockDefaultCharacters();
         RegisterRequest requestWithMixedCase = new RegisterRequest("testuser", "password123", "  TEST@EXAMPLE.COM  ");
         when(userRepository.existsByUsernameIgnoreCase("testuser")).thenReturn(false);
         when(userRepository.existsByEmail("test@example.com")).thenReturn(false);
@@ -130,6 +178,7 @@ class AuthServiceTest {
 
     @Test
     void testRegisterHashIsDifferentFromPassword() {
+        mockDefaultCharacters();
         when(userRepository.existsByUsernameIgnoreCase("testuser")).thenReturn(false);
         when(userRepository.existsByEmail("test@example.com")).thenReturn(false);
         when(passwordEncoder.encode("password123")).thenReturn("$2a$10$hashedPassword");
@@ -176,6 +225,7 @@ class AuthServiceTest {
 
     @Test
     void testRegisterPasswordHashVerifiable() {
+        mockDefaultCharacters();
         when(userRepository.existsByUsernameIgnoreCase("testuser")).thenReturn(false);
         when(userRepository.existsByEmail("test@example.com")).thenReturn(false);
         when(passwordEncoder.encode("password123")).thenReturn("$2a$10$hashedPassword");

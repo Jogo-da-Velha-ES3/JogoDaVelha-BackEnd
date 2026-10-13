@@ -1,5 +1,10 @@
 package com.jogodavelha.auth;
 
+import com.jogodavelha.character.Character;
+import com.jogodavelha.character.CharacterRepository;
+import com.jogodavelha.character.CharacterSymbol;
+import com.jogodavelha.character.UserCharacter;
+import com.jogodavelha.character.UserCharacterRepository;
 import jakarta.validation.Valid;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -18,11 +23,21 @@ public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final CharacterRepository characterRepository;
+    private final UserCharacterRepository userCharacterRepository;
 
-    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService) {
+    public AuthService(
+            UserRepository userRepository,
+            PasswordEncoder passwordEncoder,
+            JwtService jwtService,
+            CharacterRepository characterRepository,
+            UserCharacterRepository userCharacterRepository
+    ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.characterRepository = characterRepository;
+        this.userCharacterRepository = userCharacterRepository;
     }
 
     /**
@@ -52,7 +67,28 @@ public class AuthService {
         User user = new User(normalizedUsername, passwordHash, normalizedEmail);
 
         try {
-            return userRepository.save(user);
+            User savedUser = userRepository.save(user);
+
+            Character xCharacter = characterRepository
+                    .findBySymbol(CharacterSymbol.X)
+                    .orElseThrow(() ->
+                            new IllegalStateException("Personagem X não encontrado"));
+
+            Character oCharacter = characterRepository
+                    .findBySymbol(CharacterSymbol.O)
+                    .orElseThrow(() ->
+                            new IllegalStateException("Personagem O não encontrado"));
+
+            userCharacterRepository.save(
+                    new UserCharacter(savedUser, xCharacter)
+            );
+
+            userCharacterRepository.save(
+                    new UserCharacter(savedUser, oCharacter)
+            );
+
+            return savedUser;
+
         } catch (DataIntegrityViolationException e) {
             if (e.getMessage() != null && e.getMessage().contains("uk_users_username")) {
                 throw new UsernameAlreadyExistsException("Username já está em uso");
