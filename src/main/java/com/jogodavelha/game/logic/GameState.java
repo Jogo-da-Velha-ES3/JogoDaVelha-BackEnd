@@ -34,6 +34,8 @@ public class GameState {
     private long turnDeadlineEpochMillis;
     private int roundNumber;
     private boolean suddenDeath;
+    @Builder.Default
+    private GamePhase phase = GamePhase.PLAYING;
     private int player1ConsecutiveTimeouts;
     private int player2ConsecutiveTimeouts;
     private long version;
@@ -130,6 +132,7 @@ public class GameState {
         UUID opponent = getOpponentId(firstPlayerId);
         board = EMPTY_BOARD;
         roundNumber = round;
+        phase = GamePhase.PLAYING;
         suddenDeath = round == 3;
         currentTurnPlayerId = round % 2 == 1 ? firstPlayerId : opponent;
         turnDurationMillis = durationMillis;
