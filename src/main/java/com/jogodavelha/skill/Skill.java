@@ -30,15 +30,20 @@ public class Skill {
     @Column(name = "initial_skill")
     private Boolean initialSkill;
 
+    @Column(nullable = false)
+    private Boolean offensive = false;
+
     public Skill(
             String name,
             SkillCategory effectCategory,
             String description,
-            Boolean initialSkill
+            Boolean initialSkill,
+            Boolean offensive
     ) {
         this.name = name;
         this.effectCategory = effectCategory;
         this.description = description;
         this.initialSkill = initialSkill;
+        this.offensive = offensive;
     }
 }
