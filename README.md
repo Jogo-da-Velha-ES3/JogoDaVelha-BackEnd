@@ -127,7 +127,7 @@ cp .env.example .env
 - `DB_PORT` — Porta do PostgreSQL (padrão: 5432)
 - `REDIS_PORT` — Porta do Redis (padrão: 6379)
 - `JWT_SECRET` — Chave secreta para assinatura JWT (mínimo 32 bytes, gere com `openssl rand -base64 32`)
-- `JWT_EXPIRATION` — Tempo de expiração do token JWT em milissegundos (ex: 86400000 = 24 horas)
+- `JWT_EXPIRATION` — Tempo de expiração do token JWT em milissegundos (recomendado: 2592000000 = 30 dias para manter o usuário autenticado entre acessos)
 - `SERVER_PORT` — Porta da aplicação (padrão: 8080)
 
 **⚠️ NOVAS VARIÁVEIS (adicionar ao .env existente):**
@@ -343,7 +343,7 @@ Isso deixa a ideia bem mais clara: character é um domínio e dentro dela ficam 
 - `REDIS_HOST` — Host do servidor Redis (usado internamente pelo Docker Compose)
 - `REDIS_PORT` — Porta do servidor Redis (padrão: 6379)
 - `JWT_SECRET` — Chave secreta para assinatura JWT (mínimo 32 bytes, gere com `openssl rand -base64 32`)
-- `JWT_EXPIRATION` — Tempo de expiração do token JWT em milissegundos (ex: 86400000 = 24 horas)
+- `JWT_EXPIRATION` — Tempo de expiração do token JWT em milissegundos (ex: 86400000 = 24 horas, 2592000000 = 30 dias)
 - `SERVER_PORT` — Porta da aplicação (padrão: 8080)
 - `SPRING_PROFILES_ACTIVE` — Profile ativo (padrão: dev)
 
@@ -540,7 +540,7 @@ O módulo `auth/` implementa autenticação via login com geração de tokens JW
 - Subject: ID do usuário (UUID em String)
 - Claims mínimas: apenas subject, issuedAt e expiration (sem e-mail, username ou senha)
 - Expiração: configurável via `JWT_EXPIRATION` (em milissegundos)
-- Validação de token em requisições será implementada na BE-005 (filtro JWT)
+- Validação de token em requisições realizada pelo JwtAuthenticationFilter
 
 **Configuração JWT (Variáveis de Ambiente):**
 - `JWT_SECRET`: Chave secreta para assinatura JWT (mínimo 32 bytes para HS256)
@@ -548,7 +548,10 @@ O módulo `auth/` implementa autenticação via login com geração de tokens JW
   - Para desenvolvimento, gere um secret com: `openssl rand -base64 32`
   - Nunca use o valor do .env.example em produção
 - `JWT_EXPIRATION`: Tempo de expiração do token em milissegundos
-  - Exemplo: 86400000 = 24 horas, 3600000 = 1 hora
+  - Exemplos:
+  - 3600000 = 1 hora
+  - 86400000 = 24 horas
+  - 2592000000 = 30 dias (recomendado para manter o usuário autenticado entre acessos)
 
 **Exceções de Domínio:**
 - `InvalidCredentialsException`: Lançada quando as credenciais são inválidas (será mapeada para HTTP 401 na BE-006)
@@ -1028,8 +1031,12 @@ Para o ambiente de produção, foi decidido o seguinte stack de hospedagem:
 
 ## Autenticação JWT
 
-Rotas protegidas exigem o cabeçalho `Authorization: Bearer <token>`. O token é obtido pelo fluxo de autenticação (`POST /auth/login` e `POST /auth/register`). Tokens válidos autenticam o UUID do usuário; o filtro não consulta o banco. Requisições sem token ou com token inválido recebem HTTP 401 e um corpo JSON com a mensagem genérica `Autenticação necessária ou token inválido`.
+Rotas protegidas exigem o cabeçalho `Authorization: Bearer <token>`. O token é obtido pelo fluxo de autenticação (`POST /auth/login`). Tokens válidos autenticam o UUID do usuário; o filtro não consulta o banco. Requisições sem token ou com token inválido recebem HTTP 401 e um corpo JSON com a mensagem genérica `Autenticação necessária ou token inválido`.
 
-Rotas públicas: `/auth/**`, `GET /api/health`, `/v3/api-docs/**`, `/swagger-ui/**`, `/swagger-ui.html` e `/ws/**`. O handshake HTTP WebSocket está aberto; autenticação STOMP ainda não está implementada, portanto qualquer cliente pode conectar, assinar `/topic/**` e publicar em `/app/**`.
+O tempo de validade do token é configurado pela variável de ambiente `JWT_EXPIRATION`. Para manter o usuário autenticado entre acessos, recomenda-se utilizar `2592000000` milissegundos (30 dias).
 
-CORS ainda não está configurado (BE-034): preflight OPTIONS de outras origens não é tratado; a lista de origens permitidas do `WebSocketConfig` é independente e também deve ser revisada.
+Logout é realizado pelo cliente (frontend). O backend não possui endpoint de logout nem mecanismo de revogação de tokens.
+
+Ao realizar logout, o frontend deve remover o token JWT armazenado localmente. O token permanecerá tecnicamente válido até sua expiração configurada em `JWT_EXPIRATION`.
+
+Rotas públicas: `/auth/**`, `GET /api/health`, `/v3/api-docs/**`, `/swagger-ui/**`, `/swagger-ui.html` e `/ws/**`.
