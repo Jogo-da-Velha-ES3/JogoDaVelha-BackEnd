@@ -109,4 +109,20 @@ class SkillEngineTest {
         engine.endAction(s, p2);                                  // 1 -> 0
         assertEquals(10000, s.effectiveTurnDuration(p2, 10000));
     }
+
+    @Test
+    void startRoundClearsEffectsButKeepsTimeouts() {
+        GameState s = state("XX--------------");
+        s.getFrozenPositions().put(0, 2);
+        s.getShieldedPositions().put(5, new GameState.ShieldEffect(p1, 2));
+        s.getHourglassTurns().put(p2, 2);
+        s.recordTimeout(p1);
+
+        s.startRound(2, 10000, System.currentTimeMillis());
+
+        assertTrue(s.getFrozenPositions().isEmpty());
+        assertTrue(s.getShieldedPositions().isEmpty());
+        assertTrue(s.getHourglassTurns().isEmpty());
+        assertEquals(1, s.getConsecutiveTimeouts(p1));
+    }
 }

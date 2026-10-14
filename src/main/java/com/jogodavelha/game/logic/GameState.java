@@ -146,6 +146,7 @@ public class GameState {
         }
         UUID opponent = getOpponentId(firstPlayerId);
         board = EMPTY_BOARD;
+        clearEffects(); // Efeitos não atravessam rounds
         roundNumber = round;
         phase = GamePhase.PLAYING;
         suddenDeath = round == 3;
