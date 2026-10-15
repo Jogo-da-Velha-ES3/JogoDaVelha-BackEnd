@@ -52,9 +52,9 @@ class JwtSecurityMockMvcTest {
 
     @Test
     void protectedRouteRequiresValidBearerToken() throws Exception {
-        mvc.perform(get("/test/protected").header("Authorization", "Bearer " + token()))
+        mvc.perform(get("/api/test/protected").header("Authorization", "Bearer " + token()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$").value(USER_ID.toString()));
-        mvc.perform(get("/test/protected")).andExpect(status().isUnauthorized())
+        mvc.perform(get("/api/test/protected")).andExpect(status().isUnauthorized())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.status").value(401));
     }
@@ -69,7 +69,7 @@ class JwtSecurityMockMvcTest {
 
     @Test
     void publicRoutesRemainAccessibleWithInvalidToken() throws Exception {
-        for (String path : new String[]{"/auth/login", "/auth/register", "/api/health", "/v3/api-docs", "/ws/info"}) {
+        for (String path : new String[]{"/api/auth/login", "/api/auth/register", "/api/health", "/v3/api-docs", "/ws/info"}) {
             mvc.perform(get(path)).andExpect(result -> {
                 int status = result.getResponse().getStatus();
                 if (status == 401 || status == 403) throw new AssertionError("Unexpected status " + status + " for " + path);
