@@ -1,16 +1,15 @@
 package com.jogodavelha.auth;
 
-import com.jogodavelha.character.Character;
-import com.jogodavelha.character.CharacterRepository;
-import com.jogodavelha.character.CharacterSymbol;
-import com.jogodavelha.character.UserCharacterRepository;
+import com.jogodavelha.character.*;
 
+import com.jogodavelha.character.Character;
 import com.jogodavelha.config.JwtProperties;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -235,6 +234,115 @@ class AuthServiceTest {
         User result = authService.register(validRequest);
 
         assertTrue(passwordEncoder.matches("password123", result.getPasswordHash()));
+    }
+
+    @Test
+    void testRegisterGrantsDefaultCharacters() {
+
+        mockDefaultCharacters();
+
+        when(userRepository.existsByUsernameIgnoreCase("testuser"))
+                .thenReturn(false);
+
+        when(userRepository.existsByEmail("test@example.com"))
+                .thenReturn(false);
+
+        when(passwordEncoder.encode("password123"))
+                .thenReturn("$2a$10$hashedPassword");
+
+        when(userRepository.save(any(User.class)))
+                .thenAnswer(invocation -> {
+                    User user = invocation.getArgument(0);
+                    user.setId(UUID.randomUUID());
+                    return user;
+                });
+
+        authService.register(validRequest);
+
+        ArgumentCaptor<UserCharacter> captor =
+                ArgumentCaptor.forClass(UserCharacter.class);
+
+        verify(userCharacterRepository, times(2))
+                .save(captor.capture());
+
+        var savedCharacters = captor.getAllValues();
+
+        assertEquals(2, savedCharacters.size());
+
+        boolean hasX = savedCharacters.stream()
+                .anyMatch(userCharacter ->
+                        userCharacter.getCharacter().getSymbol() == CharacterSymbol.X);
+
+        boolean hasO = savedCharacters.stream()
+                .anyMatch(userCharacter ->
+                        userCharacter.getCharacter().getSymbol() == CharacterSymbol.O);
+
+        assertTrue(hasX);
+        assertTrue(hasO);
+    }
+
+    @Test
+    void testRegisterFailsWhenXCharacterDoesNotExist() {
+
+        when(characterRepository.findBySymbol(CharacterSymbol.X))
+                .thenReturn(Optional.empty());
+
+        when(userRepository.existsByUsernameIgnoreCase("testuser"))
+                .thenReturn(false);
+
+        when(userRepository.existsByEmail("test@example.com"))
+                .thenReturn(false);
+
+        when(passwordEncoder.encode("password123"))
+                .thenReturn("$2a$10$hashedPassword");
+
+        when(userRepository.save(any(User.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> authService.register(validRequest)
+        );
+
+        verify(userCharacterRepository, never())
+                .save(any());
+    }
+
+    @Test
+    void testRegisterFailsWhenOCharacterDoesNotExist() {
+
+        Character xCharacter =
+                new Character(
+                        "X",
+                        CharacterSymbol.X,
+                        0
+                );
+
+        when(characterRepository.findBySymbol(CharacterSymbol.X))
+                .thenReturn(Optional.of(xCharacter));
+
+        when(characterRepository.findBySymbol(CharacterSymbol.O))
+                .thenReturn(Optional.empty());
+
+        when(userRepository.existsByUsernameIgnoreCase("testuser"))
+                .thenReturn(false);
+
+        when(userRepository.existsByEmail("test@example.com"))
+                .thenReturn(false);
+
+        when(passwordEncoder.encode("password123"))
+                .thenReturn("$2a$10$hashedPassword");
+
+        when(userRepository.save(any(User.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> authService.register(validRequest)
+        );
+
+        verify(userCharacterRepository, never())
+                .save(any());
     }
 
     // ===== TESTES DE LOGIN =====
