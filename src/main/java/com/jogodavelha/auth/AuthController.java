@@ -37,7 +37,10 @@ public class AuthController {
         return ResponseEntity.status(HttpStatus.CREATED).body(RegisterResponse.from(user));
     }
 
-    @Operation(summary = "Login", description = "Autentica por email ou username e retorna JWT")
+    @Operation(
+            summary = "Login",
+            description = "Autentica por email ou username e retorna JWT. O logout é realizado pelo cliente removendo o token armazenado localmente. O token permanece válido até sua expiração."
+    )
     @ApiResponse(responseCode = "200", description = "Login realizado com sucesso")
     @ApiResponse(responseCode = "400", description = "Dados inválidos")
     @ApiResponse(responseCode = "401", description = "Credenciais inválidas")

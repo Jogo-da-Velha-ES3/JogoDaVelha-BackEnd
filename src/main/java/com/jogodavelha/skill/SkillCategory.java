@@ -8,7 +8,7 @@ public enum SkillCategory {
     RANDOM_RELOCATION,
     TIME_CONTROL,
     DISABLE,
-
+    OFFENSE,
     DEFENSE,
     INFORMATION,
     POSITION
