@@ -18,7 +18,7 @@ import java.time.Clock;
 @EnableWebSecurity
 public class SecurityConfig {
     private static final String[] PUBLIC_ROUTES = {
-            "/auth/**", "/api/health", "/api/health/**",
+            "/api/auth/**", "/api/health", "/api/health/**",
             "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/ws/**"
     };
 
