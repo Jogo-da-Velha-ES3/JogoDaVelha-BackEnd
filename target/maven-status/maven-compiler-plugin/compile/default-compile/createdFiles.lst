@@ -21,6 +21,7 @@ com\jogodavelha\character\CharacterSymbol.class
 com\jogodavelha\game\Game.class
 com\jogodavelha\room\RoomStatus.class
 com\jogodavelha\game\GameNotFoundException.class
+com\jogodavelha\config\CorsProperties.class
 com\jogodavelha\auth\LoginResult.class
 com\jogodavelha\config\JwtProperties.class
 com\jogodavelha\game\GameStatus.class

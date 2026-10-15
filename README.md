@@ -129,6 +129,7 @@ cp .env.example .env
 - `JWT_SECRET` — Chave secreta para assinatura JWT (mínimo 32 bytes, gere com `openssl rand -base64 32`)
 - `JWT_EXPIRATION` — Tempo de expiração do token JWT em milissegundos (recomendado: 2592000000 = 30 dias para manter o usuário autenticado entre acessos)
 - `SERVER_PORT` — Porta da aplicação (padrão: 8080)
+- `CORS_ALLOWED_ORIGINS` — Origens CORS separadas por vírgula; aceita padrões com `*`. Padrão local: `http://localhost:5173`. Para o front, inclua `https://jogodavelha-frontend.vercel.app`, `https://jogodavelha-frontend-dev.vercel.app` e `https://*.vercel.app`.
 
 **⚠️ NOVAS VARIÁVEIS (adicionar ao .env existente):**
 - `GAME_STATE_TTL` — TTL em milissegundos para estado da partida (padrão: 1800000 = 30 minutos)
@@ -346,6 +347,7 @@ Isso deixa a ideia bem mais clara: character é um domínio e dentro dela ficam 
 - `JWT_EXPIRATION` — Tempo de expiração do token JWT em milissegundos (ex: 86400000 = 24 horas, 2592000000 = 30 dias)
 - `SERVER_PORT` — Porta da aplicação (padrão: 8080)
 - `SPRING_PROFILES_ACTIVE` — Profile ativo (padrão: dev)
+- `CORS_ALLOWED_ORIGINS` — Origens permitidas para HTTP e WebSocket, separadas por vírgula. Aceita padrões como `https://*.vercel.app`; o valor padrão local é `http://localhost:5173`.
 
 **⚠️ NOVAS VARIÁVEIS (BE-017):**
 - `GAME_STATE_TTL` — TTL em milissegundos para estado da partida (padrão: 1800000)
