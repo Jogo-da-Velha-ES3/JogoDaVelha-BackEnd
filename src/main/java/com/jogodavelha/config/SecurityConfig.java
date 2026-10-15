@@ -18,7 +18,7 @@ import java.time.Clock;
 @EnableWebSecurity
 public class SecurityConfig {
     private static final String[] PUBLIC_ROUTES = {
-            "/auth/**", "/api/health", "/api/health/**",
+            "/api/auth/**", "/api/health", "/api/health/**",
             "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/ws/**"
     };
 
@@ -30,8 +30,9 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .formLogin(form -> form.disable())
             .httpBasic(basic -> basic.disable())
-            .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(
-                    new JwtAuthenticationEntryPoint(objectMapper)))
+            .exceptionHandling(exceptions -> exceptions
+                    .authenticationEntryPoint(new JwtAuthenticationEntryPoint(objectMapper))
+                    .accessDeniedHandler(new ApiAccessDeniedHandler(objectMapper)))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(PUBLIC_ROUTES).permitAll()
                 .anyRequest().authenticated()

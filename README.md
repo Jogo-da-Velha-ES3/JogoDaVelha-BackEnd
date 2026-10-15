@@ -1039,4 +1039,39 @@ Logout é realizado pelo cliente (frontend). O backend não possui endpoint de l
 
 Ao realizar logout, o frontend deve remover o token JWT armazenado localmente. O token permanecerá tecnicamente válido até sua expiração configurada em `JWT_EXPIRATION`.
 
-Rotas públicas: `/auth/**`, `GET /api/health`, `/v3/api-docs/**`, `/swagger-ui/**`, `/swagger-ui.html` e `/ws/**`.
+Rotas públicas: `/auth/**`, `GET /api/health`, `/v3/api-docs/**`, `/swagger-ui/**`, `/swagger-ui.html` e `/ws/**`.## Formato de erro
+
+## Formato de Erro
+
+Todos os erros REST retornam `code` e `message`, além do status HTTP, timestamp e caminho. Erros de validação de corpo também incluem `fields`:
+
+```json
+{
+  "code": "VALIDATION_ERROR",
+  "message": "Dados inválidos",
+  "status": 400,
+  "timestamp": "2026-10-15T12:34:56Z",
+  "path": "/api/auth/register",
+  "fields": { "email": "E-mail inválido" }
+}
+```
+
+Códigos REST disponíveis:
+
+| Código | HTTP | Uso |
+| --- | ---: | --- |
+| `USERNAME_ALREADY_EXISTS` | 409 | Username já cadastrado |
+| `EMAIL_ALREADY_EXISTS` | 409 | E-mail já cadastrado |
+| `INVALID_CREDENTIALS` | 401 | Credenciais de login inválidas |
+| `VALIDATION_ERROR` | 400 | Validação de campos |
+| `INVALID_REQUEST_BODY` | 400 | JSON ausente ou ilegível |
+| `NOT_FOUND` | 404 | Rota ou recurso não encontrado |
+| `METHOD_NOT_ALLOWED` | 405 | Método HTTP não permitido |
+| `BAD_REQUEST` | 400 | Parâmetro HTTP inválido ou ausente |
+| `ROOM_BAD_REQUEST` | 400 | Erro temporário de sala; será tipado na BE-009.1 |
+| `ROOM_CONFLICT` | 409 | Conflito temporário de sala; será tipado na BE-009.1 |
+| `UNAUTHORIZED` | 401 | Autenticação ausente ou token inválido |
+| `FORBIDDEN` | 403 | Usuário sem autorização para o recurso |
+| `INTERNAL_ERROR` | 500 | Erro inesperado do servidor |
+
+`fields` aparece somente em `VALIDATION_ERROR` originado de validação de corpo. O schema `ApiError` também é reutilizado nas mensagens de erro STOMP.

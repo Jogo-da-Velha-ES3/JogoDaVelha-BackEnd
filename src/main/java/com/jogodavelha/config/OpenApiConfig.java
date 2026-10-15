@@ -4,6 +4,11 @@ import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.info.License;
+import com.jogodavelha.error.ApiError;
+import io.swagger.v3.core.converter.AnnotatedType;
+import io.swagger.v3.core.converter.ModelConverters;
+import io.swagger.v3.core.converter.ResolvedSchema;
+import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import org.springframework.context.annotation.Bean;
@@ -16,6 +21,8 @@ public class OpenApiConfig {
 
     @Bean
     public OpenAPI jogoDaVelhaOpenAPI() {
+        ResolvedSchema apiErrorSchema = ModelConverters.getInstance()
+                .resolveAsResolvedSchema(new AnnotatedType(ApiError.class));
         return new OpenAPI()
                 .info(new Info()
                         .title("Jogo da Velha — API")
@@ -26,6 +33,8 @@ public class OpenApiConfig {
                                 .url("https://www.apache.org/licenses/LICENSE-2.0.html")))
                 .addSecurityItem(new SecurityRequirement().addList(SECURITY_SCHEME_NAME))
                 .components(new Components()
+                        .schemas(apiErrorSchema.referencedSchemas)
+                        .addSchemas("ApiError", apiErrorSchema.schema)
                         .addSecuritySchemes(SECURITY_SCHEME_NAME,
                                 new SecurityScheme()
                                         .name(SECURITY_SCHEME_NAME)
