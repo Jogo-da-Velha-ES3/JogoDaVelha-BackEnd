@@ -1,0 +1,48 @@
+package com.jogodavelha.skill;
+
+import com.jogodavelha.game.logic.GameState;
+import com.jogodavelha.game.logic.GameValidator;
+import org.springframework.stereotype.Component;
+
+import java.util.*;
+
+@Component
+public class SkillEngine {
+    private final Map<String, SkillEffect> effects = new HashMap<>();
+    private final GameValidator validator;
+
+    public SkillEngine(List<SkillEffect> skillEffects, GameValidator validator) {
+        for (SkillEffect effect : skillEffects) {
+            if (effects.put(effect.skillName(), effect) != null) {
+                throw new IllegalStateException("Habilidade duplicada: " + effect.skillName());
+            }
+        }
+        this.validator = validator;
+    }
+
+    /* Aplica habilidade. Sem alvo válido, não altera o estado, mas a habilidade conta como usada */
+    public SkillResult useSkill(GameState state, String skillName, SkillContext context) {
+        SkillEffect effect = effects.get(skillName);
+        if (effect == null) {
+            throw new IllegalArgumentException("Habilidade desconhecida: " + skillName);
+        }
+        if (!effect.hasValidTarget(state, context)) {
+            return SkillResult.NO_VALID_TARGET;
+        }
+        effect.apply(state, context);
+
+        return SkillResult.APPLIED;
+    }
+
+    /*
+    * Fim da ação (jogada, habilidade ou timeout): resolveWinner com os efeitos ainda ativos
+    * e só depois diminui os contadores. Um único ponto garante a ordem
+    */
+    public Optional<Character> endAction(GameState state, UUID actorId) {
+        Optional<Character> winner = validator.resolveWinner(
+                state.getBoard(), state.frozenSet(), state.getPlayerSymbol(actorId));
+        state.tickEffects();
+        return winner;
+    }
+
+}
