@@ -3,6 +3,8 @@ package com.jogodavelha.room;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -26,8 +28,8 @@ public class RoomController {
 
     @Operation(summary = "Criar sala", description = "Cria sala para o jogador informado")
     @ApiResponse(responseCode = "201", description = "Sala criada com sucesso")
-    @ApiResponse(responseCode = "400", description = "Jogador inválido ou não encontrado")
-    @ApiResponse(responseCode = "409", description = "Jogador já está em sala/partida ativa")
+    @ApiResponse(responseCode = "400", description = "Jogador inválido ou não encontrado", content = @Content(schema = @Schema(implementation = com.jogodavelha.error.ApiError.class)))
+    @ApiResponse(responseCode = "409", description = "Jogador já está em sala/partida ativa", content = @Content(schema = @Schema(implementation = com.jogodavelha.error.ApiError.class)))
     @PostMapping
     public ResponseEntity<RoomDTO> createRoom(
             @Parameter(description = "ID do jogador que está criando a sala")
@@ -50,9 +52,9 @@ public class RoomController {
 
     @Operation(summary = "Entrar em sala", description = "Jogador entra em uma sala existente pelo código")
     @ApiResponse(responseCode = "200", description = "Entrou na sala com sucesso")
-    @ApiResponse(responseCode = "400", description = "Código inválido ou jogador não encontrado")
-    @ApiResponse(responseCode = "404", description = "Sala não encontrada ou encerrada")
-    @ApiResponse(responseCode = "409", description = "Sala cheia, partida já iniciada ou jogador indisponível")
+    @ApiResponse(responseCode = "400", description = "Código inválido ou jogador não encontrado", content = @Content(schema = @Schema(implementation = com.jogodavelha.error.ApiError.class)))
+    @ApiResponse(responseCode = "404", description = "Sala não encontrada ou encerrada", content = @Content(schema = @Schema(implementation = com.jogodavelha.error.ApiError.class)))
+    @ApiResponse(responseCode = "409", description = "Sala cheia, partida já iniciada ou jogador indisponível", content = @Content(schema = @Schema(implementation = com.jogodavelha.error.ApiError.class)))
     @PostMapping("/{code}/join")
     public ResponseEntity<RoomDTO> joinRoom(
             @Parameter(description = "Código de 4 dígitos da sala")

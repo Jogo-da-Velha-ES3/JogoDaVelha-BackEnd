@@ -30,8 +30,9 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .formLogin(form -> form.disable())
             .httpBasic(basic -> basic.disable())
-            .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(
-                    new JwtAuthenticationEntryPoint(objectMapper)))
+            .exceptionHandling(exceptions -> exceptions
+                    .authenticationEntryPoint(new JwtAuthenticationEntryPoint(objectMapper))
+                    .accessDeniedHandler(new ApiAccessDeniedHandler(objectMapper)))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(PUBLIC_ROUTES).permitAll()
                 .anyRequest().authenticated()

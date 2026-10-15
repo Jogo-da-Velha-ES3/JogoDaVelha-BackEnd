@@ -64,7 +64,7 @@ class AuthControllerTest {
         mvc.perform(post(REGISTER_URL).contentType(MediaType.APPLICATION_JSON).content(REGISTER_OK))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.status").value(409))
-                .andExpect(jsonPath("$.error").value("Conflict"))
+                .andExpect(jsonPath("$.code").value("USERNAME_ALREADY_EXISTS"))
                 .andExpect(jsonPath("$.message").value("Username já está em uso"))
                 .andExpect(jsonPath("$.path").value(REGISTER_URL))
                 .andExpect(jsonPath("$.timestamp").exists());
@@ -87,6 +87,7 @@ class AuthControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.message").value("Dados inválidos"))
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
                 .andExpect(jsonPath("$.fields.username").value("Username deve ter entre 3 e 15 caracteres"))
                 .andExpect(jsonPath("$.fields.password").exists())
                 .andExpect(jsonPath("$.fields.email").exists());
@@ -119,7 +120,7 @@ class AuthControllerTest {
         mvc.perform(post(LOGIN_URL).contentType(MediaType.APPLICATION_JSON).content(LOGIN_OK))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.status").value(401))
-                .andExpect(jsonPath("$.error").value("Unauthorized"))
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
                 .andExpect(jsonPath("$.message").value("Credenciais inválidas"))
                 .andExpect(jsonPath("$.path").value(LOGIN_URL));
     }

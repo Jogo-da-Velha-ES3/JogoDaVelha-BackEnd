@@ -2,6 +2,8 @@ package com.jogodavelha.auth;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -29,8 +31,8 @@ public class AuthController {
 
     @Operation(summary = "Cadastrar usuário", description = "Criar um novo usuário")
     @ApiResponse(responseCode = "201", description = "Usuário criado com sucesso")
-    @ApiResponse(responseCode = "400", description = "Dados inválidos")
-    @ApiResponse(responseCode = "409", description = "Username ou email já estão em uso")
+    @ApiResponse(responseCode = "400", description = "Dados inválidos", content = @Content(schema = @Schema(implementation = com.jogodavelha.error.ApiError.class)))
+    @ApiResponse(responseCode = "409", description = "Username ou email já estão em uso", content = @Content(schema = @Schema(implementation = com.jogodavelha.error.ApiError.class)))
     @PostMapping("/register")
     public ResponseEntity<RegisterResponse> register(@Valid @RequestBody RegisterRequest request) {
         User user = authService.register(request);
@@ -42,8 +44,8 @@ public class AuthController {
             description = "Autentica por email ou username e retorna JWT. O logout é realizado pelo cliente removendo o token armazenado localmente. O token permanece válido até sua expiração."
     )
     @ApiResponse(responseCode = "200", description = "Login realizado com sucesso")
-    @ApiResponse(responseCode = "400", description = "Dados inválidos")
-    @ApiResponse(responseCode = "401", description = "Credenciais inválidas")
+    @ApiResponse(responseCode = "400", description = "Dados inválidos", content = @Content(schema = @Schema(implementation = com.jogodavelha.error.ApiError.class)))
+    @ApiResponse(responseCode = "401", description = "Credenciais inválidas", content = @Content(schema = @Schema(implementation = com.jogodavelha.error.ApiError.class)))
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(LoginResponse.from(authService.login(request)));

@@ -56,7 +56,7 @@ class JwtSecurityMockMvcTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$").value(USER_ID.toString()));
         mvc.perform(get("/api/test/protected")).andExpect(status().isUnauthorized())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.status").value(401));
+                .andExpect(jsonPath("$.status").value(401)).andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
     }
 
     @Test
