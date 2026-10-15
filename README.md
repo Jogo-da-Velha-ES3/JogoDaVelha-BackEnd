@@ -1076,3 +1076,9 @@ Códigos REST disponíveis:
 | `INTERNAL_ERROR` | 500 | Erro inesperado do servidor |
 
 `fields` aparece somente em `VALIDATION_ERROR` originado de validação de corpo. O schema `ApiError` também é reutilizado nas mensagens de erro STOMP.
+
+## Códigos de habilidade
+
+O identificador de habilidade usado pelo front-end e nas mensagens STOMP é `code`; `name` permanece como nome de exibição. Os códigos são estáveis, em maiúsculas, e substituem espaços por `_`:
+
+`BOMBA`, `ESCUDO`, `TORNADO`, `BURACO_NEGRO`, `AMPULHETA`, `CONGELAR`, `CAMPO_DE_FORCA`, `TROCA_RAPIDA`, `REFORCO` e `SILENCIO`.
