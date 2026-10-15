@@ -968,6 +968,34 @@ O fluxo deve encerrar o round ao encontrar um vencedor, sem conferir de novo um
 round já encerrado. A chamada nas jogadas fica na BE-023 e no timeout na BE-020.
 Essas integrações ainda não estão implementadas. Esta tarefa não altera migrations.
 
+## Efeitos ofensivos (BE-014.1)
+
+`SkillEngine` reconhece BOMBA, TORNADO, BURACO NEGRO e CONGELAR pelos nomes do
+catálogo. O alvo deve ser uma peça adversária. Reforço impede remoção e movimento,
+mas não impede Congelar. Sem alvo válido, o engine retorna `NO_VALID_TARGET` sem
+alterar o estado. Consumo da habilidade e troca de turno continuam na BE-015.
+
+Tornado recebe origem e destino em `new SkillContext(playerId, origem, destino)`.
+O destino deve estar vazio e ser vizinho na horizontal ou vertical, sem diagonais
+nem passagem entre as bordas das linhas. Essa é a interpretação de adjacência
+adotada nesta implementação; o card não especifica diagonais.
+
+Para Buraco Negro, prepare `SkillContext.randomized(playerId, origem, random)` no
+servidor, antes de `GameStateManager.update`. O `RandomGenerator` é injetável nos
+testes; em produção, use `SecureRandom`. O contexto e o valor sorteado nunca devem
+vir do cliente. O efeito usa esse mesmo valor para escolher entre as casas vazias
+do estado atual, inclusive se o update precisar ser refeito por conflito.
+
+Congelar registra contador 2. Seguindo a BE-014, `endAction` confere a vitória e
+depois reduz os contadores, já na ação que aplicou o efeito. A peça volta a contar
+para vitória na conferência seguinte à expiração. Congelamento acompanha a peça
+se ela for movida e é removido junto dela pela Bomba.
+
+Os efeitos alteram apenas o `GameState`, serializado pelo manager existente. O
+chamador ainda deve validar jogador, turno e fase, executar a habilidade e chamar
+`endAction`; os handlers e o timer não fazem parte desta tarefa. Não há alterações
+de schema nem execução de migrations.
+
 ## 🧪 Testes
 
 O `RoomService` da BE-008 cria salas com `createRoom(playerId)` e permite entrada
