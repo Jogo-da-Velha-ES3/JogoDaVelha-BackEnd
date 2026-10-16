@@ -9,8 +9,7 @@ import lombok.NoArgsConstructor;
 
 import java.security.SecureRandom;
 import java.time.Instant;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
 
 /**
  * Modelo que representa o estado ativo de uma partida em Redis.
@@ -43,6 +42,22 @@ public class GameState {
     public static final int BOARD_SIZE = 16;
     public static final String EMPTY_BOARD = "----------------";
     public static final long DEFAULT_TURN_DURATION_MILLIS = 10000; // 10 segundos
+    public static final long HOURGLASS_TURN_DURATION_MILLIS = 5000; // 5 segundos (Ampulheta)
+
+    public record ShieldEffect(UUID ownerId, int turns) {}
+
+    @Builder.Default
+    private Map<Integer, ShieldEffect> shieldedPositions = new HashMap<>();
+    @Builder.Default
+    private Map<Integer, Integer> frozenPositions = new HashMap<>();
+    @Builder.Default
+    private Map<Integer, Integer> reinforcedPositions = new HashMap<>();
+    @Builder.Default
+    private Map<UUID, Integer> forceFieldTurns = new HashMap<>();
+    @Builder.Default
+    private Map<UUID, Integer> silencedTurns = new HashMap<>();
+    @Builder.Default
+    private Map<UUID, Integer> hourglassTurns = new HashMap<>();
 
     /**
      * Calcula o tempo restante do turno atual em milissegundos.
@@ -131,6 +146,7 @@ public class GameState {
         }
         UUID opponent = getOpponentId(firstPlayerId);
         board = EMPTY_BOARD;
+        clearEffects(); // Efeitos não atravessam rounds
         roundNumber = round;
         phase = GamePhase.PLAYING;
         suddenDeath = round == 3;
@@ -150,5 +166,56 @@ public class GameState {
             return false;
         }
         throw new IllegalArgumentException("Jogador não pertence à partida.");
+    }
+
+    public Set<Integer> shieldSet() {
+        return new HashSet<>(shieldedPositions.keySet());
+    }
+
+    public Set<Integer> frozenSet() {
+        return new HashSet<>(frozenPositions.keySet());
+    }
+
+    /* Casas que bloqueiam este jogador (escudos criados pelos oponentes) */
+    public Set<Integer> blockedFor(UUID playerId) {
+        Set<Integer> blocked = new HashSet<>();
+        shieldedPositions.forEach((pos, e) -> {
+            if (!e.ownerId().equals(playerId))
+                blocked.add(pos);
+        });
+
+        return blocked;
+    }
+
+    /* Fim da ação: decrementa todos os contadores e remove os que chegam a zero */
+    public void tickEffects() {
+        shieldedPositions.replaceAll((k, e) -> new ShieldEffect(e.ownerId(), e.turns() - 1));
+        shieldedPositions.values().removeIf(e -> e.turns() <= 0);
+        tick(frozenPositions);
+        tick(reinforcedPositions);
+        tick(forceFieldTurns);
+        tick(silencedTurns);
+        tick(hourglassTurns);
+    }
+
+    public void clearEffects() {
+        shieldedPositions.clear();
+        frozenPositions.clear();
+        reinforcedPositions.clear();
+        forceFieldTurns.clear();
+        silencedTurns.clear();
+        hourglassTurns.clear();
+    }
+
+    /* Duração do turno de quem vai jogar, considerando a AMPULHETA */
+    public long effectiveTurnDuration(UUID nextPlayerId, long baseMillis) {
+        return hourglassTurns.containsKey(nextPlayerId)
+                ? Math.min(baseMillis, HOURGLASS_TURN_DURATION_MILLIS)
+                : baseMillis;
+    }
+
+    private static <K> void tick(Map<K, Integer> counters) {
+        counters.replaceAll((k, v) -> v - 1);
+        counters.values().removeIf(v -> v <= 0);
     }
 }
