@@ -276,12 +276,16 @@ Implementação simplificada: aumentar a validade do JWT emitido no login, confi
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] O token emitido no login expira conforme o `JWT_EXPIRATION` configurado
 - [ ] Dentro do prazo, o mesmo token acessa rotas protegidas sem novo login
 - [ ] Token expirado retorna 401 no formato padrão
 - [ ] Rotas públicas (auth, health, swagger) continuam abertas
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -307,6 +311,8 @@ Implementar em `AuthController` os endpoints de cadastro e login (`/auth/registe
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Cadastro cria usuário e retorna 201
@@ -314,6 +320,8 @@ Implementar em `AuthController` os endpoints de cadastro e login (`/auth/registe
 - [ ] Erros de validação retornam 400 com mensagem clara
 - [ ] Testes de controller cobrem sucesso e erros
 - [ ] Endpoints documentados no Swagger
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -430,12 +438,16 @@ Correção das BE-008/BE-009 (concluídas, não alteradas). O `RoomController` a
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Endpoints de sala não recebem mais `playerId` do cliente
 - [ ] Tentar entrar em sala cheia e em sala com partida iniciada retornam mensagens distintas
 - [ ] Código inexistente continua retornando erro tratado
 - [ ] Swagger atualizado e testes de `Room` passando
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -492,12 +504,16 @@ Reescrita da tarefa original. A seleção passa a ser feita por STOMP dentro do 
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Dois pedidos simultâneos pelo mesmo personagem resultam em uma única reserva
 - [ ] Jogador não reserva personagem que não possui
 - [ ] Oponente recebe o bloqueio com o nome de quem reservou
 - [ ] Trocar de personagem libera o anterior
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -554,6 +570,8 @@ Correção da BE-012 (concluída, não alterada). A migration V6 marca `initial_
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Exatamente Bomba, Escudo e Ampulheta têm `initial_skill = true`
@@ -561,6 +579,8 @@ Correção da BE-012 (concluída, não alterada). A migration V6 marca `initial_
 - [ ] Descrições usam "turnos" e batem com o GDD v4
 - [ ] Flag `offensive` consultável via repository
 - [ ] Migration aplica sobre o banco existente sem perda de dados
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -588,11 +608,15 @@ Reescrita da tarefa original (que seguia o GDD v3). Dentro do Draft, o jogador e
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Jogador escolhe exatamente 2 habilidades elegíveis
 - [ ] Escolha de habilidade que o jogador não possui é rejeitada
 - [ ] Escolhas ficam salvas no estado do Draft
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -620,12 +644,16 @@ No início de cada round, o servidor sorteia 3 habilidades (o sorteio pode inclu
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Servidor sorteia 3 opções por round e o jogador recebe só as próprias
 - [ ] Sem escolha em 8s, uma opção é escolhida aleatoriamente
 - [ ] Deck do round contém as 2 fixas + a escolhida
 - [ ] Testes com sorteio determinístico (gerador injetado)
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -655,6 +683,8 @@ Substitui a tarefa única de 14h por três tarefas (BE-014, BE-014.1, BE-014.2).
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] `SkillEngine` aplica uma habilidade ao `GameState` por meio de `SkillEffect`
@@ -662,6 +692,8 @@ Substitui a tarefa única de 14h por três tarefas (BE-014, BE-014.1, BE-014.2).
 - [ ] Ordem aplicar → resolveWinner → diminuir contadores é respeitada, inclusive em timeout
 - [ ] Habilidade sem alvo válido é consumida sem efeito
 - [ ] Testes unitários do engine passando
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -689,6 +721,8 @@ Implementar sobre o `SkillEngine` (BE-014): **Bomba** remove 1 peça do oponente
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Cada uma das 4 habilidades produz o efeito descrito
@@ -696,6 +730,8 @@ Implementar sobre o `SkillEngine` (BE-014): **Bomba** remove 1 peça do oponente
 - [ ] Congelar faz a peça ser ignorada em `resolveWinner` por 2 turnos
 - [ ] Alvo reforçado faz Bomba, Tornado e Buraco Negro falharem
 - [ ] Efeitos refletidos no estado em Redis
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -723,6 +759,8 @@ Implementar sobre o `SkillEngine` (BE-014): **Escudo** bloqueia 1 casa vazia por
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Cada uma das 6 habilidades produz o efeito descrito
@@ -730,6 +768,8 @@ Implementar sobre o `SkillEngine` (BE-014): **Escudo** bloqueia 1 casa vazia por
 - [ ] Reforço protege contra Bomba, Tornado e Buraco Negro, mas não contra Congelar
 - [ ] Ampulheta aplica 5s ao próximo turno do oponente
 - [ ] Testes cobrem as interações entre habilidades
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -759,12 +799,16 @@ Garantir que cada habilidade só pode ser ativada uma vez por round e que ativá
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Habilidade já usada no round não pode ser reutilizada
 - [ ] Ativar habilidade consome a ação do turno e passa o turno ao oponente
 - [ ] Marcadores de uso zeram no início do round
 - [ ] Troca de turno em método isolado e substituível pelo TurnService
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -821,6 +865,8 @@ Correção da BE-016 (concluída, não alterada). A entidade `Game` só consegue
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] `Game.forfeit(loser)` encerra a partida com o outro jogador como vencedor e `end_reason` correto
@@ -828,6 +874,8 @@ Correção da BE-016 (concluída, não alterada). A entidade `Game` só consegue
 - [ ] Partida normal continua pagando 50/10/20
 - [ ] `started_at` e `finished_at` preenchidos
 - [ ] Testes de `Game`/`GameService` atualizados e passando
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -885,12 +933,16 @@ Complemento da BE-017 (concluída, não alterada). Hoje o `GameState` guarda só
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] `GameState` expõe os dois jogadores e a marca de cada um
 - [ ] Primeiro jogador do round 1 é aleatório e alterna a partir do round 2 (teste com gerador injetado)
 - [ ] Contador de timeouts consecutivos por jogador existe e não é zerado ao trocar de round
 - [ ] Testes existentes de `GameState`/`GameStateManager` continuam passando
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -948,12 +1000,16 @@ Correções das BE-018 e BE-019 (concluídas, não alteradas). (1) `MoveValidato
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Jogada após o prazo é rejeitada com exceção tipada
 - [ ] `resolveWinner` ignora peças congeladas e prioriza o jogador que agiu
 - [ ] Linha formada com peça congelada vale quando o congelamento acaba, se o oponente não venceu nem a desfez
 - [ ] Testes unitários cobrem os cenários acima e `mvn test` passa
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1012,6 +1068,8 @@ Implementar a alternância de turnos e o controle de tempo no servidor: **10s** 
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Turno alterna entre os dois jogadores
@@ -1019,6 +1077,8 @@ Implementar a alternância de turnos e o controle de tempo no servidor: **10s** 
 - [ ] Timeout incrementa o contador de timeouts consecutivos
 - [ ] Expiração é idempotente (não passa o turno duas vezes)
 - [ ] BE-015 passa a usar o TurnService
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1046,12 +1106,16 @@ O jogador que estoura o tempo em **3 turnos consecutivos** perde a **partida int
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] 3 timeouts consecutivos encerram a partida por W.O. com `end_reason` correto
 - [ ] Contador zera ao jogar normalmente e não zera ao trocar de round
 - [ ] Auto-escolha do Draft/sorteio não conta como timeout
 - [ ] W.O. paga 30 ao vencedor e 0 ao perdedor
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1108,12 +1172,16 @@ Implementar os handlers STOMP (`@MessageMapping`) para as ações 'jogar' e 'ati
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Jogada inválida é rejeitada com mensagem de erro clara no canal do usuário
 - [ ] Jogada válida atualiza o estado da partida e roda a verificação de vitória
 - [ ] Ativar habilidade segue as regras de BE-013/014/015
 - [ ] Jogador é identificado pelo `Principal`, nunca pelo payload
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1141,12 +1209,16 @@ Após cada ação válida, transmitir o novo estado aos dois clientes, conforme 
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Ambos os jogadores recebem o estado atualizado em tempo real, com timestamp do prazo
 - [ ] Estado traz placar, round, morte súbita e casas especiais
 - [ ] Fim de partida (vitória/empate/W.O.) é notificado a ambos
 - [ ] Opções do sorteio não vazam para o oponente
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1159,7 +1231,7 @@ Após cada ação válida, transmitir o novo estado aos dois clientes, conforme 
 **Prioridade:** Média
 
 **Objetivo / Descrição:**
-Tratar a desconexão de um jogador durante a partida (integrando com PlayerService/BE-022) e permitir reconexão à mesma partida em andamento, devolvendo um snapshot completo com o prazo do turno. O timer da partida continua correndo durante a desconexão (sem pausas), então os timeouts acumulam e levam ao W.O. pela BE-021. Configurar heartbeat no broker (hoje não há, e quedas de rede abruptas não são detectadas) e TTL nas chaves de presença no Redis.
+Tratar a desconexão de um jogador durante a partida (integrando com PlayerService/BE-022) e permitir reconexão à mesma partida em andamento, devolvendo um snapshot completo com o prazo do turno. O timer da partida continua correndo durante a desconexão (sem pausas), então os timeouts acumulam e levam ao W.O. pela BE-021. Configurar heartbeat no broker (hoje não há, e quedas de rede abruptas não são detectadas) e TTL nas chaves de presença no Redis. Publicar PLAYER_DISCONNECTED e PLAYER_RECONNECTED com { slot } no tópico da sala
 
 **Requisitos ERS:** RN-ARN-03, RN-POS-01, RNF-ARQ-01.
 
@@ -1174,12 +1246,19 @@ Tratar a desconexão de um jogador durante a partida (integrando com PlayerServi
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Desconexão não trava a partida indefinidamente
 - [ ] Jogador reconecta e recebe o estado atual com o prazo do turno
 - [ ] Heartbeat configurado e presença com TTL
+- [ ] O oponente recebe PLAYER_DISCONNECTED { slot } quando a queda é detectada (via heartbeat ou desconexão explícita).
+- [ ] O oponente recebe PLAYER_RECONNECTED { slot } quando o jogador volta.
+- [ ] O evento não é enviado para o próprio jogador que caiu.
 - [ ] Teste de integração cobre desconexão e reconexão
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1192,7 +1271,7 @@ Tratar a desconexão de um jogador durante a partida (integrando com PlayerServi
 **Prioridade:** Média
 
 **Objetivo / Descrição:**
-O crédito ao fim da partida já existe em `GameService.grantRewards` (e a variação por W.O. entra na BE-016.1). Esta tarefa fica com: tabela `coin_transactions` (extrato: tipo, valor, saldo resultante, origem), registro do extrato dentro da mesma transação do crédito de recompensa, consulta de saldo (`GET` do saldo do usuário) e retorno do valor creditado para o `GAME_OVER` (a mensagem é enviada pela BE-038).
+O crédito ao fim da partida já existe em `GameService.grantRewards` (e a variação por W.O. entra na BE-016.1). Esta tarefa fica com: tabela `coin_transactions` (extrato: tipo, valor, saldo resultante, origem), registro do extrato dentro da mesma transação do crédito de recompensa, consulta de saldo (`GET` do saldo do usuário) e retorno do valor creditado para o `MATCH_END` (a mensagem é enviada pela BE-038).
 
 **Requisitos ERS:** RF-POS-02, RF-HUB-02, RF-LOJ-01, RF-LOJ-02 (Tabela de Transações, WBS 1.1.1.1).
 
@@ -1207,12 +1286,16 @@ O crédito ao fim da partida já existe em `GameService.grantRewards` (e a varia
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Cada crédito/débito gera uma linha de extrato com saldo resultante
 - [ ] Saldo do usuário é consultável
 - [ ] Recompensa continua idempotente (sem crédito duplicado)
 - [ ] Testes de crédito e de extrato passando
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1240,12 +1323,16 @@ Expandir a tarefa original. (1) `GET` do perfil com apelido, saldo e personagem 
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Perfil retorna apelido, saldo e personagem favorito
 - [ ] Apelido duplicado (sem diferenciar maiúsculas) é rejeitado
 - [ ] Estatísticas e maior sequência batem com o histórico de testes (empate quebra a sequência)
 - [ ] Histórico indica partidas encerradas por W.O.
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1273,12 +1360,16 @@ O preço em coins dos personagens já existe (migration V9). Falta a relação d
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Personagem tem preço definido e construtor consistente com a coluna
 - [ ] É possível registrar e consultar os personagens que um usuário possui
 - [ ] X e O estão disponíveis para todo jogador sem compra
 - [ ] Inventário de personagens consultável
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1306,6 +1397,8 @@ Generalizar a tarefa original para personagens **e** habilidades: listar itens c
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Compra desconta o valor correto e registra extrato
@@ -1313,6 +1406,8 @@ Generalizar a tarefa original para personagens **e** habilidades: listar itens c
 - [ ] Compra repetida do mesmo item é rejeitada
 - [ ] Usuário só equipa personagem que possui
 - [ ] Habilidade comprada entra no pool de elegíveis
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1340,11 +1435,15 @@ Criar um teste de integração (Testcontainers) cobrindo o fluxo completo via We
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Fluxo completo de uma partida é validado de ponta a ponta
 - [ ] W.O. e fim de partida com recompensas cobertos
 - [ ] Teste roda em ambiente de CI local (`mvn test`)
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1372,12 +1471,16 @@ Antecipar tudo o que não depende do fluxo completo da partida: criar os serviç
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] API responde publicamente via URL do Render
 - [ ] Conexão com Neon e Upstash funcionando em produção
 - [ ] Variáveis de produção configuradas e sem segredos versionados
 - [ ] `show-sql` desligado em produção
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1403,11 +1506,15 @@ Publicar a versão final do `dev` no ambiente preparado na BE-033 e executar um 
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Fluxo mínimo de partida funciona em produção
 - [ ] `GET /api/health` responde 200
 - [ ] README com URL de produção e procedimento de rollback
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1433,11 +1540,15 @@ Configurar CORS no backend liberando a origem do frontend hospedado na Vercel (e
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Requisições do domínio do frontend na Vercel são aceitas
 - [ ] Origens não autorizadas continuam bloqueadas
 - [ ] Lista de origens configurável por variável de ambiente
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1450,7 +1561,7 @@ Configurar CORS no backend liberando a origem do frontend hospedado na Vercel (e
 **Prioridade:** Alta
 
 **Objetivo / Descrição:**
-Publicar em `/topic/room/{code}` o evento de entrada do 2º jogador, com o nome do adversário, para disparar o "MATCH FEITO!" no host. Hoje o join só devolve REST para quem entra e o host nunca é avisado. O evento é enviado após a transação de entrada na sala e identifica o destinatário pelo `Principal` (BE-040).
+Publicar em `/topic/rooms/{code}` o evento de entrada do 2º jogador, com o nome do adversário, para disparar o "MATCH FEITO!" no host. Hoje o join só devolve REST para quem entra e o host nunca é avisado. O evento é enviado após a transação de entrada na sala e identifica o destinatário pelo `Principal` (BE-040).
 
 **Requisitos ERS:** RF-SAL-03 (WBS 1.1.3.2).
 
@@ -1465,11 +1576,15 @@ Publicar em `/topic/room/{code}` o evento de entrada do 2º jogador, com o nome 
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Host recebe o evento com o nome do adversário ao entrar o 2º jogador
 - [ ] Evento não é enviado em tentativas de entrada rejeitadas
 - [ ] Teste de integração STOMP cobre o evento
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1497,12 +1612,16 @@ Não existe como sair de uma sala: `requireAvailablePlayer` trava o jogador ("j�
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Jogador consegue sair e criar/entrar em outra sala
 - [ ] Sala `WAITING` abandonada expira automaticamente
 - [ ] Oponente é notificado do fechamento
 - [ ] Testes de `Room`/`RoomService` cobrem saída e expiração
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1530,12 +1649,16 @@ Criar o `DraftState` no Redis (etapa 1: personagem; etapa 2: 2 habilidades inici
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Draft expira em 20s e completa as escolhas pendentes de forma aleatória entre os itens elegíveis
 - [ ] Status de pronto do oponente é publicado em tempo real
 - [ ] Ao concluir, sinaliza o início da partida
 - [ ] Testes cobrem conclusão antecipada e timeout
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1548,7 +1671,7 @@ Criar o `DraftState` no Redis (etapa 1: personagem; etapa 2: 2 habilidades inici
 **Prioridade:** Alta
 
 **Objetivo / Descrição:**
-Hoje nada cria `Game` e `GameState` a partir da sala e nada chama `GameService.registerRoundResult`. Implementar: (1) início da partida ao receber o evento `DraftCompleted` da BE-037 (cria `Game` + `GameState`, primeiro jogador aleatório no round 1); (2) início de cada round: limpa o tabuleiro, alterna o primeiro jogador, chama o serviço de sorteio por interface (implementado na BE-013.1, sorteio de 8s) e começa os turnos (3º round com 5s por turno); (3) fim de round: registra o resultado (`registerRoundResult`) e aplica a regra de melhor de 3, que já existe em `Game` (1x0 após o round 2 encerra); (4) fim de partida: persiste, concede recompensas, publica `GAME_OVER` (placar final, W.O., coins creditadas), limpa o Redis e atualiza a sala.
+Hoje nada cria `Game` e `GameState` a partir da sala e nada chama `GameService.registerRoundResult`. Implementar: (1) início da partida ao receber o evento `DraftCompleted` da BE-037 (cria `Game` + `GameState`, primeiro jogador aleatório no round 1); (2) início de cada round: limpa o tabuleiro, alterna o primeiro jogador, chama o serviço de sorteio por interface (implementado na BE-013.1, sorteio de 8s) e começa os turnos (3º round com 5s por turno); (3) fim de round: registra o resultado (`registerRoundResult`) e aplica a regra de melhor de 3, que já existe em `Game` (1x0 após o round 2 encerra); (4) fim de partida: persiste, concede recompensas, publica `MATCH_END` (placar final, W.O., coins creditadas), limpa o Redis e atualiza a sala.
 
 **Requisitos ERS:** RF-ARN-04, RF-ARN-05, RN-ARN-06, RF-POS-01, RF-POS-02.
 
@@ -1563,13 +1686,17 @@ Hoje nada cria `Game` e `GameState` a partir da sala e nada chama `GameService.r
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Concluir o Draft cria `Game` e `GameState` e inicia o round 1
 - [ ] Round termina por vitória/empate e o próximo começa com tabuleiro limpo e primeiro jogador alternado
 - [ ] Partida encerra conforme melhor de 3 (inclusive 1x0 após o round 2) e na morte súbita
-- [ ] `GAME_OVER` é publicado com placar, W.O. e coins creditadas; Redis é limpo
+- [ ] `MATCH_END` é publicado com placar, W.O. e coins creditadas; Redis é limpo
 - [ ] Teste de integração cobre uma partida de 2 rounds
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1597,12 +1724,16 @@ A WBS 1.1.2.4 não tinha nenhuma tarefa. Implementar: pedido de revanche com jan
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Aceite mútuo em até 15s reinicia o Draft na mesma sala
 - [ ] Recusa ou expiração fecha a sala e notifica os dois
 - [ ] "Voltar ao Lobby" fecha a sala e desabilita a revanche
 - [ ] Desconexão cancela o pedido pendente
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1630,12 +1761,16 @@ O endpoint `/ws/**` é `permitAll` e o `PlayerConnectionController` aceita `play
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] `CONNECT` sem JWT válido é recusado
 - [ ] Handlers STOMP identificam o jogador pelo `Principal`
 - [ ] Payload de conexão não carrega mais o `playerId`
 - [ ] Teste de integração cobre conexão válida e inválida
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1663,12 +1798,16 @@ Adicionar `price_coins` em `skills` e criar `user_skills` (migration + entidade/
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] `skills` tem preço e `user_skills` registra a posse
 - [ ] Todo jogador possui Bomba, Escudo e Ampulheta sem compra
 - [ ] Consulta retorna o pool de iniciais elegíveis do jogador
 - [ ] Testes de repository/serviço passando
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1696,12 +1835,16 @@ Hoje só existe o handler do pacote `room` (com a chave malformada `"erro: "`) e
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Erros REST seguem um único formato em todos os pacotes
 - [ ] Erros em handlers STOMP chegam ao usuário em `/user/queue/errors`
 - [ ] Todas as rotas REST sob o mesmo prefixo, com `SecurityConfig` e Swagger coerentes
 - [ ] Frontend avisado das rotas finais
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1729,11 +1872,15 @@ Por ora a compra de coins com dinheiro real é apenas simbólica: não há trans
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Listar pacotes e comprar um pacote credita as coins e registra extrato
 - [ ] Flag desliga o endpoint
 - [ ] Nenhum dado de cartão é recebido ou armazenado
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 
@@ -1776,6 +1923,8 @@ Escopo back-end:
 - [ ] Critérios de aceite atendidos
 - [ ] Seguir Regras Gerais do Back-End
 - [ ] README atualizado (se necessário)
+- [ ] Seguir o contrato de integração (`docs/contrato-integracao.md`)
+- [ ] Seguir as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] E-mail cadastrado recebe o link, e o e-mail não cadastrado recebe a mesma resposta 200 sem envio
@@ -1787,6 +1936,8 @@ Escopo back-end:
 - [ ] Token reutilizado não funciona uma segunda vez
 - [ ] Senha e token nunca aparecem em texto plano no banco nem nos logs
 - [ ] Endpoints documentados no Swagger
+- [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
+- [ ] Compatibilidade com o frontend validada, conforme as Regras de Integração com o Front-End (`docs/regras-integracao-front-end.md`)
 
 ---
 

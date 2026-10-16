@@ -218,8 +218,6 @@ Adicional do backlog não incluído na lista inicial do front:
 
 | Item | Quem decide | Card |
 |---|---|---|
-| Singular `/topic/room/{code}` (backlog) ou plural `/topic/rooms/{code}` (front) | Back + front | BE-035 |
-| `MATCH_END` (front) ou `GAME_OVER` (backlog) | Back + front | BE-038 |
 | Códigos de erro STOMP (`BAD_REQUEST`/`CONFLICT` etc.) versus códigos REST e campo `error` adicional | Back + front | BE-044 |
 | Remoção de `playerId` do payload STOMP e uso do JWT/`Principal` | Back + front; comunicar antes do merge | BE-040 |
 | Remoção de `playerId` query nos endpoints de sala e uso de JWT — breaking | Back + front; comunicar antes do merge | BE-009.1 |
