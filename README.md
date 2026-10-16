@@ -34,6 +34,14 @@ Backend de jogo da velha multiplayer por turnos usando Spring Boot + Maven, segu
 
 - Endpoints documentados no Swagger (anotações OpenAPI aplicadas).
 
+**Contrato de integração com o front** (`docs/contrato-integracao.md`)
+
+- Todo PR que cria, altera ou remove endpoint REST ou destino/evento STOMP deve atualizar o contrato na mesma PR; o revisor não aprova sem isso.
+- Ao mergear, o item passa a ✅; enquanto estiver em andamento, fica 🚧/📝 com o card.
+- Mudança que quebra compatibilidade (rota, campo, `code` de erro, destino, nome de evento, remoção) é avisada ao front antes do merge e entra no changelog como `BREAKING`.
+- Todo `code` de erro novo entra no catálogo do contrato.
+- Checkbox para a descrição da PR: `- [ ] Contrato de integração atualizado (se criar/alterar endpoint ou evento)`.
+
 #### Guia Rápido de Prefixos de branches (Padrão de Mercado)
 Para manter o repositório limpo e seguro, a convenção internacional utiliza estas abreviações e palavras cheias:
 - feat/ (Abreviação de Feature): Para novas funcionalidades.
@@ -129,6 +137,7 @@ cp .env.example .env
 - `JWT_SECRET` — Chave secreta para assinatura JWT (mínimo 32 bytes, gere com `openssl rand -base64 32`)
 - `JWT_EXPIRATION` — Tempo de expiração do token JWT em milissegundos (recomendado: 2592000000 = 30 dias para manter o usuário autenticado entre acessos)
 - `SERVER_PORT` — Porta da aplicação (padrão: 8080)
+- `CORS_ALLOWED_ORIGINS` — Origens CORS separadas por vírgula; aceita padrões com `*`. Padrão local: `http://localhost:5173`. Para o front, inclua `https://jogodavelha-frontend.vercel.app`, `https://jogodavelha-frontend-dev.vercel.app` e `https://*.vercel.app`.
 
 **⚠️ NOVAS VARIÁVEIS (adicionar ao .env existente):**
 - `GAME_STATE_TTL` — TTL em milissegundos para estado da partida (padrão: 1800000 = 30 minutos)
@@ -902,6 +911,8 @@ O projeto utiliza **SpringDoc OpenAPI** para geração automática de documenta�
 - **Swagger UI**: `http://localhost:8080/swagger-ui/index.html`
 - **OpenAPI JSON**: `http://localhost:8080/v3/api-docs`
 
+Contrato de integração: [`docs/contrato-integracao.md`](docs/contrato-integracao.md). Swagger = detalhe do REST; contrato = visão para o front e destinos/eventos STOMP.
+
 ### Configuração de Segurança
 
 A documentação já está configurada com suporte a autenticação JWT:
@@ -1031,7 +1042,7 @@ Para o ambiente de produção, foi decidido o seguinte stack de hospedagem:
 
 ## Autenticação JWT
 
-Rotas protegidas exigem o cabeçalho `Authorization: Bearer <token>`. O token é obtido pelo fluxo de autenticação (`POST /auth/login`). Tokens válidos autenticam o UUID do usuário; o filtro não consulta o banco. Requisições sem token ou com token inválido recebem HTTP 401 e um corpo JSON com a mensagem genérica `Autenticação necessária ou token inválido`.
+Rotas protegidas exigem o cabeçalho `Authorization: Bearer <token>`. O token é obtido pelo fluxo de autenticação (`POST /api/auth/login`). Tokens válidos autenticam o UUID do usuário; o filtro não consulta o banco. Requisições sem token ou com token inválido recebem HTTP 401 e um corpo JSON com a mensagem genérica `Autenticação necessária ou token inválido`.
 
 O tempo de validade do token é configurado pela variável de ambiente `JWT_EXPIRATION`. Para manter o usuário autenticado entre acessos, recomenda-se utilizar `2592000000` milissegundos (30 dias).
 
@@ -1039,7 +1050,7 @@ Logout é realizado pelo cliente (frontend). O backend não possui endpoint de l
 
 Ao realizar logout, o frontend deve remover o token JWT armazenado localmente. O token permanecerá tecnicamente válido até sua expiração configurada em `JWT_EXPIRATION`.
 
-Rotas públicas: `/auth/**`, `GET /api/health`, `/v3/api-docs/**`, `/swagger-ui/**`, `/swagger-ui.html` e `/ws/**`.## Formato de erro
+Rotas públicas: `/api/auth/**`, `GET /api/health`, `GET /api/health/**`, `/v3/api-docs/**`, `/swagger-ui/**`, `/swagger-ui.html` e `/ws/**`.
 
 ## Formato de Erro
 
@@ -1075,3 +1086,13 @@ Códigos REST disponíveis:
 | `INTERNAL_ERROR` | 500 | Erro inesperado do servidor |
 
 `fields` aparece somente em `VALIDATION_ERROR` originado de validação de corpo. O schema `ApiError` também é reutilizado nas mensagens de erro STOMP.
+
+Detalhes e atualizações em `docs/contrato-integracao.md`.
+
+## Códigos de habilidade
+
+O identificador de habilidade usado pelo front-end e nas mensagens STOMP é `code`; `name` permanece como nome de exibição. Os códigos são estáveis, em maiúsculas, e substituem espaços por `_`:
+
+`BOMBA`, `ESCUDO`, `TORNADO`, `BURACO_NEGRO`, `AMPULHETA`, `CONGELAR`, `CAMPO_DE_FORCA`, `TROCA_RAPIDA`, `REFORCO` e `SILENCIO`.
+
+Detalhes e atualizações em `docs/contrato-integracao.md`.

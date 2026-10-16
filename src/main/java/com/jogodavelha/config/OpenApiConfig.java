@@ -14,6 +14,9 @@ import io.swagger.v3.oas.models.security.SecurityScheme;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.HashMap;
+import java.util.Map;
+
 @Configuration
 public class OpenApiConfig {
 
@@ -23,6 +26,8 @@ public class OpenApiConfig {
     public OpenAPI jogoDaVelhaOpenAPI() {
         ResolvedSchema apiErrorSchema = ModelConverters.getInstance()
                 .resolveAsResolvedSchema(new AnnotatedType(ApiError.class));
+        Map<String, Schema> schemas = new HashMap<>(apiErrorSchema.referencedSchemas);
+        schemas.put("ApiError", apiErrorSchema.schema);
         return new OpenAPI()
                 .info(new Info()
                         .title("Jogo da Velha — API")
@@ -33,8 +38,7 @@ public class OpenApiConfig {
                                 .url("https://www.apache.org/licenses/LICENSE-2.0.html")))
                 .addSecurityItem(new SecurityRequirement().addList(SECURITY_SCHEME_NAME))
                 .components(new Components()
-                        .schemas(apiErrorSchema.referencedSchemas)
-                        .addSchemas("ApiError", apiErrorSchema.schema)
+                        .schemas(schemas)
                         .addSecuritySchemes(SECURITY_SCHEME_NAME,
                                 new SecurityScheme()
                                         .name(SECURITY_SCHEME_NAME)
