@@ -57,7 +57,7 @@ public class Room {
             throw new IllegalStateException("Jogador já está nesta sala.");
         }
         if (player2 != null) {
-            throw new IllegalStateException("A sala está cheia.");
+            throw new RoomFullException("A sala está cheia.");
         }
         player2 = player;
         startIfFull();

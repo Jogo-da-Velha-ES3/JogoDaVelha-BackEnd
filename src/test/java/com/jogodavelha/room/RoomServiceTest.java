@@ -84,7 +84,7 @@ class RoomServiceTest {
         prepareJoin();
         User second = player("second");
         room.join(second);
-        assertJoinRejected("A partida desta sala já foi iniciada.");
+        assertJoinRejected("A sala não está aguardando jogadores.");
         assertSame(second, room.getPlayer2());
     }
 
@@ -97,7 +97,10 @@ class RoomServiceTest {
         room.setStatus(RoomStatus.IN_GAME);
         when(users.findById(third.getId())).thenReturn(Optional.of(third));
         var error = assertThrows(IllegalStateException.class, () -> service.joinRoom("0042", third.getId()));
-        assertEquals("A partida desta sala já foi iniciada.", error.getMessage());
+        assertEquals(
+                "A sala não está aguardando jogadores.",
+                error.getMessage()
+        );
         verify(rooms, never()).saveAndFlush(any());
     }
 

@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.Authentication;
 
 import java.util.UUID;
 
@@ -21,20 +22,16 @@ public class RoomController {
 
     private final RoomService roomService;
 
-    /*
-    TODO: substituir @RequestParam UUID playerId pela extração do jogador autenticado via JWT, assim que o
-     filtro de autenticação estiver implementado
-    */
-
     @Operation(summary = "Criar sala", description = "Cria sala para o jogador informado")
     @ApiResponse(responseCode = "201", description = "Sala criada com sucesso")
     @ApiResponse(responseCode = "400", description = "Jogador inválido ou não encontrado", content = @Content(schema = @Schema(implementation = com.jogodavelha.error.ApiError.class)))
     @ApiResponse(responseCode = "409", description = "Jogador já está em sala/partida ativa", content = @Content(schema = @Schema(implementation = com.jogodavelha.error.ApiError.class)))
     @PostMapping
     public ResponseEntity<RoomDTO> createRoom(
-            @Parameter(description = "ID do jogador que está criando a sala")
-            @RequestParam UUID playerId
+            Authentication authentication
     ) {
+        UUID playerId = (UUID) authentication.getPrincipal();
+
         /*
         NOTA: a conversão Room → RoomDTO é feita aqui no Controller (e não no
          RoomService) para não alterar o contrato público do Service, que já
@@ -46,8 +43,13 @@ public class RoomController {
          dentro do RoomService (ajustando também o RoomServiceTest).
          */
 
-        RoomDTO roomDTO = RoomDTO.from(roomService.createRoom(playerId));
-        return ResponseEntity.status(HttpStatus.CREATED).body(roomDTO);
+        RoomDTO roomDTO = RoomDTO.from(
+                roomService.createRoom(playerId)
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(roomDTO);
     }
 
     @Operation(summary = "Entrar em sala", description = "Jogador entra em uma sala existente pelo código")
@@ -57,12 +59,17 @@ public class RoomController {
     @ApiResponse(responseCode = "409", description = "Sala cheia, partida já iniciada ou jogador indisponível", content = @Content(schema = @Schema(implementation = com.jogodavelha.error.ApiError.class)))
     @PostMapping("/{code}/join")
     public ResponseEntity<RoomDTO> joinRoom(
-            @Parameter(description = "Código de 4 dígitos da sala")
             @PathVariable String code,
-            @Parameter(description = "ID do jogador que deseja entrar na sala")
-            @RequestParam UUID playerId
+            Authentication authentication
     ) {
-        RoomDTO roomDTO = RoomDTO.from(roomService.joinRoom(code, playerId));
+
+        UUID playerId = (UUID) authentication.getPrincipal();
+
+        RoomDTO roomDTO =
+                RoomDTO.from(
+                        roomService.joinRoom(code, playerId)
+                );
+
         return ResponseEntity.ok(roomDTO);
     }
 }
