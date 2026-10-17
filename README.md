@@ -1095,4 +1095,11 @@ O identificador de habilidade usado pelo front-end e nas mensagens STOMP é `cod
 
 `BOMBA`, `ESCUDO`, `TORNADO`, `BURACO_NEGRO`, `AMPULHETA`, `CONGELAR`, `CAMPO_DE_FORCA`, `TROCA_RAPIDA`, `REFORCO` e `SILENCIO`.
 
+O `SkillEngine` registra os efeitos pelo retorno de `SkillEffect.skillCode()`.
+Ao chamar o motor, use `skillEngine.useSkill(state, skill.getCode(), context)`,
+nunca `skill.getName()`. Por exemplo, o identificador é `BURACO_NEGRO`, não
+`BURACO NEGRO`. O nome de exibição permanece disponível em `Skill.name`, sem
+alteração na sua serialização. Códigos desconhecidos são rejeitados, e dois
+efeitos não podem ser registrados com o mesmo código.
+
 Detalhes e atualizações em `docs/contrato-integracao.md`.
