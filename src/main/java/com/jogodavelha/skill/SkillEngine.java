@@ -13,18 +13,19 @@ public class SkillEngine {
 
     public SkillEngine(List<SkillEffect> skillEffects, GameValidator validator) {
         for (SkillEffect effect : skillEffects) {
-            if (effects.put(effect.skillName(), effect) != null) {
-                throw new IllegalStateException("Habilidade duplicada: " + effect.skillName());
+            String skillCode = effect.skillCode();
+            if (effects.put(skillCode, effect) != null) {
+                throw new IllegalStateException("Habilidade duplicada: " + skillCode);
             }
         }
         this.validator = validator;
     }
 
     /* Aplica habilidade. Sem alvo válido, não altera o estado, mas a habilidade conta como usada */
-    public SkillResult useSkill(GameState state, String skillName, SkillContext context) {
-        SkillEffect effect = effects.get(skillName);
+    public SkillResult useSkill(GameState state, String skillCode, SkillContext context) {
+        SkillEffect effect = effects.get(skillCode);
         if (effect == null) {
-            throw new IllegalArgumentException("Habilidade desconhecida: " + skillName);
+            throw new IllegalArgumentException("Habilidade desconhecida: " + skillCode);
         }
         if (!effect.hasValidTarget(state, context)) {
             return SkillResult.NO_VALID_TARGET;
