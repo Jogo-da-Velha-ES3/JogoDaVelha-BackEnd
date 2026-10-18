@@ -2,7 +2,7 @@
 
 **Propósito:** registrar o comportamento disponível e as propostas de integração entre backend e frontend.
 **Público:** time do front.
-**Atualizado em:** 15/10/2026.
+**Atualizado em:** 18/10/2026.
 **Fonte da verdade:** o contrato REST implementado está no Swagger (`/swagger-ui.html` e `/v3/api-docs`). Este documento é a visão voltada ao front e também acompanha o STOMP.
 
 ## Legenda de status
@@ -58,6 +58,23 @@ O front deve decidir pelo `code` e apresentar `message`. `fields` só é preench
 | ✅ `UNAUTHORIZED` | 401 | Rota protegida sem autenticação ou token ausente/inválido. |
 | ✅ `FORBIDDEN` | 403 | Acesso negado a recurso protegido. |
 | ✅ `INTERNAL_ERROR` | 500 | Exceção inesperada ou erro HTTP 5xx. |
+
+### Erros de habilidade no STOMP
+
+🚧 BE-014.1, PR #97. O handler de erro preserva os códigos abaixo em `ApiError`,
+enviado ao autor em `/user/queue/errors`, sem `fields` ou `error`.
+Não há endpoint REST de habilidade nem handler público de ativação nesta tarefa.
+
+| Código | `status` no payload | Uso |
+|---|---:|---|
+| `SKILL_INVALID_TARGET` | 400 | Alvo nulo, fora do tabuleiro, vazio ou próprio. |
+| `SKILL_INVALID_DESTINATION` | 400 | Destino do Tornado ausente quando há opção, fora do tabuleiro, ocupado, bloqueado por Escudo ou não adjacente. |
+
+Pedidos inválidos não devem consumir a habilidade ou encerrar o turno: o chamador
+precisa validar antes do consumo e não prosseguir com o fim da ação após a exceção.
+O motor rejeita sem alterar o estado; a integração com o consumo do deck fica na
+BE-015. Os testes locais cobrem seleção do handler, payload e anotação de envio
+privado, não entrega por um broker real.
 
 ### IDs, enums e habilidades
 
@@ -176,7 +193,7 @@ Payload não definido adiante permanece **payload a definir**; nada abaixo está
 - ⚠️ `/ws/**` é público e o `CONNECT` não valida JWT. BE-040 (prevista 14/10/2026) deve validar token em `CONNECT`, definir `Principal` e remover o identificador informado pelo cliente: breaking para o handshake/payload.
 - ⚠️ Único handler implementado: `SEND /app/room/{code}/connect` com `{ "playerId": "<uuid>" }`. O registro associa sessão, sala e jogador e marca jogador conectado. `PlayerDisconnectionListener` remove associação da sessão e, se conhecida, marca jogador desconectado; sessão desconhecida não produz ação no serviço.
 - ⚠️ O disconnect acima é o comportamento observado; reconexão/snapshot e heartbeat constam em BE-025 (24–27/10).
-- Erros são enviados por `@SendToUser` para `/user/queue/errors`, como `ApiError`. No STOMP, `code` vem de `HttpStatus.name()` (por exemplo `BAD_REQUEST`, `CONFLICT`, `INTERNAL_SERVER_ERROR`) e existe também `error` com a frase HTTP; isso diverge do catálogo REST.
+- Erros são enviados por `@SendToUser` para `/user/queue/errors`, como `ApiError`. Nos handlers genéricos, `code` vem de `HttpStatus.name()` (por exemplo `BAD_REQUEST`, `CONFLICT`, `INTERNAL_SERVER_ERROR`) e existe também `error` com a frase HTTP; isso diverge do catálogo REST. A BE-014.1 preserva os dois códigos de habilidade descritos acima; o ajuste dos demais erros permanece na BE-044.
 - ❓ Entrega de `/user/queue/errors` sem `Principal`: não há teste de integração STOMP provando roteamento da fila para sessões sem usuário autenticado; confirmar no cliente/broker e após BE-040.
 
 ### Propostas de destinos e eventos
@@ -205,8 +222,24 @@ Envio de jogada solicitado pelo front em `/move`; destino final completo e paylo
 | `DRAFT_UPDATE` | Progresso/prontidão do draft; jogadores da sala | Etapas (personagem, habilidades iniciais), pronto do oponente e timer geral de 20s são descritos no BE-037; formato payload a definir | BE-037, 19/10; 📝 |
 | `DRAW_OPTIONS` | Sorteio de três opções; somente dono | Três opções e janela de escolha de 8s (BE-013.1) | BE-013.1, 24/10; 📝 |
 | `DECK_UPDATE` | Atualização do deck; jogador dono | payload a definir; privado do jogador conforme pedido do front | BE-023/BE-024; 📝 |
-| `ABILITY_RESOLVED` | Resolução de habilidade; sala | payload a definir | BE-023, 20/10; 📝 |
+| `ABILITY_RESOLVED` | Resolução de habilidade; sala | `result`: `APPLIED` ou `NO_VALID_TARGET`; demais campos a definir | BE-023, 20/10; 📝 |
 | `TURN_TIMEOUT` | Expiração do turno; sala | Timeout e contador previsto em BE-021; payload a definir | BE-020/BE-021; 15/10 e 25/10; 📝 |
+
+📝 **Alvo, destino e resultado de habilidades:** na futura mensagem de ativação,
+`targetPosition` indica a peça adversária e `destinationPosition` indica o destino
+do Tornado. As posições vão de 0 a 15 em ordem de linha: 0–3 na primeira linha,
+4–7 na segunda, 8–11 na terceira e 12–15 na quarta. Tornado só permite vizinhança
+ortogonal, sem diagonais nem passagem entre bordas. Tornado e Buraco Negro
+desconsideram destinos bloqueados por Escudo para quem usa a habilidade.
+
+📝 Em `ABILITY_RESOLVED`, `result: NO_VALID_TARGET` representa habilidade consumida
+sem efeito por Reforço ou ausência de destino permitido, com encerramento do turno.
+Não é código de erro e não vai ao catálogo de erros. Sem vizinho permitido,
+Tornado aceita ausência de destino para retornar esse resultado; se houver opção,
+omitir o destino é pedido inválido. Destino informado inválido continua sendo erro.
+`APPLIED` indica efeito aplicado. Pedido inválido recebe erro privado, sem consumir
+a habilidade ou encerrar o turno. Consumo e encerramento dependem da BE-015;
+publicação do evento, da BE-023/BE-024. Nenhum destino novo é definido aqui.
 
 Adicional do backlog não incluído na lista inicial do front:
 

@@ -15,7 +15,8 @@ public class BlackHoleEffect implements SkillEffect {
     @Override
     public boolean hasValidTarget(GameState state, SkillContext context) {
         return OffensiveEffectSupport.hasUnreinforcedOpponentPiece(state, context)
-                && state.getBoard().indexOf('-') >= 0;
+                && IntStream.range(0, GameState.BOARD_SIZE)
+                .anyMatch(position -> OffensiveEffectSupport.isAvailableDestination(state, context, position));
     }
 
     @Override
@@ -24,7 +25,7 @@ public class BlackHoleEffect implements SkillEffect {
             throw new IllegalArgumentException("Prepare o sorteio do Buraco Negro antes do update.");
         }
         int[] emptyPositions = IntStream.range(0, GameState.BOARD_SIZE)
-                .filter(position -> state.getBoard().charAt(position) == '-')
+                .filter(position -> OffensiveEffectSupport.isAvailableDestination(state, context, position))
                 .toArray();
         int destination = emptyPositions[(int) (context.randomValue() * emptyPositions.length)];
         OffensiveEffectSupport.movePiece(state, context.targetPosition(), destination);

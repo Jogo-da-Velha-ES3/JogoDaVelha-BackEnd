@@ -21,7 +21,7 @@ public class SkillEngine {
         this.validator = validator;
     }
 
-    /* Aplica habilidade. Sem alvo válido, não altera o estado, mas a habilidade conta como usada */
+    /* Pedido inválido lança exceção; falha de regra retorna NO_VALID_TARGET, que conta como uso. */
     public SkillResult useSkill(GameState state, String skillCode, SkillContext context) {
         SkillEffect effect = effects.get(skillCode);
         if (effect == null) {

@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jogodavelha.game.logic.GameState;
 import com.jogodavelha.game.logic.GameStateManager;
 import com.jogodavelha.game.logic.GameValidator;
+import com.jogodavelha.game.logic.SkillValidationException;
+import com.jogodavelha.game.service.TurnService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -22,6 +24,7 @@ import java.util.random.RandomGenerator;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import static com.jogodavelha.game.logic.SkillValidationException.Code.*;
 
 class OffensiveEffectsTest {
     private final UUID gameId = UUID.randomUUID();
@@ -65,8 +68,9 @@ class OffensiveEffectsTest {
         GameState state = state(new String(board));
         GameState before = copy(state);
 
-        assertEquals(SkillResult.NO_VALID_TARGET,
-                engine.useSkill(state, "TORNADO", new SkillContext(p1, source, destination)));
+        var error = assertThrows(SkillValidationException.class,
+                () -> engine.useSkill(state, "TORNADO", new SkillContext(p1, source, destination)));
+        assertEquals(SKILL_INVALID_DESTINATION, error.getCode());
         assertEquals(before, state);
     }
 
@@ -75,10 +79,78 @@ class OffensiveEffectsTest {
         GameState state = state("X---XO----------");
         GameState before = copy(state);
 
-        assertEquals(SkillResult.NO_VALID_TARGET,
-                engine.useSkill(state, "TORNADO", new SkillContext(p1, 5, 4)));
+        var occupied = assertThrows(SkillValidationException.class,
+                () -> engine.useSkill(state, "TORNADO", new SkillContext(p1, 5, 4)));
+        var missing = assertThrows(SkillValidationException.class,
+                () -> engine.useSkill(state, "TORNADO", new SkillContext(p1, 5)));
+        assertEquals(SKILL_INVALID_DESTINATION, occupied.getCode());
+        assertEquals(SKILL_INVALID_DESTINATION, missing.getCode());
+        assertEquals(before, state);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void tornadoRespectsShieldsOwnedByTheOtherPlayer(boolean player1Acts) {
+        UUID caster = player1Acts ? p1 : p2;
+        GameState state = state(player1Acts ? "X----O----------" : "O----X----------");
+        state.getShieldedPositions().put(6, new GameState.ShieldEffect(state.getOpponentId(caster), 2));
+        GameState before = copy(state);
+
+        var error = assertThrows(SkillValidationException.class,
+                () -> engine.useSkill(state, "TORNADO", new SkillContext(caster, 5, 6)));
+
+        assertEquals(SKILL_INVALID_DESTINATION, error.getCode());
+        assertEquals(before, state);
+        state.getShieldedPositions().put(6, new GameState.ShieldEffect(caster, 2));
+        assertEquals(SkillResult.APPLIED,
+                engine.useSkill(state, "TORNADO", new SkillContext(caster, 5, 6)));
+        assertEquals(player1Acts ? 'O' : 'X', state.getBoard().charAt(6));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void tornadoWithoutAvailableNeighborReturnsNoValidTarget(boolean shielded) {
+        GameState state = state(shielded ? "X----O----------" : "XX--XOX--X------");
+        if (shielded) {
+            for (int position : new int[]{1, 4, 6, 9}) {
+                state.getShieldedPositions().put(position, new GameState.ShieldEffect(p2, 2));
+            }
+        }
+        GameState before = copy(state);
+
         assertEquals(SkillResult.NO_VALID_TARGET,
                 engine.useSkill(state, "TORNADO", new SkillContext(p1, 5)));
+        assertEquals(before, state);
+        var error = assertThrows(SkillValidationException.class,
+                () -> engine.useSkill(state, "TORNADO", new SkillContext(p1, 5, 15)));
+        assertEquals(SKILL_INVALID_DESTINATION, error.getCode());
+        assertEquals(before, state);
+    }
+
+    @ParameterizedTest
+    @ValueSource(doubles = {0.0, 0.25, 0.5, 0.9999999999999999})
+    void blackHoleDrawExcludesBlockedCellsButAllowsTheCastersOwnShield(double draw) {
+        GameState state = state("X----O----------");
+        for (int position = 1; position < GameState.BOARD_SIZE; position++) {
+            if (position != 5) {
+                state.getShieldedPositions().put(position, new GameState.ShieldEffect(p2, 2));
+            }
+        }
+        state.getShieldedPositions().put(9, new GameState.ShieldEffect(p1, 2));
+
+        assertEquals(SkillResult.APPLIED,
+                engine.useSkill(state, "BURACO_NEGRO", new SkillContext(p1, 5, null, draw)));
+        assertMovedTo(state, 5, 9);
+    }
+
+    @Test
+    void blackHoleWithoutUnblockedDestinationReturnsNoValidTarget() {
+        GameState state = state("XOOOOOOOOOOOOOO-");
+        state.getShieldedPositions().put(15, new GameState.ShieldEffect(p2, 2));
+        GameState before = copy(state);
+
+        assertEquals(SkillResult.NO_VALID_TARGET,
+                engine.useSkill(state, "BURACO_NEGRO", context("BURACO_NEGRO", 5, null)));
         assertEquals(before, state);
     }
 
@@ -139,13 +211,17 @@ class OffensiveEffectsTest {
     @ValueSource(strings = {"BOMBA", "TORNADO", "BURACO_NEGRO", "CONGELAR"})
     void rejectsEmptyOwnAndOutOfBoardTargetsWithoutChangingState(String skill) {
         GameState state = state("X----O----------");
+        state.getFrozenPositions().put(5, 2);
         GameState before = copy(state);
 
         for (Integer target : new Integer[]{null, -1, 16, 0, 2}) {
-            assertEquals(SkillResult.NO_VALID_TARGET,
-                    engine.useSkill(state, skill, context(skill, target, 6)));
+            var error = assertThrows(SkillValidationException.class,
+                    () -> engine.useSkill(state, skill, context(skill, target, 6)));
+            assertEquals(SKILL_INVALID_TARGET, error.getCode());
             assertEquals(before, state);
         }
+        // O mesmo estado continua aceitando a habilidade depois da rejeição.
+        assertEquals(SkillResult.APPLIED, engine.useSkill(state, skill, context(skill, 5, 6)));
     }
 
     @ParameterizedTest
@@ -160,6 +236,55 @@ class OffensiveEffectsTest {
 
         assertTrue(engine.endAction(state, p1).isEmpty());
         assertEquals(1, state.getReinforcedPositions().get(5));
+    }
+
+    @Test
+    void tornadoRejectsInvalidDestinationEvenWhenTheTargetIsReinforced() {
+        GameState state = state("X---XO----------");
+        state.getReinforcedPositions().put(5, 2);
+        GameState before = copy(state);
+
+        var error = assertThrows(SkillValidationException.class,
+                () -> engine.useSkill(state, "TORNADO", new SkillContext(p1, 5, 4)));
+
+        assertEquals(SKILL_INVALID_DESTINATION, error.getCode());
+        assertEquals(before, state);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"BOMBA", "TORNADO", "BURACO_NEGRO", "CONGELAR"})
+    void missingContextIsAnInvalidTarget(String skill) {
+        GameState state = state("X----O----------");
+        GameState before = copy(state);
+
+        var error = assertThrows(SkillValidationException.class, () -> engine.useSkill(state, skill, null));
+
+        assertEquals(SKILL_INVALID_TARGET, error.getCode());
+        assertEquals(before, state);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"BOMBA, 0, , SKILL_INVALID_TARGET", "TORNADO, 5, 4, SKILL_INVALID_DESTINATION"})
+    @SuppressWarnings("unchecked")
+    void invalidRequestAbortsUpdateBeforeWritingOrEndingTheTurn(String skill, int target, Integer destination,
+                                                              SkillValidationException.Code code) throws Exception {
+        GameState state = state("X---XO----------");
+        RedisTemplate<String, Object> redis = mock(RedisTemplate.class);
+        ValueOperations<String, Object> values = mock(ValueOperations.class);
+        when(redis.opsForValue()).thenReturn(values);
+        when(values.get("game:state:" + gameId)).thenReturn(mapper.writeValueAsString(state));
+        GameStateManager manager = new GameStateManager(redis, mapper, 1800000, 5, mock(SecureRandom.class));
+        TurnService turns = mock(TurnService.class);
+
+        var error = assertThrows(SkillValidationException.class, () -> manager.update(gameId, current -> {
+            engine.useSkill(current, skill, new SkillContext(p1, target, destination));
+            turns.endPlayerAction(current, p1, 1000);
+            return current;
+        }));
+
+        assertEquals(code, error.getCode());
+        verifyNoInteractions(turns);
+        verify(redis, never()).execute(any(RedisScript.class), anyList(), anyString(), anyString(), anyString());
     }
 
     @Test
@@ -215,9 +340,10 @@ class OffensiveEffectsTest {
         assertEquals(state, restored);
     }
 
-    @Test
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
     @SuppressWarnings("unchecked")
-    void blackHoleReusesTheDrawButRechecksEmptyCellsOnRedisRetry() throws Exception {
+    void blackHoleReusesTheDrawButRechecksDestinationsOnRedisRetry(boolean blockedByShield) throws Exception {
         RandomGenerator random = mock(RandomGenerator.class);
         when(random.nextDouble()).thenReturn(0.0);
         SkillContext context = SkillContext.randomized(p1, 5, random);
@@ -225,7 +351,11 @@ class OffensiveEffectsTest {
         firstRead.setVersion(2);
         firstRead.getFrozenPositions().put(5, 2);
         GameState secondRead = copy(firstRead);
-        secondRead.setBoard("XX---O----------");
+        if (blockedByShield) {
+            secondRead.getShieldedPositions().put(1, new GameState.ShieldEffect(p2, 2));
+        } else {
+            secondRead.setBoard("XX---O----------");
+        }
         secondRead.setVersion(3);
 
         RedisTemplate<String, Object> redis = mock(RedisTemplate.class);
@@ -249,7 +379,7 @@ class OffensiveEffectsTest {
         GameState firstAttempt = mapper.readValue(json.getAllValues().getFirst(), GameState.class);
         GameState stored = mapper.readValue(json.getAllValues().getLast(), GameState.class);
         assertMovedTo(firstAttempt, 5, 1);
-        assertEquals('X', stored.getBoard().charAt(1));
+        assertEquals(blockedByShield ? '-' : 'X', stored.getBoard().charAt(1));
         assertMovedTo(stored, 5, 2);
         assertEquals(4, stored.getVersion());
         assertEquals(Map.of(2, 1), stored.getFrozenPositions());

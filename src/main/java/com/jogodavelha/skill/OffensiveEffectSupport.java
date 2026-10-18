@@ -1,6 +1,9 @@
 package com.jogodavelha.skill;
 
 import com.jogodavelha.game.logic.GameState;
+import com.jogodavelha.game.logic.SkillValidationException;
+
+import static com.jogodavelha.game.logic.SkillValidationException.Code.SKILL_INVALID_TARGET;
 
 final class OffensiveEffectSupport {
     private OffensiveEffectSupport() { }
@@ -9,19 +12,23 @@ final class OffensiveEffectSupport {
         return position != null && position >= 0 && position < GameState.BOARD_SIZE;
     }
 
-    static boolean hasOpponentPiece(GameState state, SkillContext context) {
-        char opponent = state.getPlayerSymbol(context.casterId()) == 'X' ? 'O' : 'X';
-        return isPosition(context.targetPosition())
-                && state.getBoard().charAt(context.targetPosition()) == opponent;
+    static void validateOpponentPiece(GameState state, SkillContext context) {
+        if (context == null || !isPosition(context.targetPosition())
+                || state.getBoard().charAt(context.targetPosition())
+                != (state.getPlayerSymbol(context.casterId()) == 'X' ? 'O' : 'X')) {
+            throw new SkillValidationException(SKILL_INVALID_TARGET,
+                    "O alvo deve ser uma peça adversária entre as posições 0 e 15.");
+        }
     }
 
     static boolean hasUnreinforcedOpponentPiece(GameState state, SkillContext context) {
-        return hasOpponentPiece(state, context)
-                && state.getReinforcedPositions().getOrDefault(context.targetPosition(), 0) <= 0;
+        validateOpponentPiece(state, context);
+        return state.getReinforcedPositions().getOrDefault(context.targetPosition(), 0) <= 0;
     }
 
-    static boolean isEmpty(GameState state, Integer position) {
-        return isPosition(position) && state.getBoard().charAt(position) == '-';
+    static boolean isAvailableDestination(GameState state, SkillContext context, Integer position) {
+        return isPosition(position) && state.getBoard().charAt(position) == '-'
+                && !state.blockedFor(context.casterId()).contains(position);
     }
 
     static void removePiece(GameState state, int position) {

@@ -12,7 +12,8 @@ public class FreezeEffect implements SkillEffect {
 
     @Override
     public boolean hasValidTarget(GameState state, SkillContext context) {
-        return OffensiveEffectSupport.hasOpponentPiece(state, context);
+        OffensiveEffectSupport.validateOpponentPiece(state, context);
+        return true;
     }
 
     @Override
