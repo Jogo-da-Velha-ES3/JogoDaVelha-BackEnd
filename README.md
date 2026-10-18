@@ -979,6 +979,44 @@ O fluxo deve encerrar o round ao encontrar um vencedor, sem conferir de novo um
 round já encerrado. A chamada nas jogadas fica na BE-023 e no timeout na BE-020.
 Essas integrações ainda não estão implementadas. Esta tarefa não altera migrations.
 
+## Efeitos ofensivos (BE-014.1)
+
+`SkillEngine` reconhece `BOMBA`, `TORNADO`, `BURACO_NEGRO` e `CONGELAR` pelos códigos
+do catálogo, retornados por `skillCode()`. O alvo deve ser uma peça adversária.
+Reforço impede remoção e movimento, mas não impede Congelar.
+Alvo com Reforço ou ausência de destino permitido retorna `NO_VALID_TARGET`, sem
+aplicar o efeito. Consumo da habilidade e troca de turno continuam na BE-015.
+Alvo nulo, fora do tabuleiro, vazio ou próprio lança `SKILL_INVALID_TARGET`.
+Destino informado inválido no Tornado lança `SKILL_INVALID_DESTINATION`, mesmo
+se o alvo estiver reforçado. Essas rejeições não encerram a ação nem alteram o estado;
+o chamador deve validar antes de consumir a habilidade e não capturar o erro para
+seguir com `endPlayerAction`.
+
+Tornado recebe origem e destino em `new SkillContext(playerId, origem, destino)`.
+As posições vão de 0 a 15, em ordem de linha. O destino deve estar vazio, não
+bloqueado por Escudo para quem usa a habilidade e ser vizinho na horizontal ou
+vertical, sem diagonais nem passagem entre as bordas das linhas. Sem vizinho
+permitido, a chamada sem destino retorna `NO_VALID_TARGET`; se houver opção,
+omitir o destino é erro. Essa é a interpretação de adjacência
+adotada nesta implementação; o card não especifica diagonais.
+
+Para Buraco Negro, prepare `SkillContext.randomized(playerId, origem, random)` no
+servidor, antes de `GameStateManager.update`. O `RandomGenerator` é injetável nos
+testes; em produção, use `SecureRandom`. O contexto e o valor sorteado nunca devem
+vir do cliente. O efeito usa esse mesmo valor para escolher entre as casas vazias
+do estado atual que não estejam bloqueadas para quem usa a habilidade, inclusive
+se o update precisar ser refeito por conflito.
+
+Congelar registra contador 2. Seguindo a BE-014, `endAction` confere a vitória e
+depois reduz os contadores, já na ação que aplicou o efeito. A peça volta a contar
+para vitória na conferência seguinte à expiração. Congelamento acompanha a peça
+se ela for movida e é removido junto dela pela Bomba.
+
+Os efeitos alteram apenas o `GameState`, serializado pelo manager existente. O
+chamador ainda deve validar jogador, turno e fase, executar a habilidade e chamar
+`endAction`; os handlers e o timer não fazem parte desta tarefa. Não há alterações
+de schema nem execução de migrations.
+
 ## 🧪 Testes
 
 O `RoomService` da BE-008 cria salas com `createRoom(playerId)` e permite entrada
@@ -1086,6 +1124,18 @@ Códigos REST disponíveis:
 | `INTERNAL_ERROR` | 500 | Erro inesperado do servidor |
 
 `fields` aparece somente em `VALIDATION_ERROR` originado de validação de corpo. O schema `ApiError` também é reutilizado nas mensagens de erro STOMP.
+
+Erros de habilidade no STOMP (BE-014.1), enviados ao autor em `/user/queue/errors`:
+
+| Código | `status` no payload | Uso |
+| --- | ---: | --- |
+| `SKILL_INVALID_TARGET` | 400 | Alvo nulo, fora do tabuleiro, vazio ou próprio |
+| `SKILL_INVALID_DESTINATION` | 400 | Destino do Tornado ausente quando há opção, fora do tabuleiro, ocupado, bloqueado por Escudo ou não adjacente |
+
+Esses códigos preservam o erro de domínio no `ApiError`, sem `fields` ou `error`.
+Não há endpoint REST de habilidade nem handler público de ativação nesta tarefa.
+O consumo do deck permanece na BE-015, e `NO_VALID_TARGET` é resultado da ação,
+não erro. Sua inclusão em `ABILITY_RESOLVED` está proposta no contrato.
 
 Detalhes e atualizações em `docs/contrato-integracao.md`.
 
