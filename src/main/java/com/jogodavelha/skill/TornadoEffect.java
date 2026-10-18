@@ -8,7 +8,7 @@ public class TornadoEffect implements SkillEffect {
     private static final int BOARD_WIDTH = 4;
 
     @Override
-    public String skillName() {
+    public String skillCode() {
         return "TORNADO";
     }
 

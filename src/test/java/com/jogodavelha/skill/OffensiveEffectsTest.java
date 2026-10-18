@@ -90,7 +90,7 @@ class OffensiveEffectsTest {
         SkillContext context = SkillContext.randomized(p1, 5, random);
         GameState state = state("X----O----------");
 
-        assertEquals(SkillResult.APPLIED, engine.useSkill(state, "BURACO NEGRO", context));
+        assertEquals(SkillResult.APPLIED, engine.useSkill(state, "BURACO_NEGRO", context));
 
         assertMovedTo(state, 5, destination);
         verify(random, times(1)).nextDouble();
@@ -102,7 +102,7 @@ class OffensiveEffectsTest {
         GameState state = state("XOOOOOOOOOOOOOO-");
 
         assertEquals(SkillResult.APPLIED,
-                engine.useSkill(state, "BURACO NEGRO", context("BURACO NEGRO", 5, null)));
+                engine.useSkill(state, "BURACO_NEGRO", context("BURACO_NEGRO", 5, null)));
 
         assertEquals('-', state.getBoard().charAt(5));
         assertEquals('O', state.getBoard().charAt(15));
@@ -115,7 +115,7 @@ class OffensiveEffectsTest {
         GameState before = copy(state);
 
         assertEquals(SkillResult.NO_VALID_TARGET,
-                engine.useSkill(state, "BURACO NEGRO", context("BURACO NEGRO", 5, null)));
+                engine.useSkill(state, "BURACO_NEGRO", context("BURACO_NEGRO", 5, null)));
         assertEquals(before, state);
     }
 
@@ -125,7 +125,7 @@ class OffensiveEffectsTest {
         GameState before = copy(state);
 
         assertThrows(IllegalArgumentException.class,
-                () -> engine.useSkill(state, "BURACO NEGRO", new SkillContext(p1, 5)));
+                () -> engine.useSkill(state, "BURACO_NEGRO", new SkillContext(p1, 5)));
         assertEquals(before, state);
     }
 
@@ -136,7 +136,7 @@ class OffensiveEffectsTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"BOMBA", "TORNADO", "BURACO NEGRO", "CONGELAR"})
+    @ValueSource(strings = {"BOMBA", "TORNADO", "BURACO_NEGRO", "CONGELAR"})
     void rejectsEmptyOwnAndOutOfBoardTargetsWithoutChangingState(String skill) {
         GameState state = state("X----O----------");
         GameState before = copy(state);
@@ -149,7 +149,7 @@ class OffensiveEffectsTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"BOMBA", "TORNADO", "BURACO NEGRO"})
+    @ValueSource(strings = {"BOMBA", "TORNADO", "BURACO_NEGRO"})
     void reinforcedTargetRejectsRemovalAndMovement(String skill) {
         GameState state = state("X----O----------");
         state.getReinforcedPositions().put(5, 2);
@@ -180,7 +180,7 @@ class OffensiveEffectsTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"TORNADO", "BURACO NEGRO"})
+    @ValueSource(strings = {"TORNADO", "BURACO_NEGRO"})
     void movementKeepsFreezeOnTheMovedPiece(String skill) {
         GameState state = state("X----O----------");
         state.getFrozenPositions().put(5, 2);
@@ -204,7 +204,7 @@ class OffensiveEffectsTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"BOMBA", "TORNADO", "BURACO NEGRO", "CONGELAR"})
+    @ValueSource(strings = {"BOMBA", "TORNADO", "BURACO_NEGRO", "CONGELAR"})
     void effectsSurviveGameStateJsonRoundTrip(String skill) throws Exception {
         GameState state = state("X----O----------");
         state.getFrozenPositions().put(5, 1);
@@ -238,7 +238,7 @@ class OffensiveEffectsTest {
         GameStateManager manager = new GameStateManager(redis, mapper, 1800000, 5, mock(SecureRandom.class));
 
         manager.update(gameId, current -> {
-            assertEquals(SkillResult.APPLIED, engine.useSkill(current, "BURACO NEGRO", context));
+            assertEquals(SkillResult.APPLIED, engine.useSkill(current, "BURACO_NEGRO", context));
             engine.endAction(current, p1);
             return current;
         });
@@ -273,7 +273,7 @@ class OffensiveEffectsTest {
     }
 
     private SkillContext context(String skill, Integer target, Integer destination) {
-        return new SkillContext(p1, target, destination, skill.equals("BURACO NEGRO") ? 0.0 : null);
+        return new SkillContext(p1, target, destination, skill.equals("BURACO_NEGRO") ? 0.0 : null);
     }
 
     private GameState copy(GameState state) {

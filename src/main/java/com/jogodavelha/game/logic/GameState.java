@@ -43,6 +43,7 @@ public class GameState {
     public static final String EMPTY_BOARD = "----------------";
     public static final long DEFAULT_TURN_DURATION_MILLIS = 10000; // 10 segundos
     public static final long HOURGLASS_TURN_DURATION_MILLIS = 5000; // 5 segundos (Ampulheta)
+    public static final long SUDDEN_DEATH_TURN_DURATION_MILLIS = 5000; // 5 segundos (morte súbita)
 
     public record ShieldEffect(UUID ownerId, int turns) {}
 

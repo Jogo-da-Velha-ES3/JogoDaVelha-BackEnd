@@ -1,14 +1,19 @@
 package com.jogodavelha.skill;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jogodavelha.game.logic.GameState;
 import com.jogodavelha.game.logic.GameValidator;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class SkillEngineTest {
     private final UUID p1 = UUID.randomUUID();
@@ -16,7 +21,7 @@ class SkillEngineTest {
 
     /** Efeito de teste: congela a casa-alvo por 2 turnos. */
     private static class FakeFreeze implements SkillEffect {
-        public String skillName() { return "fake-freeze"; }
+        public String skillCode() { return "CONGELAR"; }
         public boolean hasValidTarget(GameState s, SkillContext c) {
             return c.targetPosition() != null && s.getBoard().charAt(c.targetPosition()) != '-';
         }
@@ -34,21 +39,75 @@ class SkillEngineTest {
     @Test
     void appliesSkillThroughEffect() {
         GameState s = state("X---------------");
-        assertEquals(SkillResult.APPLIED, engine.useSkill(s, "fake-freeze", new SkillContext(p1, 0)));
+        assertEquals(SkillResult.APPLIED, engine.useSkill(s, "CONGELAR", new SkillContext(p1, 0)));
         assertEquals(2, s.getFrozenPositions().get(0));
     }
 
     @Test
     void skillWithoutValidTargetChangesNothing() {
         GameState s = state("----------------");
-        assertEquals(SkillResult.NO_VALID_TARGET, engine.useSkill(s, "fake-freeze", new SkillContext(p1, 0)));
+        assertEquals(SkillResult.NO_VALID_TARGET, engine.useSkill(s, "CONGELAR", new SkillContext(p1, 0)));
         assertTrue(s.getFrozenPositions().isEmpty());
     }
 
     @Test
     void unknownSkillIsRejected() {
         assertThrows(IllegalArgumentException.class,
-                () -> engine.useSkill(state("----------------"), "nope", new SkillContext(p1, 0)));
+                () -> engine.useSkill(state("----------------"), "INEXISTENTE", new SkillContext(p1, 0)));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "BOMBA", "ESCUDO", "TORNADO", "BURACO_NEGRO", "AMPULHETA", "CONGELAR",
+            "CAMPO_DE_FORCA", "TROCA_RAPIDA", "REFORCO", "SILENCIO"
+    })
+    void selectsOnlyTheEffectRegisteredWithTheRequestedCode(String code) {
+        SkillEffect other = mock(SkillEffect.class);
+        when(other.skillCode()).thenReturn(code.equals("BOMBA") ? "ESCUDO" : "BOMBA");
+        SkillEffect selected = mock(SkillEffect.class);
+        when(selected.skillCode()).thenReturn(code);
+        GameState s = state("X---------------");
+        SkillContext context = new SkillContext(p1, 0);
+        when(selected.hasValidTarget(s, context)).thenReturn(true);
+        SkillEngine subject = new SkillEngine(List.of(other, selected), new GameValidator());
+
+        assertEquals(SkillResult.APPLIED, subject.useSkill(s, code, context));
+
+        verify(selected).apply(s, context);
+        verify(other, never()).hasValidTarget(any(), any());
+        verify(other, never()).apply(any(), any());
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "BURACO_NEGRO, BURACO NEGRO",
+            "TROCA_RAPIDA, TROCA RAPIDA",
+            "CAMPO_DE_FORCA, CAMPO DE FORCA"
+    })
+    void catalogKeepsDisplayNameWhileEngineUsesCode(String code, String name) {
+        Skill skill = new Skill(name, code, SkillCategory.RELOCATION, "Descrição", false, true);
+        var json = new ObjectMapper().valueToTree(skill);
+        assertEquals(name, json.get("name").asText());
+        assertEquals(code, json.get("code").asText());
+
+        SkillEffect effect = mock(SkillEffect.class);
+        when(effect.skillCode()).thenReturn(skill.getCode());
+        GameState s = state("X---------------");
+        SkillContext context = new SkillContext(p1, 0);
+        when(effect.hasValidTarget(s, context)).thenReturn(true);
+        SkillEngine subject = new SkillEngine(List.of(effect), new GameValidator());
+
+        assertThrows(IllegalArgumentException.class, () -> subject.useSkill(s, skill.getName(), context));
+        assertEquals(SkillResult.APPLIED, subject.useSkill(s, skill.getCode(), context));
+        verify(effect, times(1)).apply(s, context);
+    }
+
+    @Test
+    void rejectsDuplicateEffectCodes() {
+        var error = assertThrows(IllegalStateException.class,
+                () -> new SkillEngine(List.of(new FakeFreeze(), new FakeFreeze()), new GameValidator()));
+
+        assertEquals("Habilidade duplicada: CONGELAR", error.getMessage());
     }
 
     @Test

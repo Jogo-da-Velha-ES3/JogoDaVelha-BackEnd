@@ -28,6 +28,7 @@ com\jogodavelha\config\ApiAccessDeniedHandler.class
 com\jogodavelha\room\RoomStatus.class
 com\jogodavelha\auth\LoginResponse.class
 com\jogodavelha\game\GameNotFoundException.class
+com\jogodavelha\config\CorsProperties.class
 com\jogodavelha\auth\LoginResult.class
 com\jogodavelha\config\JwtProperties.class
 com\jogodavelha\game\GameStatus.class

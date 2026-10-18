@@ -8,8 +8,8 @@ import java.util.stream.IntStream;
 @Component
 public class BlackHoleEffect implements SkillEffect {
     @Override
-    public String skillName() {
-        return "BURACO NEGRO";
+    public String skillCode() {
+        return "BURACO_NEGRO";
     }
 
     @Override

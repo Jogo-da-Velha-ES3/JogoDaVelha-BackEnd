@@ -20,6 +20,9 @@ public class Skill {
     @Column(nullable = false, unique = true, length = 50)
     private String name;
 
+    @Column(nullable = false, unique = true, length = 50)
+    private String code;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "effect_category", nullable = false)
     private SkillCategory effectCategory;
@@ -35,12 +38,14 @@ public class Skill {
 
     public Skill(
             String name,
+            String code,
             SkillCategory effectCategory,
             String description,
             Boolean initialSkill,
             Boolean offensive
     ) {
         this.name = name;
+        this.code = code;
         this.effectCategory = effectCategory;
         this.description = description;
         this.initialSkill = initialSkill;

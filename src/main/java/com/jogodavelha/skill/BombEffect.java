@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class BombEffect implements SkillEffect {
     @Override
-    public String skillName() {
+    public String skillCode() {
         return "BOMBA";
     }
 
