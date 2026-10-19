@@ -190,11 +190,13 @@ Payload não definido adiante permanece **payload a definir**; nada abaixo está
 ### Conexão e operação atual
 
 - Endpoint `/ws`, WebSocket STOMP puro; `WebSocketConfig` não configura SockJS. Prefixo de aplicação `/app`; brokers simples `/topic` e `/queue`; destinos privados usam `/user/queue/...`.
-- ⚠️ `/ws/**` é público e o `CONNECT` não valida JWT. BE-040 (prevista 14/10/2026) deve validar token em `CONNECT`, definir `Principal` e remover o identificador informado pelo cliente: breaking para o handshake/payload.
-- ⚠️ Único handler implementado: `SEND /app/room/{code}/connect` com `{ "playerId": "<uuid>" }`. O registro associa sessão, sala e jogador e marca jogador conectado. `PlayerDisconnectionListener` remove associação da sessão e, se conhecida, marca jogador desconectado; sessão desconhecida não produz ação no serviço.
+- ✅ `/ws/**` permanece público no handshake HTTP para permitir o upgrade WebSocket. Cada frame STOMP `CONNECT` precisa conter `Authorization: Bearer <jwt>`; o backend valida assinatura e expiração por `JwtService` e rejeita o CONNECT ausente/malformado/inválido. O `sub` UUID validado é o nome do `Principal` associado à sessão e usado nos handlers.
+- ✅ Único handler implementado: `SEND /app/room/{code}/connect` sem corpo de identidade (pode ser enviado sem body). **BREAKING (BE-040):** não envie `playerId`; a identidade vem do `Principal` estabelecido no CONNECT. O registro associa sessão, sala e jogador e marca jogador conectado. `PlayerDisconnectionListener` remove associação da sessão e, se conhecida, marca jogador desconectado; sessão desconhecida não produz ação no serviço.
+- Em clientes STOMP.js, passe o token por `connectHeaders`, por exemplo `client.connect({ Authorization: `Bearer ${token}` })` na API legada ou `new Client({ connectHeaders: { Authorization: `Bearer ${token}` } })` na API atual. O cabeçalho é um header nativo STOMP, não um header do handshake HTTP.
+- Falha de autenticação encerra/rejeita o CONNECT STOMP; não há sessão anônima e a resposta de falha pode ser um frame STOMP `ERROR`/fechamento, não um `ApiError` REST nem uma mensagem garantida em `/user/queue/errors` (a sessão ainda não foi autenticada).
 - ⚠️ O disconnect acima é o comportamento observado; reconexão/snapshot e heartbeat constam em BE-025 (24–27/10).
 - Erros são enviados por `@SendToUser` para `/user/queue/errors`, como `ApiError`. Nos handlers genéricos, `code` vem de `HttpStatus.name()` (por exemplo `BAD_REQUEST`, `CONFLICT`, `INTERNAL_SERVER_ERROR`) e existe também `error` com a frase HTTP; isso diverge do catálogo REST. A BE-014.1 preserva os dois códigos de habilidade descritos acima; o ajuste dos demais erros permanece na BE-044.
-- ❓ Entrega de `/user/queue/errors` sem `Principal`: não há teste de integração STOMP provando roteamento da fila para sessões sem usuário autenticado; confirmar no cliente/broker e após BE-040.
+- A fila `/user/queue/errors` é destinada a sessões autenticadas; não se aplica ao CONNECT rejeitado, que ainda não tem usuário STOMP associado.
 
 ### Propostas de destinos e eventos
 
@@ -252,13 +254,13 @@ Adicional do backlog não incluído na lista inicial do front:
 | Item | Quem decide | Card |
 |---|---|---|
 | Códigos de erro STOMP (`BAD_REQUEST`/`CONFLICT` etc.) versus códigos REST e campo `error` adicional | Back + front | BE-044 |
-| Remoção de `playerId` do payload STOMP e uso do JWT/`Principal` | Back + front; comunicar antes do merge | BE-040 |
+| ~~Remoção de `playerId` do payload STOMP e uso do JWT/`Principal`~~ | Implementado (BE-040); breaking, cliente deve enviar `Authorization` no CONNECT e remover `playerId` do corpo | BE-040 |
 | Remoção de `playerId` query nos endpoints de sala e uso de JWT — breaking | Back + front; comunicar antes do merge | BE-009.1 |
 | `ROOM_BAD_REQUEST`/`ROOM_CONFLICT` atuais versus exceções/códigos tipados | Back + front | BE-009.1 |
 | Swagger promete 404 para sala inexistente/encerrada; handler atual entrega 400 `ROOM_BAD_REQUEST` | Back (corrigir contrato/handler) + front | BE-009.1 |
 | Teste `GlobalExceptionHandlerTest` espera `INVALID_REQUEST_BODY` através de `handleExceptionInternal`, mas esse método mapeia status 400 a `BAD_REQUEST`; existe handler específico para JSON ilegível que devolve `INVALID_REQUEST_BODY` | Back (alinhar teste/dispatch ou contrato) | BE-044 |
 | OpenAPI e README podem mostrar origens Vercel configuradas, mas o default isolado da aplicação é somente `http://localhost:5173` | Back/infra + front | BE-034 |
-| Teste não comprova entrega em `/user/queue/errors` quando sessão não tem `Principal` | Back (teste STOMP) + front | BE-044/BE-040 |
+| Erro de autenticação ocorre antes de haver usuário STOMP; não é roteado por `/user/queue/errors` | Frame `ERROR`/fechamento do CONNECT; verificar comportamento observado no cliente/broker usado em produção | BE-040 |
 | Envelope STOMP comum, conteúdo de eventos e destino final `/move` | Back + front | BE-023/024/035/037/038 |
 | URL pública de produção indisponível | Back/infra | BE-033/033.1 |
 | Formato de data geral além do timestamp ISO UTC de erro | Back + front | — |
