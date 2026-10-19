@@ -62,6 +62,26 @@ O front deve decidir pelo `code` e apresentar `message`. `fields` só é preench
 | ✅ `FORBIDDEN` | 403 | Acesso negado a recurso protegido. |
 | ✅ `INTERNAL_ERROR` | 500 | Exceção inesperada ou erro HTTP 5xx. |
 
+### Erros de habilidade no STOMP
+
+O handler de erro preserva os códigos abaixo em `ApiError`,
+enviado ao autor em `/user/queue/errors`, sem `fields` ou `error`.
+Não há endpoint REST de habilidade nem handler público de ativação nesta tarefa.
+Os códigos de alvo e destino estão na `dev` (BE-014.1). A extensão para as novas
+habilidades e `SKILL_SILENCED` está em desenvolvimento na BE-014.2.
+
+| Código | `status` no payload | Uso |
+|---|---:|---|
+| `SKILL_INVALID_TARGET` | 400 | Jogador ausente ou alvo inválido para a habilidade (posição, ocupação, proprietário ou bloqueio). |
+| `SKILL_INVALID_DESTINATION` | 400 | Destino do Tornado ou Troca Rápida ausente quando há opção, fora do tabuleiro, ocupado, bloqueado por Escudo ou não adjacente. |
+| `SKILL_SILENCED` | 400 | Jogador sob Silêncio tenta ativar uma habilidade. |
+
+Pedidos inválidos não devem consumir a habilidade ou encerrar o turno: o chamador
+precisa validar antes do consumo e não prosseguir com o fim da ação após a exceção.
+O motor rejeita sem alterar o estado; a integração com o consumo do deck fica na
+BE-015. Os testes locais cobrem seleção do handler, payload e anotação de envio
+privado, não entrega por um broker real.
+
 ### IDs, enums e habilidades
 
 - `RoomStatus`: `WAITING`, `IN_GAME`, `CLOSED`.
@@ -79,6 +99,7 @@ O front deve decidir pelo `code` e apresentar `message`. `fields` só é preench
 | POST | `/api/auth/login` | Pública | 200 | ✅ BE-006 |
 | POST | `/api/rooms` | Bearer exigido | 201 | ✅ BE-009.1 | 
 | POST | `/api/rooms/{code}/join` | Bearer exigido | 200 | ✅ BE-009.1 |
+| GET | `/api/skills/inventory` | Bearer exigido | 200 | ✅ BE-041 |
 
 ### `GET /api/health`
 
@@ -183,6 +204,51 @@ Erros:
 Sucesso 200 devolve `RoomDTO` com `id`, `code`, `status`, `player1Id`, `player1Username`, `player2Id`, `player2Username`. O join bem-sucedido preenche o segundo jogador. Não há anotações Bean Validation nos parâmetros.
 
 
+GET /api/skills/inventory
+Authorization: Bearer <jwt>
+
+Bearer Token obrigatório.
+
+Retorna o inventário de habilidades pertencentes ao usuário autenticado. O inventário representa também o conjunto de habilidades elegíveis para o Draft.
+
+GET /api/skills/inventory
+Authorization: Bearer <jwt>
+Sucesso 200:
+
+[
+{
+"id": "123e4567-e89b-12d3-a456-426614174000",
+"name": "BOMBA",
+"code": "BOMBA",
+"description": "Remove uma peça do oponente do tabuleiro, deixando a casa vazia novamente.",
+"initialSkill": true,
+"offensive": true,
+"priceCoins": 0
+},
+{
+"id": "123e4567-e89b-12d3-a456-426614174001",
+"name": "TORNADO",
+"code": "TORNADO",
+"description": "Mover uma peça do oponente para uma casa adjacente que esteja vazia.",
+"initialSkill": false,
+"offensive": true,
+"priceCoins": 350
+}
+]
+Campos retornados:
+
+id: UUID da habilidade.
+name: nome de exibição.
+code: identificador de integração.
+description: descrição da habilidade.
+initialSkill: indica se a habilidade pertence ao conjunto inicial do jogo.
+offensive: indica se a habilidade é ofensiva.
+priceCoins: custo da habilidade em moedas.
+Erros:
+
+401 UNAUTHORIZED — token ausente ou inválido.
+500 INTERNAL_ERROR — erro interno do servidor.
+
 ### Propostas REST
 
 Payload não definido adiante permanece **payload a definir**; nada abaixo está implementado.
@@ -202,7 +268,7 @@ Payload não definido adiante permanece **payload a definir**; nada abaixo está
 - ⚠️ `/ws/**` é público e o `CONNECT` não valida JWT. BE-040 (prevista 14/10/2026) deve validar token em `CONNECT`, definir `Principal` e remover o identificador informado pelo cliente: breaking para o handshake/payload.
 - ⚠️ Único handler implementado: `SEND /app/room/{code}/connect` com `{ "playerId": "<uuid>" }`. O registro associa sessão, sala e jogador e marca jogador conectado. `PlayerDisconnectionListener` remove associação da sessão e, se conhecida, marca jogador desconectado; sessão desconhecida não produz ação no serviço.
 - ⚠️ O disconnect acima é o comportamento observado; reconexão/snapshot e heartbeat constam em BE-025 (24–27/10).
-- Erros são enviados por `@SendToUser` para `/user/queue/errors`, como `ApiError`. No STOMP, `code` vem de `HttpStatus.name()` (por exemplo `BAD_REQUEST`, `CONFLICT`, `INTERNAL_SERVER_ERROR`) e existe também `error` com a frase HTTP; isso diverge do catálogo REST.
+- Erros são enviados por `@SendToUser` para `/user/queue/errors`, como `ApiError`. Nos handlers genéricos, `code` vem de `HttpStatus.name()` (por exemplo `BAD_REQUEST`, `CONFLICT`, `INTERNAL_SERVER_ERROR`) e existe também `error` com a frase HTTP; isso diverge do catálogo REST. As BE-014.1/BE-014.2 preservam os códigos de habilidade descritos acima; o ajuste dos demais erros permanece na BE-044.
 - ❓ Entrega de `/user/queue/errors` sem `Principal`: não há teste de integração STOMP provando roteamento da fila para sessões sem usuário autenticado; confirmar no cliente/broker e após BE-040.
 
 ### Propostas de destinos e eventos
@@ -231,8 +297,43 @@ Envio de jogada solicitado pelo front em `/move`; destino final completo e paylo
 | `DRAFT_UPDATE` | Progresso/prontidão do draft; jogadores da sala | Etapas (personagem, habilidades iniciais), pronto do oponente e timer geral de 20s são descritos no BE-037; formato payload a definir | BE-037, 19/10; 📝 |
 | `DRAW_OPTIONS` | Sorteio de três opções; somente dono | Três opções e janela de escolha de 8s (BE-013.1) | BE-013.1, 24/10; 📝 |
 | `DECK_UPDATE` | Atualização do deck; jogador dono | payload a definir; privado do jogador conforme pedido do front | BE-023/BE-024; 📝 |
-| `ABILITY_RESOLVED` | Resolução de habilidade; sala | payload a definir | BE-023, 20/10; 📝 |
+| `ABILITY_RESOLVED` | Resolução de habilidade; sala | `result`: `APPLIED`, `NO_VALID_TARGET` ou `BLOCKED_BY_FORCE_FIELD`; demais campos a definir | BE-023, 20/10; 📝 |
 | `TURN_TIMEOUT` | Expiração do turno; sala | Timeout e contador previsto em BE-021; payload a definir | BE-020/BE-021; 15/10 e 25/10; 📝 |
+
+📝 **Alvo, destino e resultado de habilidades:** na futura mensagem de ativação,
+`targetPosition` indica a peça adversária nas quatro ofensivas, a casa vazia em
+Escudo ou a peça própria em Reforço e Troca Rápida. `destinationPosition` indica
+o destino do Tornado ou da Troca Rápida. Campo de Força, Ampulheta e Silêncio não
+precisam de posição: o motor determina o jogador afetado a partir de quem ativou.
+As posições vão de 0 a 15 em ordem de linha: 0–3 na primeira linha, 4–7 na segunda,
+8–11 na terceira e 12–15 na quarta. Tornado e Troca Rápida só permitem vizinhança
+ortogonal, sem diagonais nem passagem entre bordas. Os três deslocamentos
+desconsideram destinos bloqueados por Escudo para quem usa a habilidade.
+
+📝 Em `ABILITY_RESOLVED`, `result: NO_VALID_TARGET` representa habilidade consumida
+sem efeito por Reforço ou ausência de destino permitido, com encerramento do turno.
+Não é código de erro e não vai ao catálogo de erros. Sem vizinho permitido,
+Tornado e Troca Rápida aceitam ausência de destino para retornar esse resultado; se houver opção,
+omitir o destino é pedido inválido. Destino informado inválido continua sendo erro.
+`APPLIED` indica efeito aplicado. Pedido inválido recebe erro privado, sem consumir
+a habilidade ou encerrar o turno. Consumo e encerramento dependem da BE-015;
+publicação do evento, da BE-023/BE-024. Nenhum destino novo é definido aqui.
+
+🚧 **BE-014.2:** os efeitos defensivos e de tempo estão implementados apenas no
+motor local, sem handler de ativação. Contadores começam em 2 e diminuem após a
+conferência de vitória em cada ação, inclusive a de ativação. Silêncio rejeita
+habilidades com `SKILL_SILENCED`, sem impedir jogadas de peça. Ampulheta limita
+somente o próximo turno do oponente a 5s. Troca Rápida preserva congelamento e
+Reforço da peça movida.
+
+📝 `result: BLOCKED_BY_FORCE_FIELD` indica que Campo de Força anulou a primeira
+ofensiva válida recebida (Bomba, Tornado, Buraco Negro, Congelar, Ampulheta ou
+Silêncio), sem refletir. A proteção é consumida, e o uso da habilidade deve ser
+consumido na BE-015. Esse é um resultado, não erro. O motor rejeita Silêncio e
+entradas inválidas antes de consumir a proteção; para pedidos válidos, Campo de
+Força tem prioridade sobre Reforço ou ausência de destino permitido. Esse novo
+resultado é uma extensão proposta para o evento, pendente de revisão com o front
+antes de sua publicação na BE-023/BE-024.
 
 Adicional do backlog não incluído na lista inicial do front:
 
