@@ -2,9 +2,6 @@
 ALTER TABLE skills
     ADD COLUMN price_coins INTEGER NOT NULL DEFAULT 0;
 
-ALTER TABLE skills
-    ADD COLUMN price_coins INTEGER NOT NULL DEFAULT 0;
-
 UPDATE skills
 SET price_coins = 350;
 
