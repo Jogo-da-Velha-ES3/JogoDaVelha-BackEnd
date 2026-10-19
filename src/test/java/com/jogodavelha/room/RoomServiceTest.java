@@ -68,7 +68,10 @@ class RoomServiceTest {
     @Test
     void rejectsMissingOrClosedRoom() {
         when(users.findById(guest.getId())).thenReturn(Optional.of(guest));
-        assertThrows(IllegalArgumentException.class, () -> service.joinRoom("0042", guest.getId()));
+        assertThrows(
+                RoomNotFoundException.class,
+                () -> service.joinRoom("0042", guest.getId())
+        );
         verify(rooms, never()).saveAndFlush(any());
     }
 
@@ -84,7 +87,17 @@ class RoomServiceTest {
         prepareJoin();
         User second = player("second");
         room.join(second);
-        assertJoinRejected("A partida desta sala já foi iniciada.");
+        var error = assertThrows(
+                RoomFullException.class,
+                () -> service.joinRoom("0042", guest.getId())
+        );
+
+        assertEquals(
+                "A sala está cheia.",
+                error.getMessage()
+        );
+
+        verify(rooms, never()).saveAndFlush(any());
         assertSame(second, room.getPlayer2());
     }
 
@@ -96,8 +109,15 @@ class RoomServiceTest {
         room.join(second);
         room.setStatus(RoomStatus.IN_GAME);
         when(users.findById(third.getId())).thenReturn(Optional.of(third));
-        var error = assertThrows(IllegalStateException.class, () -> service.joinRoom("0042", third.getId()));
-        assertEquals("A partida desta sala já foi iniciada.", error.getMessage());
+        var error = assertThrows(
+                RoomAlreadyStartedException.class,
+                () -> service.joinRoom("0042", third.getId())
+        );
+
+        assertEquals(
+                "A partida desta sala já foi iniciada.",
+                error.getMessage()
+        );
         verify(rooms, never()).saveAndFlush(any());
     }
 

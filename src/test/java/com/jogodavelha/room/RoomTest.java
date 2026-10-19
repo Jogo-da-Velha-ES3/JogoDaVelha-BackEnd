@@ -32,4 +32,20 @@ class RoomTest {
         assertThrows(IllegalArgumentException.class, () -> new Room(null, user));
         assertThrows(IllegalArgumentException.class, () -> new Room("1234", null));
     }
+
+    @Test
+    void joinRejectsAlreadyStartedRoomBeforeCheckingPlayer2() {
+        Room room = new Room("0042", user);
+        room.setStatus(RoomStatus.IN_GAME);
+
+        User otherUser = new User("other", "hash", "other@example.test");
+        otherUser.setId(UUID.randomUUID());
+
+        var error = assertThrows(
+                RoomAlreadyStartedException.class,
+                () -> room.join(otherUser)
+        );
+
+        assertEquals("A partida desta sala já foi iniciada.", error.getMessage());
+    }
 }

@@ -3,6 +3,9 @@ package com.jogodavelha.error;
 import com.jogodavelha.auth.EmailAlreadyExistsException;
 import com.jogodavelha.auth.InvalidCredentialsException;
 import com.jogodavelha.auth.UsernameAlreadyExistsException;
+import com.jogodavelha.room.RoomAlreadyStartedException;
+import com.jogodavelha.room.RoomFullException;
+import com.jogodavelha.room.RoomNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +21,9 @@ import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
+import com.jogodavelha.room.RoomAlreadyStartedException;
+import com.jogodavelha.room.RoomFullException;
+import com.jogodavelha.room.RoomNotFoundException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -43,14 +49,12 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiError> handleRoomBadRequest(IllegalArgumentException ex, HttpServletRequest request) {
-        // TODO(BE-009.1): replace with typed room exceptions and codes such as ROOM_NOT_FOUND.
-        return build("ROOM_BAD_REQUEST", ex.getMessage(), HttpStatus.BAD_REQUEST, request);
+             return build("ROOM_BAD_REQUEST", ex.getMessage(), HttpStatus.BAD_REQUEST, request);
     }
 
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<ApiError> handleRoomConflict(IllegalStateException ex, HttpServletRequest request) {
-        // TODO(BE-009.1): replace with typed room exceptions and codes ROOM_FULL/ROOM_ALREADY_STARTED.
-        return build("ROOM_CONFLICT", ex.getMessage(), HttpStatus.CONFLICT, request);
+          return build("ROOM_CONFLICT", ex.getMessage(), HttpStatus.CONFLICT, request);
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
@@ -62,6 +66,45 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     public ResponseEntity<ApiError> handleUnexpected(Exception ex, HttpServletRequest request) {
         log.error("Erro inesperado em {}", request.getRequestURI(), ex);
         return build("INTERNAL_ERROR", "Erro interno do servidor", HttpStatus.INTERNAL_SERVER_ERROR, request);
+    }
+
+    @ExceptionHandler(RoomFullException.class)
+    public ResponseEntity<ApiError> handleRoomFull(
+            RoomFullException ex,
+            HttpServletRequest request
+    ) {
+        return build(
+                "ROOM_FULL",
+                ex.getMessage(),
+                HttpStatus.CONFLICT,
+                request
+        );
+    }
+
+    @ExceptionHandler(RoomAlreadyStartedException.class)
+    public ResponseEntity<ApiError> handleRoomAlreadyStarted(
+            RoomAlreadyStartedException ex,
+            HttpServletRequest request
+    ) {
+        return build(
+                "ROOM_ALREADY_STARTED",
+                ex.getMessage(),
+                HttpStatus.CONFLICT,
+                request
+        );
+    }
+
+    @ExceptionHandler(RoomNotFoundException.class)
+    public ResponseEntity<ApiError> handleRoomNotFound(
+            RoomNotFoundException ex,
+            HttpServletRequest request
+    ) {
+        return build(
+                "ROOM_NOT_FOUND",
+                ex.getMessage(),
+                HttpStatus.NOT_FOUND,
+                request
+        );
     }
 
     @Override

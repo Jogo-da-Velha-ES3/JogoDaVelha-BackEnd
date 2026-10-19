@@ -3,6 +3,9 @@ package com.jogodavelha.error;
 import com.jogodavelha.auth.EmailAlreadyExistsException;
 import com.jogodavelha.auth.InvalidCredentialsException;
 import com.jogodavelha.auth.UsernameAlreadyExistsException;
+import com.jogodavelha.room.RoomAlreadyStartedException;
+import com.jogodavelha.room.RoomFullException;
+import com.jogodavelha.room.RoomNotFoundException;
 import jakarta.validation.ConstraintViolationException;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -33,10 +36,43 @@ class GlobalExceptionHandlerTest {
                 HttpStatus.CONFLICT, "EMAIL_ALREADY_EXISTS");
         assertApi(handler.handleInvalidCredentials(new InvalidCredentialsException("inválidas"), servletRequest()),
                 HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS");
-        assertApi(handler.handleRoomBadRequest(new IllegalArgumentException("ruim"), servletRequest()),
-                HttpStatus.BAD_REQUEST, "ROOM_BAD_REQUEST");
-        assertApi(handler.handleRoomConflict(new IllegalStateException("conflito"), servletRequest()),
-                HttpStatus.CONFLICT, "ROOM_CONFLICT");
+        assertApi(
+                handler.handleRoomBadRequest(
+                        new IllegalArgumentException("código inválido"),
+                        servletRequest()
+                ),
+                HttpStatus.BAD_REQUEST,
+                "ROOM_BAD_REQUEST"
+        );
+
+        assertApi(
+                handler.handleRoomNotFound(
+                        new RoomNotFoundException("Sala não encontrada"),
+                        servletRequest()
+                ),
+                HttpStatus.NOT_FOUND,
+                "ROOM_NOT_FOUND"
+        );
+
+        assertApi(
+                handler.handleRoomFull(
+                        new RoomFullException("A sala está cheia."),
+                        servletRequest()
+                ),
+                HttpStatus.CONFLICT,
+                "ROOM_FULL"
+        );
+
+        assertApi(
+                handler.handleRoomAlreadyStarted(
+                        new RoomAlreadyStartedException(
+                                "A partida desta sala já foi iniciada."
+                        ),
+                        servletRequest()
+                ),
+                HttpStatus.CONFLICT,
+                "ROOM_ALREADY_STARTED"
+        );
         assertApi(handler.handleConstraintViolation(new ConstraintViolationException("inválido", null), servletRequest()),
                 HttpStatus.BAD_REQUEST, "VALIDATION_ERROR");
     }
@@ -52,8 +88,21 @@ class GlobalExceptionHandlerTest {
         assertEquals("VALIDATION_ERROR", validationBody.code());
         assertEquals(Map.of("email", "E-mail inválido"), validationBody.fields());
 
-        assertSpring(HttpStatus.BAD_REQUEST, "INVALID_REQUEST_BODY",
-                new org.springframework.http.converter.HttpMessageNotReadableException("bad", new MockHttpInputMessage()));
+        var malformedResponse =
+                handler.handleHttpMessageNotReadable(
+                        new org.springframework.http.converter.HttpMessageNotReadableException(
+                                "bad",
+                                new MockHttpInputMessage()
+                        ),
+                        new HttpHeaders(),
+                        HttpStatus.BAD_REQUEST,
+                        request()
+                );
+
+        ApiError malformedBody = (ApiError) malformedResponse.getBody();
+
+        assertEquals("INVALID_REQUEST_BODY", malformedBody.code());
+        assertEquals(HttpStatus.BAD_REQUEST.value(), malformedBody.status());
     }
 
     @Test
