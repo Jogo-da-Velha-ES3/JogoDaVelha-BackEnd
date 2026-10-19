@@ -18,6 +18,11 @@ public class TornadoEffect implements SkillEffect {
     }
 
     @Override
+    public boolean isOffensive() {
+        return true;
+    }
+
+    @Override
     public boolean hasValidTarget(GameState state, SkillContext context) {
         boolean unreinforced = OffensiveEffectSupport.hasUnreinforcedOpponentPiece(state, context);
         int source = context.targetPosition();
