@@ -46,6 +46,16 @@ class StompJwtAuthenticationInterceptorTest {
     }
 
     @Test
+    void validStompAssociatesSubjectAsPrincipal() {
+        StompHeaderAccessor accessor = stomp("Bearer " + validToken());
+        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        Message<?> authenticated = interceptor.preSend(message, channel());
+        StompHeaderAccessor authenticatedAccessor = StompHeaderAccessor.wrap(authenticated);
+        assertEquals(USER_ID.toString(), authenticatedAccessor.getUser().getName());
+    }
+
+    @Test
     void missingMalformedInvalidExpiredAndWronglySignedTokensAreRejected() {
         assertRejected(connect(null));
         assertRejected(connect("Bearer"));
@@ -54,6 +64,15 @@ class StompJwtAuthenticationInterceptorTest {
         assertRejected(connect("Bearer not-a-jwt"));
         assertRejected(connect("Bearer " + token(NOW.minusSeconds(120), NOW.minusSeconds(60), SECRET)));
         assertRejected(connect("Bearer " + token(NOW, NOW.plusSeconds(60),
+                "different-secret-key-with-at-least-32-bytes")));
+
+        assertRejected(stomp(null));
+        assertRejected(stomp("Bearer"));
+        assertRejected(stomp("Bearer "));
+        assertRejected(stomp("Basic " + validToken()));
+        assertRejected(stomp("Bearer not-a-jwt"));
+        assertRejected(stomp("Bearer " + token(NOW.minusSeconds(120), NOW.minusSeconds(60), SECRET)));
+        assertRejected(stomp("Bearer " + token(NOW, NOW.plusSeconds(60),
                 "different-secret-key-with-at-least-32-bytes")));
     }
 
@@ -75,6 +94,13 @@ class StompJwtAuthenticationInterceptorTest {
 
     private StompHeaderAccessor connect(String authorization) {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
+        if (authorization != null) accessor.addNativeHeader("Authorization", authorization);
+        accessor.setLeaveMutable(true);
+        return accessor;
+    }
+
+    private StompHeaderAccessor stomp(String authorization) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.STOMP);
         if (authorization != null) accessor.addNativeHeader("Authorization", authorization);
         accessor.setLeaveMutable(true);
         return accessor;
