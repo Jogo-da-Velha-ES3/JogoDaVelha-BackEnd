@@ -110,12 +110,12 @@ class RoomServiceTest {
         room.setStatus(RoomStatus.IN_GAME);
         when(users.findById(third.getId())).thenReturn(Optional.of(third));
         var error = assertThrows(
-                RoomFullException.class,
+                RoomAlreadyStartedException.class,
                 () -> service.joinRoom("0042", third.getId())
         );
 
         assertEquals(
-                "A sala está cheia.",
+                "A partida desta sala já foi iniciada.",
                 error.getMessage()
         );
         verify(rooms, never()).saveAndFlush(any());

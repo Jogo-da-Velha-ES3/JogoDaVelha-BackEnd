@@ -55,14 +55,14 @@ public class Room {
             throw new IllegalStateException("Jogador já está nesta sala.");
         }
 
-        if (player2 != null) {
-            throw new RoomFullException("A sala está cheia.");
-        }
-
         if (status != RoomStatus.WAITING) {
             throw new RoomAlreadyStartedException(
                     "A partida desta sala já foi iniciada."
             );
+        }
+
+        if (player2 != null) {
+            throw new RoomFullException("A sala está cheia.");
         }
 
         player2 = player;
