@@ -21,13 +21,4 @@ public class SkillService {
                 .map(SkillDTO::from)
                 .toList();
     }
-
-    public List<SkillDTO> getEligibleInitialSkills(UUID userId) {
-        return userSkillRepository.findByUser_Id(userId)
-                .stream()
-                .map(UserSkill::getSkill)
-                .filter(skill -> Boolean.TRUE.equals(skill.getInitialSkill()))
-                .map(SkillDTO::from)
-                .toList();
-    }
 }

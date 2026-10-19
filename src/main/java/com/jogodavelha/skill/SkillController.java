@@ -16,7 +16,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/skills")
 @RequiredArgsConstructor
-@Tag(name = "Skill", description = "Inventário e habilidades elegíveis")
+@Tag(name = "Skill", description = "Inventário de habilidades")
 public class SkillController {
 
     private final SkillService skillService;
@@ -35,23 +35,6 @@ public class SkillController {
 
         return ResponseEntity.ok(
                 skillService.getInventory(userId)
-        );
-    }
-
-    @Operation(
-            summary = "Consultar habilidades iniciais elegíveis",
-            description = "Retorna as habilidades iniciais disponíveis para seleção no Draft"
-    )
-    @ApiResponse(responseCode = "200", description = "Lista retornada com sucesso")
-    @GetMapping("/eligible")
-    public ResponseEntity<List<SkillDTO>> eligible(
-            Authentication authentication
-    ) {
-
-        UUID userId = (UUID) authentication.getPrincipal();
-
-        return ResponseEntity.ok(
-                skillService.getEligibleInitialSkills(userId)
         );
     }
 }

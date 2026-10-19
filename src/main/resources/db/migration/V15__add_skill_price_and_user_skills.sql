@@ -2,6 +2,20 @@
 ALTER TABLE skills
     ADD COLUMN price_coins INTEGER NOT NULL DEFAULT 0;
 
+ALTER TABLE skills
+    ADD COLUMN price_coins INTEGER NOT NULL DEFAULT 0;
+
+UPDATE skills
+SET price_coins = 350;
+
+UPDATE skills
+SET price_coins = 0
+WHERE name IN (
+               'BOMBA',
+               'ESCUDO',
+               'AMPULHETA'
+    );
+
 CREATE TABLE user_skills (
                              id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
