@@ -3,8 +3,12 @@ package com.jogodavelha.skill;
 import com.jogodavelha.game.logic.GameState;
 
 public interface SkillEffect {
-    /* Nome da habilidade, igual a Skill.name no banco */
-    String skillName();
+    /* Código estável da habilidade, igual a Skill.code no catálogo */
+    String skillCode();
+
+    default boolean isOffensive() {
+        return false;
+    }
 
     boolean hasValidTarget(GameState state, SkillContext context);
 

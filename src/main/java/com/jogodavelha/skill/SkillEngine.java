@@ -2,9 +2,12 @@ package com.jogodavelha.skill;
 
 import com.jogodavelha.game.logic.GameState;
 import com.jogodavelha.game.logic.GameValidator;
+import com.jogodavelha.game.logic.SkillValidationException;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
+
+import static com.jogodavelha.game.logic.SkillValidationException.Code.*;
 
 @Component
 public class SkillEngine {
@@ -13,20 +16,33 @@ public class SkillEngine {
 
     public SkillEngine(List<SkillEffect> skillEffects, GameValidator validator) {
         for (SkillEffect effect : skillEffects) {
-            if (effects.put(effect.skillName(), effect) != null) {
-                throw new IllegalStateException("Habilidade duplicada: " + effect.skillName());
+            String skillCode = effect.skillCode();
+            if (effects.put(skillCode, effect) != null) {
+                throw new IllegalStateException("Habilidade duplicada: " + skillCode);
             }
         }
         this.validator = validator;
     }
 
-    /* Aplica habilidade. Sem alvo válido, não altera o estado, mas a habilidade conta como usada */
-    public SkillResult useSkill(GameState state, String skillName, SkillContext context) {
-        SkillEffect effect = effects.get(skillName);
+    /* Pedido inválido lança exceção; falha de regra retorna NO_VALID_TARGET, que conta como uso. */
+    public SkillResult useSkill(GameState state, String skillCode, SkillContext context) {
+        SkillEffect effect = effects.get(skillCode);
         if (effect == null) {
-            throw new IllegalArgumentException("Habilidade desconhecida: " + skillName);
+            throw new IllegalArgumentException("Habilidade desconhecida: " + skillCode);
         }
-        if (!effect.hasValidTarget(state, context)) {
+        if (context == null || context.casterId() == null) {
+            throw new SkillValidationException(SKILL_INVALID_TARGET, "Informe o jogador que usa a habilidade.");
+        }
+        UUID opponent = state.getOpponentId(context.casterId());
+        if (state.getSilencedTurns().getOrDefault(context.casterId(), 0) > 0) {
+            throw new SkillValidationException(SKILL_SILENCED, "Silêncio impede o uso de habilidades neste turno.");
+        }
+        boolean hasValidTarget = effect.hasValidTarget(state, context);
+        if (effect.isOffensive() && state.getForceFieldTurns().getOrDefault(opponent, 0) > 0) {
+            state.getForceFieldTurns().remove(opponent);
+            return SkillResult.BLOCKED_BY_FORCE_FIELD;
+        }
+        if (!hasValidTarget) {
             return SkillResult.NO_VALID_TARGET;
         }
         effect.apply(state, context);
