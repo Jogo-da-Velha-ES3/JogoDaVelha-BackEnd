@@ -1017,6 +1017,31 @@ chamador ainda deve validar jogador, turno e fase, executar a habilidade e chama
 `endAction`; os handlers e o timer não fazem parte desta tarefa. Não há alterações
 de schema nem execução de migrations.
 
+## Efeitos defensivos e de tempo (BE-014.2)
+
+- `ESCUDO`: usa uma casa vazia em `targetPosition` e a bloqueia para o oponente.
+- `REFORCO`: protege a peça própria em `targetPosition` contra Bomba, Tornado e Buraco Negro, mas não Congelar.
+- `CAMPO_DE_FORCA`: protege quem ativou e anula a primeira ofensiva recebida, sem refletir. Retorna `BLOCKED_BY_FORCE_FIELD` e remove a proteção.
+- `AMPULHETA`: limita o próximo turno do oponente a 5s, pelo `TurnService` existente.
+- `SILENCIO`: impede habilidades no próximo turno do oponente, mas permite marcar uma peça normalmente.
+- `TROCA_RAPIDA`: move a peça própria de `targetPosition` para `destinationPosition`, vizinho ortogonal vazio e não bloqueado. Congelamento e Reforço acompanham a peça.
+
+Campo de Força, Ampulheta e Silêncio não recebem posição: use
+`new SkillContext(playerId, null)`. Os demais usam as posições 0 a 15 já adotadas.
+Troca Rápida segue a validação de destino do Tornado, inclusive `NO_VALID_TARGET`
+quando não há vizinho permitido e o destino não foi informado.
+
+Os efeitos persistentes começam com contador 2 e diminuem no fim de cada ação,
+inclusive a que os ativou. Campo de Força bloqueia Bomba, Tornado, Buraco Negro,
+Congelar, Ampulheta e Silêncio, classificados por `SkillEffect.isOffensive()`
+conforme o catálogo. O motor primeiro rejeita jogador silenciado e pedidos
+inválidos; depois consome o Campo de Força, antes de resolver Reforço ou falta
+de destino. Pedidos inválidos não gastam a proteção. Habilidade anulada conta
+como uso na futura integração de consumo, que continua na BE-015.
+
+Sem endpoints, destinos STOMP, migrations ou mudanças no formato do `GameState`.
+O evento `ABILITY_RESOLVED` continua sendo proposta no contrato.
+
 ## 🧪 Testes
 
 O `RoomService` da BE-008 cria salas com `createRoom(playerId)` e permite entrada
@@ -1125,17 +1150,20 @@ Códigos REST disponíveis:
 
 `fields` aparece somente em `VALIDATION_ERROR` originado de validação de corpo. O schema `ApiError` também é reutilizado nas mensagens de erro STOMP.
 
-Erros de habilidade no STOMP (BE-014.1), enviados ao autor em `/user/queue/errors`:
+Erros de habilidade no STOMP (BE-014.1 e BE-014.2), enviados ao autor em `/user/queue/errors`:
 
 | Código | `status` no payload | Uso |
 | --- | ---: | --- |
-| `SKILL_INVALID_TARGET` | 400 | Alvo nulo, fora do tabuleiro, vazio ou próprio |
-| `SKILL_INVALID_DESTINATION` | 400 | Destino do Tornado ausente quando há opção, fora do tabuleiro, ocupado, bloqueado por Escudo ou não adjacente |
+| `SKILL_INVALID_TARGET` | 400 | Jogador ausente ou alvo inválido para a habilidade (posição, ocupação, proprietário ou bloqueio) |
+| `SKILL_INVALID_DESTINATION` | 400 | Destino do Tornado ou Troca Rápida ausente quando há opção, fora do tabuleiro, ocupado, bloqueado por Escudo ou não adjacente |
+| `SKILL_SILENCED` | 400 | Jogador sob Silêncio tenta ativar uma habilidade |
 
 Esses códigos preservam o erro de domínio no `ApiError`, sem `fields` ou `error`.
 Não há endpoint REST de habilidade nem handler público de ativação nesta tarefa.
-O consumo do deck permanece na BE-015, e `NO_VALID_TARGET` é resultado da ação,
-não erro. Sua inclusão em `ABILITY_RESOLVED` está proposta no contrato.
+O consumo do deck permanece na BE-015. `NO_VALID_TARGET` e
+`BLOCKED_BY_FORCE_FIELD` são resultados da ação, não erros. Sua inclusão em
+`ABILITY_RESOLVED` está proposta no contrato; o segundo indica uso sem efeito
+com consumo do Campo de Força do oponente.
 
 Detalhes e atualizações em `docs/contrato-integracao.md`.
 

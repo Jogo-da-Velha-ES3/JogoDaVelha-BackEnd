@@ -3,6 +3,8 @@ package com.jogodavelha.game;
 import com.jogodavelha.game.logic.*;
 import com.jogodavelha.game.service.TurnService;
 import com.jogodavelha.skill.SkillEngine;
+import com.jogodavelha.skill.HourglassEffect;
+import com.jogodavelha.skill.SkillContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
@@ -29,6 +31,7 @@ class TurnServiceTest {
     private GameStateManager manager;
     private ApplicationEventPublisher events;
     private TurnService service;
+    private SkillEngine engine;
     private long nowMillis;
     private GameState state;
 
@@ -40,7 +43,7 @@ class TurnServiceTest {
         TaskScheduler scheduler = mock(TaskScheduler.class);
         ScheduledFuture future = mock(ScheduledFuture.class);
         when(scheduler.schedule(any(Runnable.class), any(Instant.class))).thenReturn(future);
-        SkillEngine engine = new SkillEngine(List.of(), new GameValidator());
+        engine = new SkillEngine(List.of(new HourglassEffect()), new GameValidator());
         Clock clock = new Clock() {
             public ZoneOffset getZone() { return ZoneOffset.UTC; }
             public Clock withZone(java.time.ZoneId z) { return this; }
@@ -104,6 +107,24 @@ class TurnServiceTest {
         nowMillis = state.getTurnDeadlineEpochMillis();
         service.expire(gameId, state.getTurnDeadlineEpochMillis());
         assertEquals(5_000, state.getTurnDurationMillis());
+    }
+
+    @Test
+    void hourglassSkillShortensOnlyTheOpponentsNextTurn() {
+        engine.useSkill(state, "AMPULHETA", new SkillContext(p1, null));
+        service.endPlayerAction(state, p1, 1000);
+        assertEquals(p2, state.getCurrentTurnPlayerId());
+        assertEquals(5000, state.getTurnDurationMillis());
+        assertEquals(6000, state.getTurnDeadlineEpochMillis());
+        assertEquals(1, state.getHourglassTurns().get(p2));
+
+        service.endPlayerAction(state, p2, 2000);
+        assertEquals(p1, state.getCurrentTurnPlayerId());
+        assertEquals(10000, state.getTurnDurationMillis());
+        assertTrue(state.getHourglassTurns().isEmpty());
+        service.endPlayerAction(state, p1, 3000);
+        assertEquals(p2, state.getCurrentTurnPlayerId());
+        assertEquals(10000, state.getTurnDurationMillis());
     }
 
     @Test

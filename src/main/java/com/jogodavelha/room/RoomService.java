@@ -28,11 +28,9 @@ public class RoomService {
         User player = findPlayer(playerId);
         allocator.lockMembership();
         Room room = rooms.findByCodeAndStatusIn(code, RoomCodeAllocator.ACTIVE)
-                .orElseThrow(() -> new IllegalArgumentException("Sala não encontrada ou encerrada."));
+                .orElseThrow(() ->
+                        new RoomNotFoundException("Sala não encontrada ou encerrada."));
 
-        if (room.getStatus() == RoomStatus.IN_GAME) {
-            throw new IllegalStateException("A partida desta sala já foi iniciada.");
-        }
         allocator.requireAvailablePlayer(player);
         room.join(player);
         return rooms.saveAndFlush(room);

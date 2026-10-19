@@ -13,6 +13,11 @@ public class BlackHoleEffect implements SkillEffect {
     }
 
     @Override
+    public boolean isOffensive() {
+        return true;
+    }
+
+    @Override
     public boolean hasValidTarget(GameState state, SkillContext context) {
         return OffensiveEffectSupport.hasUnreinforcedOpponentPiece(state, context)
                 && IntStream.range(0, GameState.BOARD_SIZE)

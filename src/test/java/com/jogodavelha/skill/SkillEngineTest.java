@@ -85,7 +85,7 @@ class SkillEngineTest {
             "CAMPO_DE_FORCA, CAMPO DE FORCA"
     })
     void catalogKeepsDisplayNameWhileEngineUsesCode(String code, String name) {
-        Skill skill = new Skill(name, code, SkillCategory.RELOCATION, "Descrição", false, true);
+        Skill skill = new Skill(name, code, SkillCategory.RELOCATION, "Descrição", false, true, 0);
         var json = new ObjectMapper().valueToTree(skill);
         assertEquals(name, json.get("name").asText());
         assertEquals(code, json.get("code").asText());

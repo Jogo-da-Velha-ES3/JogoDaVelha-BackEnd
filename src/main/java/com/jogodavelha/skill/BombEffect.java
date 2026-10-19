@@ -11,6 +11,11 @@ public class BombEffect implements SkillEffect {
     }
 
     @Override
+    public boolean isOffensive() {
+        return true;
+    }
+
+    @Override
     public boolean hasValidTarget(GameState state, SkillContext context) {
         return OffensiveEffectSupport.hasUnreinforcedOpponentPiece(state, context);
     }

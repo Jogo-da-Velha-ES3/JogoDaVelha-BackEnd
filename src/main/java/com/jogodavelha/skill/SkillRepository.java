@@ -14,4 +14,6 @@ public interface SkillRepository extends JpaRepository<Skill, UUID> {
 
     Optional<Skill> findByCode(String code);
 
+    List<Skill> findByInitialSkillTrue();
+
 }
