@@ -11,6 +11,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
+import com.jogodavelha.skill.Skill;
+import com.jogodavelha.skill.SkillRepository;
+import com.jogodavelha.skill.UserSkill;
+import com.jogodavelha.skill.UserSkillRepository;
 
 /**
  * Service responsável pela lógica de autenticação.
@@ -25,19 +29,25 @@ public class AuthService {
     private final JwtService jwtService;
     private final CharacterRepository characterRepository;
     private final UserCharacterRepository userCharacterRepository;
+    private final SkillRepository skillRepository;
+    private final UserSkillRepository userSkillRepository;
 
     public AuthService(
             UserRepository userRepository,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
             CharacterRepository characterRepository,
-            UserCharacterRepository userCharacterRepository
+            UserCharacterRepository userCharacterRepository,
+            SkillRepository skillRepository,
+            UserSkillRepository userSkillRepository
     ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.characterRepository = characterRepository;
         this.userCharacterRepository = userCharacterRepository;
+        this.skillRepository = skillRepository;
+        this.userSkillRepository = userSkillRepository;
     }
 
     /**
@@ -85,6 +95,33 @@ public class AuthService {
 
             userCharacterRepository.save(
                     new UserCharacter(savedUser, oCharacter)
+            );
+
+            Skill bomba = skillRepository
+                    .findByCode("BOMBA")
+                    .orElseThrow(() ->
+                            new IllegalStateException("Habilidade BOMBA não encontrada"));
+
+            Skill escudo = skillRepository
+                    .findByCode("ESCUDO")
+                    .orElseThrow(() ->
+                            new IllegalStateException("Habilidade ESCUDO não encontrada"));
+
+            Skill ampulheta = skillRepository
+                    .findByCode("AMPULHETA")
+                    .orElseThrow(() ->
+                            new IllegalStateException("Habilidade AMPULHETA não encontrada"));
+
+            userSkillRepository.save(
+                    new UserSkill(savedUser, bomba)
+            );
+
+            userSkillRepository.save(
+                    new UserSkill(savedUser, escudo)
+            );
+
+            userSkillRepository.save(
+                    new UserSkill(savedUser, ampulheta)
             );
 
             return savedUser;

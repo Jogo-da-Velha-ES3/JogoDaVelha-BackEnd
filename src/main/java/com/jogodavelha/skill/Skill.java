@@ -36,13 +36,17 @@ public class Skill {
     @Column(nullable = false)
     private Boolean offensive = false;
 
+    @Column(name = "price_coins", nullable = false)
+    private Integer priceCoins;
+
     public Skill(
             String name,
             String code,
             SkillCategory effectCategory,
             String description,
             Boolean initialSkill,
-            Boolean offensive
+            Boolean offensive,
+            Integer priceCoins
     ) {
         this.name = name;
         this.code = code;
@@ -50,5 +54,6 @@ public class Skill {
         this.description = description;
         this.initialSkill = initialSkill;
         this.offensive = offensive;
+        this.priceCoins = priceCoins;
     }
 }

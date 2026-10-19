@@ -96,6 +96,7 @@ privado, não entrega por um broker real.
 | POST | `/api/auth/login` | Pública | 200 | ✅ BE-006 |
 | POST | `/api/rooms?playerId={uuid}` | Bearer exigido + `playerId` query | 201 | ⚠️ BE-009.1 |
 | POST | `/api/rooms/{code}/join?playerId={uuid}` | Bearer exigido + `playerId` query | 200 | ⚠️ BE-009.1 |
+| GET | `/api/skills/inventory` | Bearer exigido | 200 | ✅ BE-041 |
 
 ### `GET /api/health`
 
@@ -176,6 +177,51 @@ POST /api/rooms/0042/join?playerId=123e4567-e89b-12d3-a456-426614174002
 Sucesso 200 devolve `RoomDTO` com `id`, `code`, `status`, `player1Id`, `player1Username`, `player2Id`, `player2Username`. O join bem-sucedido preenche o segundo jogador. Não há anotações Bean Validation nos parâmetros.
 
 Erros observados: 400 `BAD_REQUEST` se query ausente/malformada; 400 `ROOM_BAD_REQUEST` para `IllegalArgumentException` (inclui código/sala inválidos ou sala inexistente, pois o handler mapeia exceção por tipo e não 404); 409 `ROOM_CONFLICT` para `IllegalStateException` (sala cheia/iniciada ou jogador indisponível); 401 `UNAUTHORIZED`; 500 `INTERNAL_ERROR`. **Divergência:** Swagger anuncia 404 para sala inexistente/encerrada, mas o handler global transforma a exceção atual em 400 `ROOM_BAD_REQUEST`.
+
+GET /api/skills/inventory
+Authorization: Bearer <jwt>
+
+Bearer Token obrigatório.
+
+Retorna o inventário de habilidades pertencentes ao usuário autenticado. O inventário representa também o conjunto de habilidades elegíveis para o Draft.
+
+GET /api/skills/inventory
+Authorization: Bearer <jwt>
+Sucesso 200:
+
+[
+{
+"id": "123e4567-e89b-12d3-a456-426614174000",
+"name": "BOMBA",
+"code": "BOMBA",
+"description": "Remove uma peça do oponente do tabuleiro, deixando a casa vazia novamente.",
+"initialSkill": true,
+"offensive": true,
+"priceCoins": 0
+},
+{
+"id": "123e4567-e89b-12d3-a456-426614174001",
+"name": "TORNADO",
+"code": "TORNADO",
+"description": "Mover uma peça do oponente para uma casa adjacente que esteja vazia.",
+"initialSkill": false,
+"offensive": true,
+"priceCoins": 350
+}
+]
+Campos retornados:
+
+id: UUID da habilidade.
+name: nome de exibição.
+code: identificador de integração.
+description: descrição da habilidade.
+initialSkill: indica se a habilidade pertence ao conjunto inicial do jogo.
+offensive: indica se a habilidade é ofensiva.
+priceCoins: custo da habilidade em moedas.
+Erros:
+
+401 UNAUTHORIZED — token ausente ou inválido.
+500 INTERNAL_ERROR — erro interno do servidor.
 
 ### Propostas REST
 
