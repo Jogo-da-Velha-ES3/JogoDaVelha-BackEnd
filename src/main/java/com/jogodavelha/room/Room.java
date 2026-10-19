@@ -50,18 +50,25 @@ public class Room {
         if (player == null || player.getId() == null) {
             throw new IllegalArgumentException("O jogador deve possuir um ID.");
         }
-        if (status != RoomStatus.WAITING) {
-            throw new IllegalStateException("A sala não está aguardando jogadores.");
-        }
+
         if (player1.getId().equals(player.getId())) {
             throw new IllegalStateException("Jogador já está nesta sala.");
         }
+
         if (player2 != null) {
             throw new RoomFullException("A sala está cheia.");
         }
+
+        if (status != RoomStatus.WAITING) {
+            throw new RoomAlreadyStartedException(
+                    "A partida desta sala já foi iniciada."
+            );
+        }
+
         player2 = player;
         startIfFull();
     }
+
 
     public void startIfFull() {
         if (status == RoomStatus.WAITING && player1 != null && player2 != null) {

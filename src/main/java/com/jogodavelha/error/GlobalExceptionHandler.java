@@ -21,6 +21,9 @@ import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
+import com.jogodavelha.room.RoomAlreadyStartedException;
+import com.jogodavelha.room.RoomFullException;
+import com.jogodavelha.room.RoomNotFoundException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;

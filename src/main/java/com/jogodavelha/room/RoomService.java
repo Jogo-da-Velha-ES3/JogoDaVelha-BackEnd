@@ -31,14 +31,6 @@ public class RoomService {
                 .orElseThrow(() ->
                         new RoomNotFoundException("Sala não encontrada ou encerrada."));
 
-        if (room.getStatus() == RoomStatus.IN_GAME
-                && room.getPlayer2() == null) {
-
-            throw new RoomAlreadyStartedException(
-                    "A partida desta sala já foi iniciada."
-            );
-        }
-
         allocator.requireAvailablePlayer(player);
         room.join(player);
         return rooms.saveAndFlush(room);

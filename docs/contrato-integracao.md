@@ -2,7 +2,7 @@
 
 **Propósito:** registrar o comportamento disponível e as propostas de integração entre backend e frontend.
 **Público:** time do front.
-**Atualizado em:** 15/10/2026.
+**Atualizado em:** 19/10/2026.
 **Fonte da verdade:** o contrato REST implementado está no Swagger (`/swagger-ui.html` e `/v3/api-docs`). Este documento é a visão voltada ao front e também acompanha o STOMP.
 
 ## Legenda de status
@@ -53,8 +53,11 @@ O front deve decidir pelo `code` e apresentar `message`. `fields` só é preench
 | ✅ `NOT_FOUND` | 404 | Rota ou recurso HTTP não encontrado. |
 | ✅ `METHOD_NOT_ALLOWED` | 405 | Método HTTP não permitido. |
 | ✅ `BAD_REQUEST` | 400 | Parâmetro HTTP obrigatório ausente ou inválido. |
-| ⚠️ `ROOM_BAD_REQUEST` | 400 | `IllegalArgumentException` propagada por operações de sala; BE-009.1 troca por códigos específicos. |
-| ⚠️ `ROOM_CONFLICT` | 409 | `IllegalStateException` propagada por operações de sala; BE-009.1 troca por códigos específicos. |
+| ✅ ROOM_BAD_REQUEST | 400 | Código da sala inválido ou usuário inválido. |
+| ✅ ROOM_NOT_FOUND | 404 | Sala inexistente ou encerrada. | 
+| ✅ ROOM_FULL | 409 | Sala já possui dois jogadores. | 
+| ✅ ROOM_ALREADY_STARTED | 409 | A partida da sala já foi iniciada. | 
+| ✅ ROOM_CONFLICT | 409 | Jogador já está em uma sala ou partida ativa. |
 | ✅ `UNAUTHORIZED` | 401 | Rota protegida sem autenticação ou token ausente/inválido. |
 | ✅ `FORBIDDEN` | 403 | Acesso negado a recurso protegido. |
 | ✅ `INTERNAL_ERROR` | 500 | Exceção inesperada ou erro HTTP 5xx. |
@@ -74,8 +77,8 @@ O front deve decidir pelo `code` e apresentar `message`. `fields` só é preench
 | GET | `/api/health` | Pública | 200 | ✅ BE-044 |
 | POST | `/api/auth/register` | Pública | 201 | ✅ BE-006 |
 | POST | `/api/auth/login` | Pública | 200 | ✅ BE-006 |
-| POST | `/api/rooms?playerId={uuid}` | Bearer exigido + `playerId` query | 201 | ⚠️ BE-009.1 |
-| POST | `/api/rooms/{code}/join?playerId={uuid}` | Bearer exigido + `playerId` query | 200 | ⚠️ BE-009.1 |
+| POST | `/api/rooms` | Bearer exigido | 201 | ✅ BE-009.1 | 
+| POST | `/api/rooms/{code}/join` | Bearer exigido | 200 | ✅ BE-009.1 |
 
 ### `GET /api/health`
 
@@ -125,14 +128,19 @@ Sucesso 200:
 
 Erros: 400 `VALIDATION_ERROR`; 400 `INVALID_REQUEST_BODY`; 401 `INVALID_CREDENTIALS`; 500 `INTERNAL_ERROR`.
 
-### `POST /api/rooms?playerId={uuid}`
+### `POST /api/rooms`
 
-⚠️ Temporário — BE-009.1 substitui `playerId` por identidade do JWT; alteração incompatível: remover a query e usar o usuário autenticado.
+✅ Disponível na dev — BE-009.1.
 
-Bearer exigido. Sem corpo. Query `playerId` UUID obrigatório do jogador criador.
+Bearer Token obrigatório.
+
+O usuário autenticado pelo JWT é utilizado como criador da sala.
+
+Sem corpo de requisição.
 
 ```http
-POST /api/rooms?playerId=123e4567-e89b-12d3-a456-426614174000
+POST /api/rooms
+Authorization: Bearer <jwt>
 ```
 
 Sucesso 201:
@@ -141,21 +149,39 @@ Sucesso 201:
 {"id":"123e4567-e89b-12d3-a456-426614174001","code":"0042","status":"WAITING","player1Id":"123e4567-e89b-12d3-a456-426614174000","player1Username":"ana"}
 ```
 
-`player2Id` e `player2Username` nulos são omitidos. Erros observados: 400 `BAD_REQUEST` se `playerId` faltar/não puder ser convertido; 400 `ROOM_BAD_REQUEST` para `IllegalArgumentException` (ex.: jogador inválido/inexistente); 409 `ROOM_CONFLICT` para `IllegalStateException` (jogador em sala/partida ativa); 401 `UNAUTHORIZED`; 500 `INTERNAL_ERROR`. Swagger lista os casos 400/409. Não há anotações Bean Validation no parâmetro deste endpoint.
+Erros:
 
-### `POST /api/rooms/{code}/join?playerId={uuid}`
+400 ROOM_BAD_REQUEST — usuário inválido ou requisição inválida.
+409 ROOM_CONFLICT — jogador já está em sala ou partida ativa.
+401 UNAUTHORIZED — token ausente ou inválido.
+500 INTERNAL_ERROR — erro interno do servidor.
 
-⚠️ Temporário — BE-009.1 substitui `playerId` por identidade do JWT; alteração incompatível: remover a query e usar o usuário autenticado.
+### `POST /api/rooms/{code}/join`
 
-Bearer exigido. `code` path string (código atual de quatro dígitos); query `playerId` UUID obrigatório; sem corpo.
+✅ Disponível na dev — BE-009.1.
+
+Bearer Token obrigatório.
+
+O usuário autenticado pelo JWT entra na sala identificada pelo código informado.
+
+Sem corpo de requisição.
 
 ```http
-POST /api/rooms/0042/join?playerId=123e4567-e89b-12d3-a456-426614174002
-```
+POST /api/rooms/0042/join
+Authorization: Bearer <jwt>
+```    
+Erros:
+
+400 ROOM_BAD_REQUEST — código inválido ou usuário inválido.
+404 ROOM_NOT_FOUND — sala inexistente ou encerrada.
+409 ROOM_FULL — sala já possui dois jogadores.
+409 ROOM_ALREADY_STARTED — partida já iniciada.
+409 ROOM_CONFLICT — jogador já está em sala ou partida ativa.
+401 UNAUTHORIZED — token ausente ou inválido.
+500 INTERNAL_ERROR — erro interno do servidor.
 
 Sucesso 200 devolve `RoomDTO` com `id`, `code`, `status`, `player1Id`, `player1Username`, `player2Id`, `player2Username`. O join bem-sucedido preenche o segundo jogador. Não há anotações Bean Validation nos parâmetros.
 
-Erros observados: 400 `BAD_REQUEST` se query ausente/malformada; 400 `ROOM_BAD_REQUEST` para `IllegalArgumentException` (inclui código/sala inválidos ou sala inexistente, pois o handler mapeia exceção por tipo e não 404); 409 `ROOM_CONFLICT` para `IllegalStateException` (sala cheia/iniciada ou jogador indisponível); 401 `UNAUTHORIZED`; 500 `INTERNAL_ERROR`. **Divergência:** Swagger anuncia 404 para sala inexistente/encerrada, mas o handler global transforma a exceção atual em 400 `ROOM_BAD_REQUEST`.
 
 ### Propostas REST
 
@@ -221,9 +247,6 @@ Adicional do backlog não incluído na lista inicial do front:
 | Códigos de erro STOMP (`BAD_REQUEST`/`CONFLICT` etc.) versus códigos REST e campo `error` adicional | Back + front | BE-044 |
 | Remoção de `playerId` do payload STOMP e uso do JWT/`Principal` | Back + front; comunicar antes do merge | BE-040 |
 | Remoção de `playerId` query nos endpoints de sala e uso de JWT — breaking | Back + front; comunicar antes do merge | BE-009.1 |
-| `ROOM_BAD_REQUEST`/`ROOM_CONFLICT` atuais versus exceções/códigos tipados | Back + front | BE-009.1 |
-| Swagger promete 404 para sala inexistente/encerrada; handler atual entrega 400 `ROOM_BAD_REQUEST` | Back (corrigir contrato/handler) + front | BE-009.1 |
-| Teste `GlobalExceptionHandlerTest` espera `INVALID_REQUEST_BODY` através de `handleExceptionInternal`, mas esse método mapeia status 400 a `BAD_REQUEST`; existe handler específico para JSON ilegível que devolve `INVALID_REQUEST_BODY` | Back (alinhar teste/dispatch ou contrato) | BE-044 |
 | OpenAPI e README podem mostrar origens Vercel configuradas, mas o default isolado da aplicação é somente `http://localhost:5173` | Back/infra + front | BE-034 |
 | Teste não comprova entrega em `/user/queue/errors` quando sessão não tem `Principal` | Back (teste STOMP) + front | BE-044/BE-040 |
 | Envelope STOMP comum, conteúdo de eventos e destino final `/move` | Back + front | BE-023/024/035/037/038 |
