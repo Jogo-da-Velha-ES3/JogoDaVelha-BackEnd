@@ -1,5 +1,6 @@
 package com.jogodavelha.game.service;
 
+import com.jogodavelha.coins.CoinTransactionService;
 import com.jogodavelha.auth.User;
 import com.jogodavelha.game.*;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ public class GameService {
     public static final int COINS_FORFEIT_WIN = 30;
 
     private final GameRepository gameRepository;
+    private final CoinTransactionService coinTransactionService;
 
     /**
      * Registra o resultado de um round em uma partida.
@@ -68,7 +70,11 @@ public class GameService {
         }
 
         if (game.getEndReason() == GameEndReason.FORFEIT_TIMEOUT) {
-            game.getWinner().addCoins(COINS_FORFEIT_WIN);
+            creditCoins(
+                    game.getWinner(),
+                    COINS_FORFEIT_WIN,
+                    "MATCH_FORFEIT_WIN"
+            );
             game.markRewardsGranted();
             return;
         }
@@ -77,19 +83,60 @@ public class GameService {
 
         switch (outcome) {
             case DRAW -> {
-                game.getPlayer1().addCoins(COINS_DRAW);
-                game.getPlayer2().addCoins(COINS_DRAW);
+                creditCoins(
+                        game.getPlayer1(),
+                        COINS_DRAW,
+                        "MATCH_DRAW"
+                );
+
+                creditCoins(
+                        game.getPlayer2(),
+                        COINS_DRAW,
+                        "MATCH_DRAW"
+                );
             }
             case PLAYER1_WIN -> {
-                game.getPlayer1().addCoins(COINS_WIN);
-                game.getPlayer2().addCoins(COINS_LOSS);
+                creditCoins(
+                        game.getPlayer1(),
+                        COINS_WIN,
+                        "MATCH_WIN"
+                );
+
+                creditCoins(
+                        game.getPlayer2(),
+                        COINS_LOSS,
+                        "MATCH_LOSS"
+                );
             }
             case PLAYER2_WIN -> {
-                game.getPlayer2().addCoins(COINS_WIN);
-                game.getPlayer1().addCoins(COINS_LOSS);
+                creditCoins(
+                        game.getPlayer2(),
+                        COINS_WIN,
+                        "MATCH_WIN"
+                );
+
+                creditCoins(
+                        game.getPlayer1(),
+                        COINS_LOSS,
+                        "MATCH_LOSS"
+                );
             }
         }
 
         game.markRewardsGranted();
+    }
+
+    private void creditCoins(
+            User user,
+            int amount,
+            String source
+    ) {
+        user.addCoins(amount);
+
+        coinTransactionService.registerCredit(
+                user,
+                amount,
+                source
+        );
     }
 }
