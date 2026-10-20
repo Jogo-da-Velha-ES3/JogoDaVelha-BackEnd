@@ -1094,6 +1094,35 @@ Para o ambiente de produção, foi decidido o seguinte stack de hospedagem:
 
 **Nota importante**: Nenhum provedor foi configurado ainda. Esta é apenas a decisão de arquitetura para produção. A configuração e deploy nos provedores serão feitos em uma etapa futura do projeto.
 
+### Variáveis e conexões de produção (Render, Neon e Upstash)
+
+Quando os serviços forem criados, configure no serviço Web do Render, em **Environment > Environment Variables**, as variáveis abaixo. Cadastre os valores diretamente no painel do Render; não os coloque no repositório nem em arquivos `.env` versionados. Use os dados de conexão fornecidos pelos painéis Neon e Upstash.
+
+| Variável | Valor a cadastrar |
+| --- | --- |
+| `SPRING_PROFILES_ACTIVE` | `prod` |
+| `DB_URL` | URL JDBC do Neon no formato `jdbc:postgresql://<host>:5432/<database>` (sem usuário ou senha embutidos) |
+| `DB_USER` / `DB_PASSWORD` | Usuário e senha do banco Neon |
+| `REDIS_HOST` / `REDIS_PORT` | Host e porta TLS exibidos nos dados de conexão da Upstash |
+| `REDIS_USERNAME` | Usuário Redis da Upstash; normalmente `default` (também é o padrão da aplicação se omitido) |
+| `REDIS_PASSWORD` | Token/senha Redis da Upstash |
+| `JWT_SECRET` | Segredo aleatório forte, com pelo menos 32 bytes |
+| `JWT_EXPIRATION` | Validade do token em milissegundos, por exemplo `2592000000` (30 dias) |
+| `CORS_ALLOWED_ORIGINS` | Origens autorizadas do frontend, separadas por vírgula |
+| `GAME_STATE_TTL` / `GAME_STATE_UPDATE_MAX_RETRIES` | TTL em ms e número máximo de tentativas; padrões `1800000` e `5` |
+
+O Render fornece a porta HTTP da aplicação; a aplicação usa `SERVER_PORT` com padrão `8080`. Não cadastre `DB_NAME` e `DB_PORT` como substitutos de `DB_URL` para produção.
+
+O profile `prod` exige SSL no driver PostgreSQL (`sslmode=require`), desativa SQL logging e mantém `spring.jpa.hibernate.ddl-auto=validate`; o Flyway continua habilitado e é responsável por aplicar migrations. Para Redis, configure usuário e senha da Upstash e TLS fica habilitado na conexão Lettuce.
+
+Depois de configurar e publicar o serviço, valide o health check usando a URL atribuída pelo Render ao serviço (não existe URL de produção definida ainda):
+
+```bash
+curl -i https://<URL-atribuida-pelo-Render>/api/health
+```
+
+O esperado é HTTP 200 com `{"status":"UP","message":"API disponível"}`. Esse endpoint confirma que a API está respondendo, mas não testa conectividade com Neon ou Upstash. A validação de conexões e o smoke test dependem dos serviços externos estarem provisionados e ficam para a etapa própria de deploy.
+
 ## ⚠️ Notas Importantes
 
 - Todas as validações e transições de estado do jogo devem ocorrer no servidor no módulo `game/logic`
