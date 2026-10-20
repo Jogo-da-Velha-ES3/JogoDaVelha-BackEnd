@@ -1157,10 +1157,12 @@ Erros de habilidade no STOMP (BE-014.1 e BE-014.2), enviados ao autor em `/user/
 | `SKILL_INVALID_TARGET` | 400 | Jogador ausente ou alvo inválido para a habilidade (posição, ocupação, proprietário ou bloqueio) |
 | `SKILL_INVALID_DESTINATION` | 400 | Destino do Tornado ou Troca Rápida ausente quando há opção, fora do tabuleiro, ocupado, bloqueado por Escudo ou não adjacente |
 | `SKILL_SILENCED` | 400 | Jogador sob Silêncio tenta ativar uma habilidade |
+| `BAD_REQUEST` | 400 | Ação de jogo fora da fase permitida, fora da vez ou após o prazo |
+| `SKILL_ALREADY_USED` | 400 | Jogador tenta reutilizar o mesmo código de habilidade no round atual |
 
 Esses códigos preservam o erro de domínio no `ApiError`, sem `fields` ou `error`.
-Não há endpoint REST de habilidade nem handler público de ativação nesta tarefa.
-O consumo do deck permanece na BE-015. `NO_VALID_TARGET` e
+Não há endpoint REST de habilidade nem handler público de ativação; a exposição STOMP
+continua pertencendo à BE-023. `NO_VALID_TARGET` e
 `BLOCKED_BY_FORCE_FIELD` são resultados da ação, não erros. Sua inclusão em
 `ABILITY_RESOLVED` está proposta no contrato; o segundo indica uso sem efeito
 com consumo do Campo de Força do oponente.

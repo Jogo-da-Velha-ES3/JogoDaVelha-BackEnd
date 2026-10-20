@@ -59,6 +59,9 @@ public class GameState {
     private Map<UUID, Integer> silencedTurns = new HashMap<>();
     @Builder.Default
     private Map<UUID, Integer> hourglassTurns = new HashMap<>();
+    /** Códigos de habilidades já consumidos por jogador no round atual. */
+    @Builder.Default
+    private Map<UUID, Set<String>> usedSkillsByPlayer = new HashMap<>();
 
     /**
      * Calcula o tempo restante do turno atual em milissegundos.
@@ -148,12 +151,25 @@ public class GameState {
         UUID opponent = getOpponentId(firstPlayerId);
         board = EMPTY_BOARD;
         clearEffects(); // Efeitos não atravessam rounds
+        if (usedSkillsByPlayer != null) usedSkillsByPlayer.clear();
         roundNumber = round;
         phase = GamePhase.PLAYING;
         suddenDeath = round == 3;
         currentTurnPlayerId = round % 2 == 1 ? firstPlayerId : opponent;
         turnDurationMillis = durationMillis;
         turnDeadlineEpochMillis = startedAtMillis + durationMillis;
+    }
+
+    public boolean hasUsedSkill(UUID playerId, String skillCode) {
+        return usedSkillsByPlayer != null
+                && usedSkillsByPlayer.getOrDefault(playerId, Set.of()).contains(skillCode);
+    }
+
+    public void recordSkillUse(UUID playerId, String skillCode) {
+        if (usedSkillsByPlayer == null) {
+            usedSkillsByPlayer = new HashMap<>();
+        }
+        usedSkillsByPlayer.computeIfAbsent(playerId, ignored -> new HashSet<>()).add(skillCode);
     }
 
     private boolean isPlayer1(UUID playerId) {
