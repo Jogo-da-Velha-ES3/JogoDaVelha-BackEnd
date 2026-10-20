@@ -60,6 +60,10 @@ public class GameState {
     @Builder.Default
     private Map<UUID, Integer> hourglassTurns = new HashMap<>();
 
+    /** Habilidades já consumidas no round atual, separadas por jogador e pelo código estável. */
+    @Builder.Default
+    private Map<UUID, Set<String>> usedSkillCodes = new HashMap<>();
+
     /**
      * Calcula o tempo restante do turno atual em milissegundos.
      * Nunca retorna valor negativo.
@@ -148,6 +152,7 @@ public class GameState {
         UUID opponent = getOpponentId(firstPlayerId);
         board = EMPTY_BOARD;
         clearEffects(); // Efeitos não atravessam rounds
+        usedSkillCodes.clear();
         roundNumber = round;
         phase = GamePhase.PLAYING;
         suddenDeath = round == 3;
@@ -206,6 +211,16 @@ public class GameState {
         forceFieldTurns.clear();
         silencedTurns.clear();
         hourglassTurns.clear();
+    }
+
+    public boolean hasUsedSkill(UUID playerId, String skillCode) {
+        return usedSkillCodes.getOrDefault(playerId, Collections.emptySet()).contains(skillCode);
+    }
+
+    public void recordSkillUse(UUID playerId, String skillCode) {
+        Objects.requireNonNull(playerId, "Jogador é obrigatório.");
+        Objects.requireNonNull(skillCode, "Código da habilidade é obrigatório.");
+        usedSkillCodes.computeIfAbsent(playerId, ignored -> new HashSet<>()).add(skillCode);
     }
 
     /* Duração do turno de quem vai jogar, considerando a AMPULHETA */

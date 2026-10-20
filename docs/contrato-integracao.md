@@ -67,20 +67,24 @@ O front deve decidir pelo `code` e apresentar `message`. `fields` só é preench
 O handler de erro preserva os códigos abaixo em `ApiError`,
 enviado ao autor em `/user/queue/errors`, sem `fields` ou `error`.
 Não há endpoint REST de habilidade nem handler público de ativação nesta tarefa.
-Os códigos de alvo e destino estão na `dev` (BE-014.1). A extensão para as novas
-habilidades e `SKILL_SILENCED` está em desenvolvimento na BE-014.2.
+Os códigos de alvo/destino e `SKILL_SILENCED` estão implementados no motor das
+BE-014.1/BE-014.2; BE-015 adiciona o código de reutilização abaixo.
 
 | Código | `status` no payload | Uso |
 |---|---:|---|
 | `SKILL_INVALID_TARGET` | 400 | Jogador ausente ou alvo inválido para a habilidade (posição, ocupação, proprietário ou bloqueio). |
 | `SKILL_INVALID_DESTINATION` | 400 | Destino do Tornado ou Troca Rápida ausente quando há opção, fora do tabuleiro, ocupado, bloqueado por Escudo ou não adjacente. |
 | `SKILL_SILENCED` | 400 | Jogador sob Silêncio tenta ativar uma habilidade. |
+| `SKILL_ALREADY_USED` | 400 | Jogador tenta reutilizar o mesmo código de habilidade no round atual. |
 
 Pedidos inválidos não devem consumir a habilidade ou encerrar o turno: o chamador
 precisa validar antes do consumo e não prosseguir com o fim da ação após a exceção.
-O motor rejeita sem alterar o estado; a integração com o consumo do deck fica na
-BE-015. Os testes locais cobrem seleção do handler, payload e anotação de envio
-privado, não entrega por um broker real.
+A BE-015 registra cada código estável por jogador no estado persistido do round;
+reutilizar um código retorna `SKILL_ALREADY_USED`. Resultados `APPLIED`,
+`NO_VALID_TARGET` e `BLOCKED_BY_FORCE_FIELD` consomem a habilidade e encerram a
+ação pela `TurnService`, com publicação e agendamento somente após gravação Redis.
+Ainda não há endpoint REST nem handler público de ativação: a camada de gameplay
+posterior deve chamar o serviço de domínio.
 
 ### IDs, enums e habilidades
 
@@ -318,11 +322,12 @@ Não é código de erro e não vai ao catálogo de erros. Sem vizinho permitido,
 Tornado e Troca Rápida aceitam ausência de destino para retornar esse resultado; se houver opção,
 omitir o destino é pedido inválido. Destino informado inválido continua sendo erro.
 `APPLIED` indica efeito aplicado. Pedido inválido recebe erro privado, sem consumir
-a habilidade ou encerrar o turno. Consumo e encerramento dependem da BE-015;
-publicação do evento, da BE-023/BE-024. Nenhum destino novo é definido aqui.
+a habilidade ou encerrar o turno. Consumo e encerramento são feitos pela BE-015;
+publicação do evento de resultado continua na BE-023/BE-024. Nenhum destino novo
+é definido aqui.
 
-🚧 **BE-014.2:** os efeitos defensivos e de tempo estão implementados apenas no
-motor local, sem handler de ativação. Contadores começam em 2 e diminuem após a
+✅ **BE-014.2:** os efeitos defensivos e de tempo estão implementados no motor,
+sem handler público de ativação. Contadores começam em 2 e diminuem após a
 conferência de vitória em cada ação, inclusive a de ativação. Silêncio rejeita
 habilidades com `SKILL_SILENCED`, sem impedir jogadas de peça. Ampulheta limita
 somente o próximo turno do oponente a 5s. Troca Rápida preserva congelamento e

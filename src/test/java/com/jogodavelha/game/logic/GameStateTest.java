@@ -264,6 +264,25 @@ class GameStateTest {
     }
 
     @Test
+    void serializesSkillUsageAndClearsItForNextRound() throws JsonProcessingException {
+        GameState state = completeState(true);
+        state.recordSkillUse(player1Id, "BOMBA");
+        state.recordSkillUse(player2Id, "BOMBA");
+        state.recordSkillUse(player1Id, "ESCUDO");
+
+        GameState restored = objectMapper.readValue(objectMapper.writeValueAsString(state), GameState.class);
+        assertTrue(restored.hasUsedSkill(player1Id, "BOMBA"));
+        assertTrue(restored.hasUsedSkill(player2Id, "BOMBA"));
+        assertTrue(restored.hasUsedSkill(player1Id, "ESCUDO"));
+        assertFalse(restored.hasUsedSkill(player2Id, "ESCUDO"));
+
+        restored.startRound(2, 10000, 100000);
+        assertFalse(restored.hasUsedSkill(player1Id, "BOMBA"));
+        assertFalse(restored.hasUsedSkill(player2Id, "BOMBA"));
+        assertFalse(restored.hasUsedSkill(player1Id, "ESCUDO"));
+    }
+
+    @Test
     void rejectsInvalidParticipantsAndDurationBeforeDrawing() {
         SecureRandom random = mock(SecureRandom.class);
         assertThrows(IllegalArgumentException.class,
