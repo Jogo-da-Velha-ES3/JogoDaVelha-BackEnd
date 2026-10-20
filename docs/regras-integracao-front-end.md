@@ -30,7 +30,15 @@
 - O revisor da PR deve verificar a conformidade com o contrato e os critérios de aceite.
 - Dúvidas ou decisões não definidas devem ser alinhadas com o time de frontend antes de implementar um comportamento incompatível.
 
-### 6. Padronização e Sincronização do Catálogo de Erros
+### 6. Autenticação STOMP (BE-040)
+
+- O handshake WebSocket em `/ws` pode ser público; autenticação obrigatória acontece no frame STOMP `CONNECT`.
+- Envie o mesmo JWT retornado pelo login como header nativo `Authorization: Bearer <token>` em `connectHeaders` do cliente STOMP.js. Exemplo atual: `new Client({ brokerURL, connectHeaders: { Authorization: `Bearer ${token}` } })`. Na API legada: `client.connect({ Authorization: `Bearer ${token}` }, onConnect, onError)`.
+- Não coloque o token em query string, corpo de mensagem ou headers de handshake HTTP. Renove `connectHeaders` antes de reconectar após renovação/login.
+- Um CONNECT sem token Bearer único e válido é rejeitado. Falhas devem ser tratadas no callback/evento de erro da conexão; não espere resposta em `/user/queue/errors`, pois a sessão ainda não tem identidade autenticada.
+- **BREAKING BE-040:** envie `SEND /app/room/{code}/connect` sem `playerId` no payload (sem corpo). O backend obtém o UUID exclusivamente do `Principal` autenticado.
+
+### 7. Padronização e Sincronização do Catálogo de Erros
 
 - **Padrão único de erros:** O catálogo de erros definido em `docs/contrato-integracao.md` e a seção **“Formato de Erro”** do `README.md` devem seguir o mesmo padrão e estrutura, mantendo consistência entre códigos, mensagens, formatos de resposta e demais informações documentadas.
 - **Sincronização obrigatória:** Qualquer inclusão, alteração ou remoção de código de erro, mensagem, estrutura, campo ou comportamento relacionado a erros deve ser refletida **em ambos os documentos na mesma PR**.
