@@ -100,6 +100,7 @@ privado, não entrega por um broker real.
 | POST | `/api/rooms` | Bearer exigido | 201 | ✅ BE-009.1 | 
 | POST | `/api/rooms/{code}/join` | Bearer exigido | 200 | ✅ BE-009.1 |
 | GET | `/api/skills/inventory` | Bearer exigido | 200 | ✅ BE-041 |
+| GET | `/api/coins/balance` | Bearer exigido | 200 | ✅ BE-026 |
 
 ### `GET /api/health`
 
@@ -112,6 +113,24 @@ Endpoint leve para confirmar disponibilidade. Sem auth. Sem parâmetros ou corpo
 ```
 
 Erros: nenhum erro de domínio documentado; erros HTTP genéricos seguem o catálogo `ApiError`.
+
+### `GET /api/coins/balance
+
+✅ Disponível na dev — BE-026.
+
+Bearer Token obrigatório.
+
+Retorna o saldo atual de moedas do usuário autenticado.
+
+Resposta 200 (OK):
+
+{
+"coinsBalance": 150
+}
+Erros:
+
+401 UNAUTHORIZED — token ausente ou inválido.
+500 INTERNAL_ERROR — erro interno do servidor.
 
 ### `POST /api/auth/register`
 

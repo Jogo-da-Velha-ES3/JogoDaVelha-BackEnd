@@ -64,19 +64,32 @@ public class GameService {
      *
      * @param game A partida finalizada
      */
-    private void grantRewards(Game game) {
+    private RewardResult grantRewards(Game game) {
         if (game.isRewardsGranted()) {
-            return;
+            return new RewardResult(0, 0);
         }
 
         if (game.getEndReason() == GameEndReason.FORFEIT_TIMEOUT) {
+
             creditCoins(
                     game.getWinner(),
                     COINS_FORFEIT_WIN,
                     "MATCH_FORFEIT_WIN"
             );
+
             game.markRewardsGranted();
-            return;
+
+            if (game.getWinner().getId().equals(game.getPlayer1().getId())) {
+                return new RewardResult(
+                        COINS_FORFEIT_WIN,
+                        0
+                );
+            }
+
+            return new RewardResult(
+                    0,
+                    COINS_FORFEIT_WIN
+            );
         }
 
         GameOutcome outcome = game.getOutcome();
@@ -94,7 +107,15 @@ public class GameService {
                         COINS_DRAW,
                         "MATCH_DRAW"
                 );
+
+                game.markRewardsGranted();
+
+                return new RewardResult(
+                        COINS_DRAW,
+                        COINS_DRAW
+                );
             }
+
             case PLAYER1_WIN -> {
                 creditCoins(
                         game.getPlayer1(),
@@ -106,6 +127,13 @@ public class GameService {
                         game.getPlayer2(),
                         COINS_LOSS,
                         "MATCH_LOSS"
+                );
+
+                game.markRewardsGranted();
+
+                return new RewardResult(
+                        COINS_WIN,
+                        COINS_LOSS
                 );
             }
             case PLAYER2_WIN -> {
@@ -120,10 +148,18 @@ public class GameService {
                         COINS_LOSS,
                         "MATCH_LOSS"
                 );
+
+                game.markRewardsGranted();
+
+                return new RewardResult(
+                        COINS_LOSS,
+                        COINS_WIN
+                );
             }
         }
-
-        game.markRewardsGranted();
+        throw new IllegalStateException(
+                "Resultado da partida não suportado."
+        );
     }
 
     private void creditCoins(
