@@ -7,6 +7,7 @@ import com.jogodavelha.game.logic.MoveValidationException;
 import com.jogodavelha.game.logic.SkillValidationException;
 import com.jogodavelha.game.service.TurnService;
 import org.springframework.stereotype.Service;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.time.Clock;
 import java.util.Optional;
@@ -55,7 +56,11 @@ public class SkillActivationService {
                 return state;
             }
             var actor = preparedContext.casterId();
-            state.getPlayerSymbol(actor); // valida que o jogador pertence à partida
+            try {
+                state.getPlayerSymbol(actor); // valida que o jogador pertence à partida
+            } catch (IllegalArgumentException exception) {
+                throw new AccessDeniedException("Jogador não pertence à partida.", exception);
+            }
             if (state.getPhase() == null || state.getPhase() != GamePhase.PLAYING) {
                 throw new MoveValidationException(state.getPhase() == GamePhase.DRAFT ? DRAFT_IN_PROGRESS
                         : state.getPhase() == GamePhase.ROUND_FINISHED ? ROUND_FINISHED
