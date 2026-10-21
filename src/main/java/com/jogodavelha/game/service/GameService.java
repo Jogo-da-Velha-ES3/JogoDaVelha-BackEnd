@@ -2,6 +2,7 @@ package com.jogodavelha.game.service;
 
 import com.jogodavelha.auth.User;
 import com.jogodavelha.game.*;
+import com.jogodavelha.room.Room;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +23,18 @@ public class GameService {
     public static final int COINS_FORFEIT_WIN = 30;
 
     private final GameRepository gameRepository;
+
+    @Transactional
+    public Game startGame(Room room) {
+        if (room == null || !room.isReadyToStart()) {
+            throw new IllegalArgumentException("Sala sem dois jogadores prontos para iniciar.");
+        }
+        return gameRepository.findByRoomId(room.getId()).orElseGet(() -> {
+            Game game = new Game(room, room.getPlayer1());
+            game.setPlayer2(room.getPlayer2());
+            return gameRepository.saveAndFlush(game);
+        });
+    }
 
     /**
      * Registra o resultado de um round em uma partida.
@@ -44,6 +57,24 @@ public class GameService {
         }
 
         return gameRepository.save(game);
+    }
+
+    /** Registers a round result once; delayed duplicate callbacks are ignored. */
+    @Transactional
+    public Game registerRoundResult(UUID gameId, int expectedRound, RoundResult result) {
+        return applyRoundResult(gameId, expectedRound, result).game();
+    }
+
+    @Transactional
+    public RoundUpdate applyRoundResult(UUID gameId, int expectedRound, RoundResult result) {
+        Game game = gameRepository.findByIdForUpdate(gameId)
+                .orElseThrow(() -> new GameNotFoundException(gameId));
+        if (game.getCurrentRound() != expectedRound || game.getStatus() == GameStatus.FINISHED) {
+            return new RoundUpdate(game, false);
+        }
+        game.registerRoundResult(result);
+        if (game.getStatus() == GameStatus.FINISHED) grantRewards(game);
+        return new RoundUpdate(gameRepository.save(game), true);
     }
 
     @Transactional

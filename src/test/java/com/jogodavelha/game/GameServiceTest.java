@@ -77,6 +77,21 @@ class GameServiceTest {
     }
 
     @Test
+    void expectedRoundCallbackIsAppliedOnlyOnce() {
+        when(gameRepository.findByIdForUpdate(gameId)).thenReturn(Optional.of(game));
+        when(gameRepository.save(game)).thenReturn(game);
+
+        RoundUpdate first = gameService.applyRoundResult(gameId, 1, RoundResult.PLAYER1_WIN);
+        RoundUpdate duplicate = gameService.applyRoundResult(gameId, 1, RoundResult.PLAYER1_WIN);
+
+        assertTrue(first.applied());
+        assertFalse(duplicate.applied());
+        assertEquals(new Score(1, 0), game.getScore());
+        assertEquals(2, game.getCurrentRound());
+        verify(gameRepository, times(1)).save(game);
+    }
+
+    @Test
     void testRegisterRoundResultGameFinishedPlayer1Wins() {
         when(gameRepository.findById(gameId)).thenReturn(Optional.of(game));
         when(gameRepository.save(any(Game.class))).thenReturn(game);
