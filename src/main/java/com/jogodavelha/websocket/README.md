@@ -16,7 +16,7 @@ Este projeto utiliza a abordagem STOMP (Simple Text Oriented Messaging Protocol)
 A configuração STOMP é definida em `WebSocketConfig`:
 
 - **Endpoint**: `/ws` - Endpoint WebSocket para conexão STOMP
-- **Broker**: `/topic` - Prefixo para tópicos de broadcast
+- **Broker**: `/topic` (broadcast) e `/queue` (mensagens por usuário, ex.: `/user/queue/errors`)
 - **Application Prefix**: `/app` - Prefixo para mensagens enviadas para handlers do servidor
 
 ## Responsabilidades
@@ -25,6 +25,7 @@ A configuração STOMP é definida em `WebSocketConfig`:
 - Broadcast de eventos do jogo para múltiplos inscritos
 - Comunicação direta com usuários específicos
 - Gerenciamento de destinos de mensagens STOMP
+- Eventos por sala (`/topic/rooms/{code}`) e por partida (`/topic/game/{gameId}`)
 
 ## Componentes
 
@@ -71,6 +72,49 @@ stompClient.connect({}, function (frame) {
     }));
 });
 ```
+
+## Tópicos
+
+### `/topic/rooms/{code}`
+
+Eventos de uma sala, identificada pelo código de 4 dígitos. O cliente se inscreve depois de criar a sala (host) ou entrar nela.
+
+#### `PLAYER_JOINED`
+
+Enviado quando o 2º jogador entra na sala, para o host exibir o "MATCH FEITO!". É publicado só depois do commit da transação de entrada: tentativas rejeitadas (sala inexistente, cheia, já iniciada, jogador indisponível) não geram mensagem.
+
+| Campo          | Tipo          | Descrição                                         |
+|----------------|---------------|---------------------------------------------------|
+| `type`         | string        | Sempre `PLAYER_JOINED`                            |
+| `roomCode`     | string        | Código da sala                                    |
+| `guestId`      | string (UUID) | ID de quem entrou                                 |
+| `opponentName` | string        | Username de quem entrou (o adversário do host)    |
+| `hostId`       | string (UUID) | ID do host, para o cliente decidir se deve reagir |
+
+Exemplo:
+
+```json
+{
+  "type": "PLAYER_JOINED",
+  "roomCode": "0042",
+  "guestId": "3f2b8c1e-0000-0000-0000-000000000002",
+  "opponentName": "guest",
+  "hostId": "3f2b8c1e-0000-0000-0000-000000000001"
+}
+```
+
+Exemplo de inscrição (cliente STOMP):
+
+```javascript
+stompClient.subscribe('/topic/rooms/' + roomCode, function (message) {
+    const event = JSON.parse(message.body);
+    if (event.type === 'PLAYER_JOINED') {
+        // mostrar "MATCH FEITO!" com event.opponentName
+    }
+});
+```
+
+> Atenção: o tópico é de broadcast e, por ora, sem restrição de inscrição. Qualquer cliente que souber o código da sala recebe o evento, inclusive o jogador que entrou; o cliente do host deve filtrar por `hostId`. A restrição por `Principal` depende da BE-040.
 
 ## Notas
 
