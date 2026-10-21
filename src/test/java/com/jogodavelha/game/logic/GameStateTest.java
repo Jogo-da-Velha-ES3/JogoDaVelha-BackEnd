@@ -103,6 +103,37 @@ class GameStateTest {
     }
 
     @Test
+    void tracksSkillUseByPlayerAndStableCode() {
+        GameState state = completeState(true);
+
+        assertFalse(state.hasUsedSkill(player1Id, "BOMBA"));
+        state.recordSkillUse(player1Id, "BOMBA");
+
+        assertTrue(state.hasUsedSkill(player1Id, "BOMBA"));
+        assertFalse(state.hasUsedSkill(player2Id, "BOMBA"));
+        assertFalse(state.hasUsedSkill(player1Id, "TORNADO"));
+
+        state.recordSkillUse(player2Id, "BOMBA");
+        state.recordSkillUse(player1Id, "TORNADO");
+        assertTrue(state.hasUsedSkill(player2Id, "BOMBA"));
+        assertTrue(state.hasUsedSkill(player1Id, "TORNADO"));
+    }
+
+    @Test
+    void serializesSkillUseMarkers() throws JsonProcessingException {
+        GameState state = completeState(true);
+        state.recordSkillUse(player1Id, "BURACO_NEGRO");
+        state.recordSkillUse(player2Id, "ESCUDO");
+
+        GameState restored = objectMapper.readValue(objectMapper.writeValueAsString(state), GameState.class);
+
+        assertTrue(restored.hasUsedSkill(player1Id, "BURACO_NEGRO"));
+        assertTrue(restored.hasUsedSkill(player2Id, "ESCUDO"));
+        assertFalse(restored.hasUsedSkill(player2Id, "BURACO_NEGRO"));
+        assertFalse(restored.hasUsedSkill(player1Id, "ESCUDO"));
+    }
+
+    @Test
     void testDeserializationToleratesNewField() throws JsonProcessingException {
         String jsonWithNewField = String.format("""
             {
@@ -208,12 +239,16 @@ class GameStateTest {
         state.recordTimeout(player1Id);
         state.recordTimeout(player1Id);
         state.recordTimeout(player2Id);
+        state.recordSkillUse(player1Id, "BOMBA");
+        state.recordSkillUse(player2Id, "TORNADO");
         state.setVersion(7);
         for (int round = 1; round <= 3; round++) {
             state.setBoard("XXOO------------");
             state.setPhase(GamePhase.ROUND_FINISHED);
             long duration = round == 3 ? 5000 : 10000;
             state.startRound(round, duration, 100000);
+            assertFalse(state.hasUsedSkill(player1Id, "BOMBA"));
+            assertFalse(state.hasUsedSkill(player2Id, "TORNADO"));
             assertEquals(GameState.EMPTY_BOARD, state.getBoard());
             assertEquals(round, state.getRoundNumber());
             assertEquals(GamePhase.PLAYING, state.getPhase());
