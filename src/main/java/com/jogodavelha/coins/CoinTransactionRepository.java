@@ -10,4 +10,6 @@ public interface CoinTransactionRepository
         extends JpaRepository<CoinTransaction, UUID> {
 
     List<CoinTransaction> findByUserOrderByCreatedAtDesc(User user);
+
+    long countByUser(User user);
 }

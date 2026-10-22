@@ -14,9 +14,12 @@ import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
 import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import static org.junit.jupiter.api.Assertions.*;
+import com.jogodavelha.auth.User;
 
 import javax.sql.DataSource;
 import java.util.UUID;
@@ -38,6 +41,10 @@ class CoinTransactionPersistenceIT {
             RoomRepository.class,
             GameRepository.class,
             CoinTransactionRepository.class
+    })
+    @ComponentScan(basePackageClasses = {
+            CoinTransactionService.class,
+            CoinService.class
     })
     static class Config {
 
@@ -107,13 +114,232 @@ class CoinTransactionPersistenceIT {
 
     @Test
     void persistsCoinTransactionsWhenRewardsAreGranted() {
+
+        try (var context =
+                     new AnnotationConfigApplicationContext(
+                             Config.class
+                     )) {
+
+            var transactionRepository =
+                    context.getBean(CoinTransactionRepository.class);
+
+            var transactionService =
+                    context.getBean(CoinTransactionService.class);
+
+            var tx =
+                    new TransactionTemplate(
+                            context.getBean(
+                                    PlatformTransactionManager.class
+                            )
+                    );
+
+            User user = tx.execute(status -> {
+                User created =
+                        new User(
+                                "player1",
+                                "hash",
+                                "player1@test.com"
+                        );
+
+                return context.getBean(UserRepository.class)
+                        .save(created);
+            });
+
+            tx.executeWithoutResult(status -> {
+                user.addCoins(50);
+
+                transactionService.registerCredit(
+                        user,
+                        50,
+                        "MATCH_WIN"
+                );
+            });
+
+            var transactions =
+                    tx.execute(status ->
+                            transactionRepository
+                                    .findByUserOrderByCreatedAtDesc(user)
+                    );
+
+            assertNotNull(transactions);
+            assertEquals(1, transactions.size());
+
+            CoinTransaction transaction =
+                    transactions.get(0);
+
+            assertEquals(
+                    CoinTransactionType.CREDIT,
+                    transaction.getType()
+            );
+
+            assertEquals(
+                    50,
+                    transaction.getAmount()
+            );
+
+            assertEquals(
+                    "MATCH_WIN",
+                    transaction.getSource()
+            );
+        }
     }
 
     @Test
     void persistsBalanceAfterCorrectly() {
+
+        try (var context =
+                     new AnnotationConfigApplicationContext(
+                             Config.class
+                     )) {
+
+            var transactionRepository =
+                    context.getBean(CoinTransactionRepository.class);
+
+            var transactionService =
+                    context.getBean(CoinTransactionService.class);
+
+            var tx =
+                    new TransactionTemplate(
+                            context.getBean(
+                                    PlatformTransactionManager.class
+                            )
+                    );
+
+            User user = tx.execute(status -> {
+                User created =
+                        new User(
+                                "player2",
+                                "hash",
+                                "player2@test.com"
+                        );
+
+                return context.getBean(UserRepository.class)
+                        .save(created);
+            });
+
+            tx.executeWithoutResult(status -> {
+                user.addCoins(50);
+
+                transactionService.registerCredit(
+                        user,
+                        50,
+                        "MATCH_WIN"
+                );
+            });
+
+            CoinTransaction transaction =
+                    tx.execute(status ->
+                            transactionRepository
+                                    .findByUserOrderByCreatedAtDesc(user)
+                                    .get(0)
+                    );
+
+            assertNotNull(transaction);
+
+            assertEquals(
+                    50,
+                    transaction.getBalanceAfter()
+            );
+
+            assertEquals(
+                    50,
+                    transaction.getAmount()
+            );
+
+            assertEquals(
+                    CoinTransactionType.CREDIT,
+                    transaction.getType()
+            );
+        }
     }
 
     @Test
     void rewardsRemainIdempotentInDatabase() {
+
+        try (var context =
+                     new AnnotationConfigApplicationContext(
+                             Config.class
+                     )) {
+
+            var transactionRepository =
+                    context.getBean(CoinTransactionRepository.class);
+
+            var transactionService =
+                    context.getBean(CoinTransactionService.class);
+
+            var tx =
+                    new TransactionTemplate(
+                            context.getBean(
+                                    PlatformTransactionManager.class
+                            )
+                    );
+
+            User user = tx.execute(status -> {
+                User created =
+                        new User(
+                                "player3",
+                                "hash",
+                                "player3@test.com"
+                        );
+
+                return context.getBean(UserRepository.class)
+                        .save(created);
+            });
+
+            tx.executeWithoutResult(status -> {
+                user.addCoins(50);
+
+                transactionService.registerCredit(
+                        user,
+                        50,
+                        "MATCH_WIN"
+                );
+            });
+
+            var firstRead =
+                    tx.execute(status ->
+                            transactionRepository
+                                    .findByUserOrderByCreatedAtDesc(user)
+                    );
+
+            assertNotNull(firstRead);
+            assertEquals(1, firstRead.size());
+
+            CoinTransaction transaction =
+                    firstRead.get(0);
+
+            assertEquals(
+                    CoinTransactionType.CREDIT,
+                    transaction.getType()
+            );
+
+            assertEquals(
+                    50,
+                    transaction.getAmount()
+            );
+
+            assertEquals(
+                    50,
+                    transaction.getBalanceAfter()
+            );
+
+            assertEquals(
+                    "MATCH_WIN",
+                    transaction.getSource()
+            );
+
+            var secondRead =
+                    tx.execute(status ->
+                            transactionRepository
+                                    .findByUserOrderByCreatedAtDesc(user)
+                    );
+
+            assertNotNull(secondRead);
+
+            assertEquals(
+                    1,
+                    secondRead.size()
+            );
+        }
     }
 }

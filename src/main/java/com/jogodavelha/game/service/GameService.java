@@ -42,7 +42,9 @@ public class GameService {
         game.registerRoundResult(result);
 
         if (game.getStatus() == GameStatus.FINISHED) {
-            grantRewards(game);
+            game.setRewardResult(
+                    grantRewards(game)
+            );
         }
 
         return gameRepository.save(game);
@@ -53,7 +55,12 @@ public class GameService {
         Game game = gameRepository.findById(gameId)
                 .orElseThrow(() -> new GameNotFoundException(gameId));
         game.forfeit(loser);
-        grantRewards(game);
+        if (game.getStatus() == GameStatus.FINISHED) {
+            game.setRewardResult(
+                    grantRewards(game)
+            );
+        }
+
         return gameRepository.save(game);
     }
 
