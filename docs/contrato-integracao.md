@@ -107,9 +107,8 @@ privado, não entrega por um broker real.
 | POST | `/api/rooms` | Bearer exigido | 201 | ✅ BE-009.1 | 
 | POST | `/api/rooms/{code}/join` | Bearer exigido | 200 | ✅ BE-009.1 |
 | GET | `/api/skills/inventory` | Bearer exigido | 200 | ✅ BE-041 |
-| GET | /api/skills/inventory | Bearer exigido | 200 | ✅ BE-041 | 
-| GET | /api/coins/balance | Bearer exigido | 200 | ✅ BE-026 | 
-| GET | /api/characters/inventory | Bearer exigido | 200 | ✅ BE-028 |
+| GET | `/api/coins/balance` | Bearer exigido | 200 | ✅ BE-026 | 
+| GET | `/api/characters/inventory` | Bearer exigido | 200 | ✅ BE-028 |
 
 ### `GET /api/health`
 
@@ -134,7 +133,7 @@ Retorna o saldo atual de moedas do usuário autenticado.
 Resposta 200 (OK):
 
 ```json
-"coinsBalance": 150
+{"coinsBalance": 150}
 ```
 Erros:
 
