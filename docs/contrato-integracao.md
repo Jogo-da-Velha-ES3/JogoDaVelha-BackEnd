@@ -209,7 +209,20 @@ Erros:
 401 UNAUTHORIZED — token ausente ou inválido.
 500 INTERNAL_ERROR — erro interno do servidor.
 
-Sucesso 200 devolve `RoomDTO` com `id`, `code`, `status`, `player1Id`, `player1Username`, `player2Id`, `player2Username`. O join bem-sucedido preenche o segundo jogador. Não há anotações Bean Validation nos parâmetros.
+Sucesso 200:
+```json
+{
+  "id": "123e4567-e89b-12d3-a456-426614174001",
+  "code": "0042",
+  "status": "WAITING",
+  "player1Id": "123e4567-e89b-12d3-a456-426614174000",
+  "player1Username": "ana",
+  "player2Id": "123e4567-e89b-12d3-a456-426614174002",
+  "player2Username": "bia"
+}
+```
+
+Não há anotações Bean Validation nos parâmetros.
 
 
 ### `GET /api/skills/inventory`
@@ -220,8 +233,20 @@ Bearer obrigatório; o usuário é identificado pelo JWT. Sem parâmetros nem co
 Retorna as habilidades associadas ao usuário autenticado, também usadas como conjunto
 elegível para o Draft.
 
-Sucesso 200: lista com `id` (UUID), `name`, `code`, `description`, `initialSkill`,
-`offensive` e `priceCoins`. `code` é o identificador de integração; `name` é para exibição.
+Sucesso 200:
+```json
+[
+  {
+    "id": "123e4567-e89b-12d3-a456-426614174020",
+    "name": "Bomba",
+    "code": "BOMBA",
+    "description": "Remove uma peça adversária",
+    "initialSkill": false,
+    "offensive": true,
+    "priceCoins": 100
+  }
+]
+```
 
 Erros: 401 `UNAUTHORIZED`; 500 `INTERNAL_ERROR`.
 
