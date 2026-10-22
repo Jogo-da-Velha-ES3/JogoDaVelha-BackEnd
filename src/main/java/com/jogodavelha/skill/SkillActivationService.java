@@ -35,9 +35,13 @@ public class SkillActivationService {
 
     /** Atualiza o Redis e só então publica/agendada a mudança de turno. */
     public Activation activate(UUID gameId, String skillCode, SkillContext requestedContext) {
+        if (requestedContext == null || requestedContext.casterId() == null) {
+            throw new SkillValidationException(SkillValidationException.Code.SKILL_INVALID_TARGET,
+                    "Informe o jogador que usa a habilidade.");
+        }
         long now = clock.millis();
         SkillContext context = requestedContext;
-        if ("BURACO_NEGRO".equals(skillCode) && context != null && context.randomValue() == null) {
+        if ("BURACO_NEGRO".equals(skillCode) && context.randomValue() == null) {
             context = new SkillContext(context.casterId(), context.targetPosition(), context.destinationPosition(),
                     ThreadLocalRandom.current().nextDouble());
         }
@@ -51,10 +55,6 @@ public class SkillActivationService {
             result[0] = null;
             winner[0] = Optional.empty();
             committed[0] = null;
-            if (preparedContext == null || preparedContext.casterId() == null) {
-                result[0] = skills.useSkill(state, skillCode, preparedContext); // lança a exceção tipada existente
-                return state;
-            }
             var actor = preparedContext.casterId();
             try {
                 state.getPlayerSymbol(actor); // valida que o jogador pertence à partida
@@ -87,6 +87,9 @@ public class SkillActivationService {
             return state;
         });
 
+        if (committed[0] == null || result[0] == null) {
+            throw new IllegalStateException("A ativação não produziu um estado persistido.");
+        }
         turns.publishAndSchedule(committed[0], winner[0]);
         return new Activation(committed[0], result[0], winner[0]);
     }

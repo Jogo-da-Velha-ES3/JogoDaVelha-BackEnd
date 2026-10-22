@@ -95,6 +95,19 @@ class SkillActivationServiceTest {
     }
 
     @Test
+    void nullContextOrCasterIsRejectedBeforeRedisUpdateAndPublication() {
+        assertThrows(SkillValidationException.class,
+                () -> activations.activate(gameId, "CONGELAR", null));
+        assertThrows(SkillValidationException.class,
+                () -> activations.activate(gameId, "CONGELAR", new SkillContext(null, 0)));
+
+        verifyNoInteractions(states);
+        verify(turns, never()).publishAndSchedule(any(), any());
+        verify(turns, never()).endPlayerAction(any(), any(), anyLong());
+        assertEquals(0, effect.applies);
+    }
+
+    @Test
     void silenceOutOfTurnExpiredAndWrongPhaseAreRejectedWithoutConsumption() {
         state.getSilencedTurns().put(p1, 1);
         assertThrows(SkillValidationException.class,
