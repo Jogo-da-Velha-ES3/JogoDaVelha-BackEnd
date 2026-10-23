@@ -19,6 +19,13 @@ C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\j
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\character\CharacterSymbol.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\character\UserCharacter.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\character\UserCharacterRepository.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\coins\BalanceResponse.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\coins\CoinController.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\coins\CoinService.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\coins\CoinTransaction.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\coins\CoinTransactionRepository.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\coins\CoinTransactionService.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\coins\CoinTransactionType.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\config\ApiAccessDeniedHandler.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\config\ApiPrefixConfig.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\config\CorsProperties.java
@@ -53,6 +60,7 @@ C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\j
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\logic\SkillValidationException.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\PlayerDisconnectionListener.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\PlayerSessionRegistry.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\RewardResult.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\RoundResult.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\Score.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\service\GameService.java
@@ -83,6 +91,7 @@ C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\j
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\skill\ShieldEffect.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\skill\SilenceEffect.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\skill\Skill.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\skill\SkillActivationService.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\skill\SkillCategory.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\skill\SkillContext.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\skill\SkillController.java

@@ -7,6 +7,9 @@ C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\j
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\auth\RegisterRequestValidationTest.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\auth\UserTest.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\character\CharacterServiceTest.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\coins\CoinControllerTest.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\coins\CoinServiceTest.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\coins\CoinTransactionPersistenceIT.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\config\JwtPropertiesTest.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\config\JwtPropertiesValidationTest.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\config\JwtSecurityMockMvcTest.java
@@ -31,6 +34,7 @@ C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\j
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\room\RoomTest.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\skill\DefensiveEffectsTest.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\skill\OffensiveEffectsTest.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\skill\SkillActivationServiceTest.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\skill\SkillCodePersistenceIT.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\skill\SkillEngineTest.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\skill\SkillServiceTest.java
