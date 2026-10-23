@@ -3,6 +3,7 @@ package com.jogodavelha.error;
 import com.jogodavelha.game.logic.SkillValidationException;
 import com.jogodavelha.game.logic.MoveValidationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
@@ -30,6 +31,13 @@ public class WebSocketExceptionHandler {
     @SendToUser(destinations = "/queue/errors", broadcast = false)
     public ApiError handleBadRequest(IllegalArgumentException ex, @Header(SimpMessageHeaderAccessor.DESTINATION_HEADER) String destination) {
         return ApiError.of(HttpStatus.BAD_REQUEST, ex.getMessage(), destination);
+    }
+
+    @MessageExceptionHandler(AccessDeniedException.class)
+    @SendToUser(destinations = "/queue/errors", broadcast = false)
+    public ApiError handleAccessDenied(AccessDeniedException ex,
+            @Header(SimpMessageHeaderAccessor.DESTINATION_HEADER) String destination) {
+        return ApiError.of(HttpStatus.FORBIDDEN, "Jogador não autorizado para esta ação.", destination);
     }
 
     @MessageExceptionHandler(IllegalStateException.class)

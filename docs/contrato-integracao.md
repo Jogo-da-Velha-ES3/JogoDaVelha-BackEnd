@@ -75,6 +75,7 @@ implementa consumo por round nesta branch, mas a exposição STOMP continua pert
 | `SKILL_INVALID_DESTINATION` | 400 | Destino do Tornado ou Troca Rápida ausente quando há opção, fora do tabuleiro, ocupado, bloqueado por Escudo ou não adjacente. |
 | `SKILL_SILENCED` | 400 | Jogador sob Silêncio tenta ativar uma habilidade. |
 | `SKILL_ALREADY_USED` | 400 | Jogador tenta reutilizar o mesmo código de habilidade no round atual. |
+| `SKILL_NOT_IN_DECK` | 400 | Habilidade não pertence ao deck selecionado pelo jogador para o round atual. |
 
 O catálogo de códigos acima corresponde às habilidades da BE-014.1 e BE-014.2 já
 implementadas. `NO_VALID_TARGET` e `BLOCKED_BY_FORCE_FIELD` são resultados válidos,
@@ -82,6 +83,11 @@ consomem a habilidade e a ação, e não são erros. Ativação válida grava o 
 `Skill.code`, encerra a ação via `TurnService` e publica a mudança somente após persistir.
 Rejeições de fase, jogador da vez ou prazo usam `BAD_REQUEST` (400) no erro STOMP,
 com a mensagem da validação existente; reutilização usa `SKILL_ALREADY_USED` (400).
+Habilidades são aceitas somente quando fazem parte do deck corrente persistido no estado
+Redis, que é definido pelo fluxo de Draft; isso inclui a habilidade sorteada e selecionada.
+O fluxo de Draft deve gravar o deck dos dois jogadores antes de iniciar as ações do round.
+Até essa integração ser concluída por BE-037/BE-013.1, ativações sem deck configurado
+falham de forma segura com `SKILL_NOT_IN_DECK`.
 
 Pedidos inválidos não devem consumir a habilidade ou encerrar o turno: o chamador
 precisa validar antes do consumo e não prosseguir com o fim da ação após a exceção.
@@ -313,6 +319,7 @@ Payload não definido adiante permanece **payload a definir**; nada abaixo está
 - Endpoint `/ws`, WebSocket STOMP puro; `WebSocketConfig` não configura SockJS. Prefixo de aplicação `/app`; brokers simples `/topic` e `/queue`; destinos privados usam `/user/queue/...`.
 - ✅ `/ws/**` permanece público no handshake HTTP para permitir o upgrade WebSocket. Cada frame STOMP `CONNECT` precisa conter `Authorization: Bearer <jwt>`; o backend valida assinatura e expiração por `JwtService` e rejeita o CONNECT ausente/malformado/inválido. O `sub` UUID validado é o nome do `Principal` associado à sessão e usado nos handlers.
 - ✅ Único handler implementado: `SEND /app/room/{code}/connect` sem corpo de identidade (pode ser enviado sem body). **BREAKING (BE-040):** não envie `playerId`; a identidade vem do `Principal` estabelecido no CONNECT. O registro associa sessão, sala e jogador e marca jogador conectado. `PlayerDisconnectionListener` remove associação da sessão e, se conhecida, marca jogador desconectado; sessão desconhecida não produz ação no serviço.
+- ✅ Gameplay (BE-023): `SEND /app/game/{gameId}/move` recebe `{ "position": 0 }`; `SEND /app/game/{gameId}/skill` recebe `{ "skillCode": "BOMBA", "targetPosition": 1, "destinationPosition": 2 }` (posições opcionais conforme habilidade). Campos `playerId` enviados pelo cliente são ignorados. A identidade vem do `Principal`. O sucesso não tem ACK de mensagem nesta etapa; turno/resultado de round é publicado como `TurnChangedEvent` interno após persistência, para consumo pela integração de broadcast da BE-024. Destino e payload público final seguem pendentes de alinhamento com o front conforme seção 4.
 - Em clientes STOMP.js, passe o token por `connectHeaders`, por exemplo `client.connect({ Authorization: `Bearer ${token}` })` na API legada ou `new Client({ connectHeaders: { Authorization: `Bearer ${token}` } })` na API atual. O cabeçalho é um header nativo STOMP, não um header do handshake HTTP.
 - Falha de autenticação encerra/rejeita o CONNECT STOMP; não há sessão anônima e a resposta de falha pode ser um frame STOMP `ERROR`/fechamento, não um `ApiError` REST nem uma mensagem garantida em `/user/queue/errors` (a sessão ainda não foi autenticada).
 - ⚠️ O disconnect acima é o comportamento observado; reconexão/snapshot e heartbeat constam em BE-025 (24–27/10).
