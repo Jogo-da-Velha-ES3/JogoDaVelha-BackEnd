@@ -273,6 +273,26 @@ Payload não definido adiante permanece **payload a definir**; nada abaixo está
 - Erros são enviados por `@SendToUser` para `/user/queue/errors`, como `ApiError`. Nos handlers genéricos, `code` vem de `HttpStatus.name()` (por exemplo `BAD_REQUEST`, `CONFLICT`, `INTERNAL_SERVER_ERROR`) e existe também `error` com a frase HTTP; isso diverge do catálogo REST. A BE-014.1 preserva os dois códigos de habilidade descritos acima; o ajuste dos demais erros permanece na BE-044.
 - A fila `/user/queue/errors` é destinada a sessões autenticadas; não se aplica ao CONNECT rejeitado, que ainda não tem usuário STOMP associado.
 
+### `PLAYER_JOINED` — `/topic/rooms/{code}`
+
+✅ Disponível na `dev` — BE-035.
+
+Quando é enviado: após o commit da entrada do 2º jogador (`POST /api/rooms/{code}/join`). Entradas rejeitadas não geram mensagem.
+Quem recebe: todos os inscritos no tópico (broadcast). O cliente do host deve filtrar por `hostId`.
+Envelope: payload direto, sem o envelope proposto `{type, payload, serverTime}`.
+
+```json
+{
+  "type": "PLAYER_JOINED",
+  "roomCode": "0042",
+  "guestId": "123e4567-e89b-12d3-a456-426614174002",
+  "opponentName": "bia",
+  "hostId": "123e4567-e89b-12d3-a456-426614174000"
+}
+```
+
+Compatibilidade/pendências: o tópico não restringe a inscrição; qualquer cliente que souber o código da sala recebe o evento (a restrição por `Principal` fica para depois). Não usa o envelope comum proposto; alinhar com o front quando o envelope for definido (BE-023/024).
+
 ### Propostas de destinos e eventos
 
 Todos os itens abaixo são 📝 e não possuem implementação atual. Envelope proposto: `{ "type", "payload", "serverTime" }`. Destino proposto pelo front: `/topic/rooms/{code}`. O backlog para evento de entrada usa `/topic/room/{code}` (singular); resolver a divergência antes da implementação.
@@ -282,7 +302,6 @@ Todos os itens abaixo são 📝 e não possuem implementação atual. Envelope p
 | Evento | Quando / destinatário | Campos previstos | Card / status |
 |---|---|---|---|
 | `ROOM_SNAPSHOT` | Estado completo ao conectar/reconectar; jogador da sala | payload a definir (BE-025 descreve snapshot com estado e prazo do turno) | BE-025, 27/10; 📝 |
-| `PLAYER_JOINED` | Entrada do segundo jogador; sala / host | Nome do adversário (BE-035) | BE-035, 18/10; 📝 |
 | `PHASE_CHANGE` | Mudança de fase do jogo; sala | payload a definir | BE-023/BE-024; 20/10 e 24/10; 📝 |
 | `TURN_START` | Começo de turno; sala | Prazo do turno como timestamp do servidor (BE-024); demais campos a definir | BE-020/BE-024; 15/10 e 24/10; 📝 |
 | `BOARD_UPDATE` | Após ação válida; ambos na sala | Prazo como timestamp do servidor, round, placar, flag de morte súbita, estado de cada casa (vazia/P1/P2/bloqueada/congelada/reforçada) e motivo de W.O. ao fim da partida | BE-024, 24/10; 📝 |
@@ -355,6 +374,7 @@ Adicional do backlog não incluído na lista inicial do front:
 | Envelope STOMP comum, conteúdo de eventos e destino final `/move` | Back + front | BE-023/024/035/037/038 |
 | URL pública de produção indisponível | Back/infra | BE-033/033.1 |
 | Formato de data geral além do timestamp ISO UTC de erro | Back + front | — |
+| Tópico `/topic/rooms/{code}` sem restrição de inscrição; restringir por Principal | Back | BE-035 |
 
 ## 5. Como manter este contrato
 
@@ -408,3 +428,4 @@ Erros/compatibilidade:
 | Data | Mudança | Tipo | Card/PR |
 |---|---|---|---|
 | 15/10/2026 | Criação do contrato com o estado atual da dev. CORS, erro único, prefixo `/api` e códigos de habilidade entram como mudanças já disponíveis; rotas REST que ganharam `/api` são breaking. | NOVO; BREAKING (prefixo REST) | BE-034, BE-044; PR docs/contrato-integracao |
+| 23/10/2026 | Evento `PLAYER_JOINED` disponível em `/topic/rooms/{code}` (payload direto, sem envelope). | NOVO | BE-035; PR feat/room-joined-event |
