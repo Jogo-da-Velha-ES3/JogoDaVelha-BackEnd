@@ -1,5 +1,6 @@
 package com.jogodavelha.game.service;
 
+import com.jogodavelha.coins.CoinTransactionService;
 import com.jogodavelha.auth.User;
 import com.jogodavelha.game.*;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ public class GameService {
     public static final int COINS_FORFEIT_WIN = 30;
 
     private final GameRepository gameRepository;
+    private final CoinTransactionService coinTransactionService;
 
     /**
      * Registra o resultado de um round em uma partida.
@@ -40,7 +42,9 @@ public class GameService {
         game.registerRoundResult(result);
 
         if (game.getStatus() == GameStatus.FINISHED) {
-            grantRewards(game);
+            game.setRewardResult(
+                    grantRewards(game)
+            );
         }
 
         return gameRepository.save(game);
@@ -51,7 +55,12 @@ public class GameService {
         Game game = gameRepository.findById(gameId)
                 .orElseThrow(() -> new GameNotFoundException(gameId));
         game.forfeit(loser);
-        grantRewards(game);
+        if (game.getStatus() == GameStatus.FINISHED) {
+            game.setRewardResult(
+                    grantRewards(game)
+            );
+        }
+
         return gameRepository.save(game);
     }
 
@@ -62,34 +71,115 @@ public class GameService {
      *
      * @param game A partida finalizada
      */
-    private void grantRewards(Game game) {
+    private RewardResult grantRewards(Game game) {
         if (game.isRewardsGranted()) {
-            return;
+            return new RewardResult(0, 0);
         }
 
         if (game.getEndReason() == GameEndReason.FORFEIT_TIMEOUT) {
-            game.getWinner().addCoins(COINS_FORFEIT_WIN);
+
+            creditCoins(
+                    game.getWinner(),
+                    COINS_FORFEIT_WIN,
+                    "MATCH_FORFEIT_WIN"
+            );
+
             game.markRewardsGranted();
-            return;
+
+            if (game.getWinner().getId().equals(game.getPlayer1().getId())) {
+                return new RewardResult(
+                        COINS_FORFEIT_WIN,
+                        0
+                );
+            }
+
+            return new RewardResult(
+                    0,
+                    COINS_FORFEIT_WIN
+            );
         }
 
         GameOutcome outcome = game.getOutcome();
 
         switch (outcome) {
             case DRAW -> {
-                game.getPlayer1().addCoins(COINS_DRAW);
-                game.getPlayer2().addCoins(COINS_DRAW);
+                creditCoins(
+                        game.getPlayer1(),
+                        COINS_DRAW,
+                        "MATCH_DRAW"
+                );
+
+                creditCoins(
+                        game.getPlayer2(),
+                        COINS_DRAW,
+                        "MATCH_DRAW"
+                );
+
+                game.markRewardsGranted();
+
+                return new RewardResult(
+                        COINS_DRAW,
+                        COINS_DRAW
+                );
             }
+
             case PLAYER1_WIN -> {
-                game.getPlayer1().addCoins(COINS_WIN);
-                game.getPlayer2().addCoins(COINS_LOSS);
+                creditCoins(
+                        game.getPlayer1(),
+                        COINS_WIN,
+                        "MATCH_WIN"
+                );
+
+                creditCoins(
+                        game.getPlayer2(),
+                        COINS_LOSS,
+                        "MATCH_LOSS"
+                );
+
+                game.markRewardsGranted();
+
+                return new RewardResult(
+                        COINS_WIN,
+                        COINS_LOSS
+                );
             }
             case PLAYER2_WIN -> {
-                game.getPlayer2().addCoins(COINS_WIN);
-                game.getPlayer1().addCoins(COINS_LOSS);
+                creditCoins(
+                        game.getPlayer2(),
+                        COINS_WIN,
+                        "MATCH_WIN"
+                );
+
+                creditCoins(
+                        game.getPlayer1(),
+                        COINS_LOSS,
+                        "MATCH_LOSS"
+                );
+
+                game.markRewardsGranted();
+
+                return new RewardResult(
+                        COINS_LOSS,
+                        COINS_WIN
+                );
             }
         }
+        throw new IllegalStateException(
+                "Resultado da partida não suportado."
+        );
+    }
 
-        game.markRewardsGranted();
+    private void creditCoins(
+            User user,
+            int amount,
+            String source
+    ) {
+        user.addCoins(amount);
+
+        coinTransactionService.registerCredit(
+                user,
+                amount,
+                source
+        );
     }
 }
