@@ -2,7 +2,7 @@
 
 **Propósito:** registrar o comportamento disponível e as propostas de integração entre backend e frontend.
 **Público:** time do front.
-**Atualizado em:** 21/10/2026.
+**Atualizado em:** 22/10/2026.
 **Fonte da verdade:** o contrato REST implementado está no Swagger (`/swagger-ui.html` e `/v3/api-docs`). Este documento é a visão voltada ao front e também acompanha o STOMP.
 
 ## Legenda de status
@@ -302,7 +302,50 @@ Payload não definido adiante permanece **payload a definir**; nada abaixo está
 
 ### Propostas de destinos e eventos
 
-Todos os itens abaixo são 📝 e não possuem implementação atual. Envelope proposto: `{ "type", "payload", "serverTime" }`. Destino proposto pelo front: `/topic/rooms/{code}`. O backlog para evento de entrada usa `/topic/room/{code}` (singular); resolver a divergência antes da implementação.
+Os itens marcados 📝 ainda são propostas. Nesta branch, a BE-037 publica
+`DRAFT_UPDATE` em `/topic/rooms/{code}`, no envelope `{ "type", "payload", "serverTime" }`.
+O tópico no plural consta como confirmado pelo back na documentação do frontend
+(`docs/ARCHITECTURE.md`, seção 6). Os demais eventos mantêm o status indicado abaixo.
+
+🚧 **BE-037, implementada nesta branch:** prazo único de 20s, escolhas elegíveis,
+bloqueio após confirmar as duas habilidades e auto-escolha ao expirar. Alterar
+escolhas não reinicia o prazo; a auto-escolha não conta para W.O. A elegibilidade
+é consultada no início e inclui habilidades compradas, sem filtrar `initialSkill`.
+
+`DraftUpdated` é interno e aciona a publicação abaixo após gravar o Redis.
+`DraftCompleted` também é interno: leva as escolhas finais à BE-038, sem expor
+habilidades no tópico público. Os eventos não têm entrega persistente ou replay.
+
+Exemplo de `DRAFT_UPDATE` recebido pelos inscritos em `/topic/rooms/0042`:
+
+```json
+{
+  "type": "DRAFT_UPDATE",
+  "payload": {
+    "deadline": 1792670020000,
+    "characters": { "P1": "X", "P2": "O" },
+    "ready": { "P1": true, "P2": false }
+  },
+  "serverTime": 1792670000000
+}
+```
+
+`deadline` e `serverTime` são timestamps UTC em milissegundos. P1 é o host e P2
+o convidado; lados não dependem de quem começa a jogar. `characters` omite lados
+que ainda não escolheram e usa `X`, `O`, `TRIANGULO`, `QUADRADO`, `ESTRELA` ou
+`CORACAO`, não UUIDs. `ready` sempre contém os dois lados. Inventários e habilidades
+escolhidas não são publicados. O tópico é de broadcast a sessões STOMP autenticadas;
+não há autorização de inscrição por sala nesta tarefa.
+
+O formato corresponde a `src/types/events.ts` e `src/stores/serverEvents.ts` do
+[frontend, commit 718864c](https://github.com/Jogo-da-Velha-ES3/JogoDaVelha-FrontEnd/tree/718864c8124b9a5ca84466447875199f9b1dbaf9).
+A checagem do consumidor não substitui a validação conjunta da FE-17, ainda aberta.
+
+BE-011/BE-013 adicionam os handlers de escolha. BE-038 inicia o Draft e consome
+`DraftCompleted` para criar a partida; após reinício deve chamar `resume(roomId)`.
+Essas ligações não são implementadas nesta entrega. A integração STOMP da BE-037
+cobre dois clientes autenticados, conclusão antecipada e timeout, sem banco,
+Redis externo ou migrations.
 
 **Eventos de sala e jogo — janela solicitada pelo front até 21/10:**
 
@@ -323,7 +366,7 @@ Envio de jogada solicitado pelo front em `/move`; destino final completo e paylo
 
 | Evento | Quando / destinatário | Campos previstos | Card / status |
 |---|---|---|---|
-| `DRAFT_UPDATE` | Progresso/prontidão do draft; jogadores da sala | Etapas (personagem, habilidades iniciais), pronto do oponente e timer geral de 20s são descritos no BE-037; formato payload a definir | BE-037, 19/10; 📝 |
+| `DRAFT_UPDATE` | Início e mudanças do Draft; inscritos no tópico da sala | `deadline`, `characters` e `ready` por P1/P2; exemplo acima | BE-037; 🚧 implementado nesta branch, validação conjunta com front pendente |
 | `DRAW_OPTIONS` | Sorteio de três opções; somente dono | Três opções e janela de escolha de 8s (BE-013.1) | BE-013.1, 24/10; 📝 |
 | `DECK_UPDATE` | Atualização do deck; jogador dono | payload a definir; privado do jogador conforme pedido do front | BE-023/BE-024; 📝 |
 | `ABILITY_RESOLVED` | Resolução de habilidade; sala | `result`: `APPLIED`, `NO_VALID_TARGET` ou `BLOCKED_BY_FORCE_FIELD`; demais campos a definir | BE-023, 20/10; 📝 |
