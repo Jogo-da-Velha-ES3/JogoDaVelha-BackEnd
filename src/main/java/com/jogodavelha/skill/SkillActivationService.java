@@ -77,6 +77,10 @@ public class SkillActivationService {
                 throw new SkillValidationException(SkillValidationException.Code.SKILL_ALREADY_USED,
                         "Esta habilidade já foi utilizada neste round.");
             }
+            if (!state.hasSkillInRoundDeck(actor, skillCode)) {
+                throw new SkillValidationException(SkillValidationException.Code.SKILL_NOT_IN_DECK,
+                        "Esta habilidade não está no deck deste round.");
+            }
 
             SkillResult applied = skills.useSkill(state, skillCode, preparedContext);
             // APPLIED, NO_VALID_TARGET e BLOCKED_BY_FORCE_FIELD são ativações válidas que consomem ação.

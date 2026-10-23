@@ -1188,6 +1188,7 @@ Erros de habilidade no STOMP (BE-014.1 e BE-014.2), enviados ao autor em `/user/
 | `SKILL_SILENCED` | 400 | Jogador sob Silêncio tenta ativar uma habilidade |
 | `BAD_REQUEST` | 400 | Ação de jogo fora da fase permitida, fora da vez ou após o prazo |
 | `SKILL_ALREADY_USED` | 400 | Jogador tenta reutilizar o mesmo código de habilidade no round atual |
+| `SKILL_NOT_IN_DECK` | 400 | Habilidade não está no deck selecionado para o round atual |
 
 Esses códigos preservam o erro de domínio no `ApiError`, sem `fields` ou `error`.
 Não há endpoint REST de habilidade nem handler público de ativação; a exposição STOMP

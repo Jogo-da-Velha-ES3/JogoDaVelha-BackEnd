@@ -32,6 +32,8 @@ class SkillActivationServiceTest {
     @BeforeEach
     void setUp() {
         state = GameState.createInitial(gameId, p1, p2, 10_000, new java.security.SecureRandom());
+        state.setRoundSkillDeck(p1, List.of("CONGELAR"));
+        state.setRoundSkillDeck(p2, List.of("CONGELAR"));
         state.setCurrentTurnPlayerId(p1);
         state.setTurnDeadlineEpochMillis(20_000);
         states = mock(GameStateManager.class);
@@ -80,6 +82,32 @@ class SkillActivationServiceTest {
         assertEquals(0, effect.applies);
         verify(turns, never()).endPlayerAction(any(), any(), anyLong());
         verify(turns, never()).publishAndSchedule(any(), any());
+    }
+
+    @Test
+    void skillOutsideCurrentRoundDeckIsRejectedBeforeEffectOrTurnConsumption() {
+        state.setRoundSkillDeck(p1, List.of("BOMBA"));
+
+        var error = assertThrows(SkillValidationException.class,
+                () -> activations.activate(gameId, "CONGELAR", new SkillContext(p1, 0)));
+
+        assertEquals(SkillValidationException.Code.SKILL_NOT_IN_DECK, error.getCode());
+        assertEquals(0, effect.applies);
+        assertFalse(state.hasUsedSkill(p1, "CONGELAR"));
+        verify(turns, never()).endPlayerAction(any(), any(), anyLong());
+        verify(turns, never()).publishAndSchedule(any(), any());
+    }
+
+    @Test
+    void selectedDrawnSkillIsAcceptedWhenItIsInRoundDeck() {
+        // The round deck is authoritative; this code can be the selected draw, regardless of ownership.
+        state.setRoundSkillDeck(p1, List.of("CONGELAR"));
+
+        var activation = activations.activate(gameId, "CONGELAR", new SkillContext(p1, 0));
+
+        assertEquals(SkillResult.APPLIED, activation.result());
+        assertTrue(state.hasUsedSkill(p1, "CONGELAR"));
+        verify(turns).endPlayerAction(state, p1, 1_000);
     }
 
     @Test
