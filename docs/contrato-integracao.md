@@ -223,16 +223,7 @@ Sem corpo de requisição.
 ```http
 POST /api/rooms/0042/join
 Authorization: Bearer <jwt>
-```    
-Erros:
-
-400 ROOM_BAD_REQUEST — código inválido ou usuário inválido.
-404 ROOM_NOT_FOUND — sala inexistente ou encerrada.
-409 ROOM_FULL — sala já possui dois jogadores.
-409 ROOM_ALREADY_STARTED — partida já iniciada.
-409 ROOM_CONFLICT — jogador já está em sala ou partida ativa.
-401 UNAUTHORIZED — token ausente ou inválido.
-500 INTERNAL_ERROR — erro interno do servidor.
+```
 
 Sucesso 200:
 ```json
@@ -246,6 +237,15 @@ Sucesso 200:
   "player2Username": "bia"
 }
 ```
+Erros:
+
+400 ROOM_BAD_REQUEST — código inválido ou usuário inválido.
+404 ROOM_NOT_FOUND — sala inexistente ou encerrada.
+409 ROOM_FULL — sala já possui dois jogadores.
+409 ROOM_ALREADY_STARTED — partida já iniciada.
+409 ROOM_CONFLICT — jogador já está em sala ou partida ativa.
+401 UNAUTHORIZED — token ausente ou inválido.
+500 INTERNAL_ERROR — erro interno do servidor.
 
 Não há anotações Bean Validation nos parâmetros.
 
