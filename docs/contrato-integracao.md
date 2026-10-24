@@ -2,7 +2,7 @@
 
 **Propósito:** registrar o comportamento disponível e as propostas de integração entre backend e frontend.
 **Público:** time do front.
-**Atualizado em:** 19/10/2026.
+**Atualizado em:** 21/10/2026.
 **Fonte da verdade:** o contrato REST implementado está no Swagger (`/swagger-ui.html` e `/v3/api-docs`). Este documento é a visão voltada ao front e também acompanha o STOMP.
 
 ## Legenda de status
@@ -66,15 +66,22 @@ O front deve decidir pelo `code` e apresentar `message`. `fields` só é preench
 
 O handler de erro preserva os códigos abaixo em `ApiError`,
 enviado ao autor em `/user/queue/errors`, sem `fields` ou `error`.
-Não há endpoint REST de habilidade nem handler público de ativação nesta tarefa.
-Os códigos de alvo e destino estão na `dev` (BE-014.1). A extensão para as novas
-habilidades e `SKILL_SILENCED` está em desenvolvimento na BE-014.2.
+Não há endpoint REST nem handler público de ativação. O serviço de domínio de ativação
+implementa consumo por round nesta branch, mas a exposição STOMP continua pertencendo à BE-023.
 
 | Código | `status` no payload | Uso |
 |---|---:|---|
 | `SKILL_INVALID_TARGET` | 400 | Jogador ausente ou alvo inválido para a habilidade (posição, ocupação, proprietário ou bloqueio). |
 | `SKILL_INVALID_DESTINATION` | 400 | Destino do Tornado ou Troca Rápida ausente quando há opção, fora do tabuleiro, ocupado, bloqueado por Escudo ou não adjacente. |
 | `SKILL_SILENCED` | 400 | Jogador sob Silêncio tenta ativar uma habilidade. |
+| `SKILL_ALREADY_USED` | 400 | Jogador tenta reutilizar o mesmo código de habilidade no round atual. |
+
+O catálogo de códigos acima corresponde às habilidades da BE-014.1 e BE-014.2 já
+implementadas. `NO_VALID_TARGET` e `BLOCKED_BY_FORCE_FIELD` são resultados válidos,
+consomem a habilidade e a ação, e não são erros. Ativação válida grava o código estável
+`Skill.code`, encerra a ação via `TurnService` e publica a mudança somente após persistir.
+Rejeições de fase, jogador da vez ou prazo usam `BAD_REQUEST` (400) no erro STOMP,
+com a mensagem da validação existente; reutilização usa `SKILL_ALREADY_USED` (400).
 
 Pedidos inválidos não devem consumir a habilidade ou encerrar o turno: o chamador
 precisa validar antes do consumo e não prosseguir com o fim da ação após a exceção.
@@ -100,6 +107,8 @@ privado, não entrega por um broker real.
 | POST | `/api/rooms` | Bearer exigido | 201 | ✅ BE-009.1 | 
 | POST | `/api/rooms/{code}/join` | Bearer exigido | 200 | ✅ BE-009.1 |
 | GET | `/api/skills/inventory` | Bearer exigido | 200 | ✅ BE-041 |
+| GET | `/api/coins/balance` | Bearer exigido | 200 | ✅ BE-026 | 
+| GET | `/api/characters/inventory` | Bearer exigido | 200 | ✅ BE-028 |
 
 ### `GET /api/health`
 
@@ -112,6 +121,24 @@ Endpoint leve para confirmar disponibilidade. Sem auth. Sem parâmetros ou corpo
 ```
 
 Erros: nenhum erro de domínio documentado; erros HTTP genéricos seguem o catálogo `ApiError`.
+
+### `GET /api/coins/balance`
+
+✅ Disponível na dev — BE-026.
+
+Bearer Token obrigatório.
+
+Retorna o saldo atual de moedas do usuário autenticado.
+
+Resposta 200 (OK):
+
+```json
+{"coinsBalance": 150}
+```
+Erros:
+
+401 UNAUTHORIZED — token ausente ou inválido.
+500 INTERNAL_ERROR — erro interno do servidor.
 
 ### `POST /api/auth/register`
 
@@ -201,54 +228,73 @@ Erros:
 401 UNAUTHORIZED — token ausente ou inválido.
 500 INTERNAL_ERROR — erro interno do servidor.
 
-Sucesso 200 devolve `RoomDTO` com `id`, `code`, `status`, `player1Id`, `player1Username`, `player2Id`, `player2Username`. O join bem-sucedido preenche o segundo jogador. Não há anotações Bean Validation nos parâmetros.
+Sucesso 200:
+```json
+{
+  "id": "123e4567-e89b-12d3-a456-426614174001",
+  "code": "0042",
+  "status": "WAITING",
+  "player1Id": "123e4567-e89b-12d3-a456-426614174000",
+  "player1Username": "ana",
+  "player2Id": "123e4567-e89b-12d3-a456-426614174002",
+  "player2Username": "bia"
+}
+```
+
+Não há anotações Bean Validation nos parâmetros.
 
 
-GET /api/skills/inventory
-Authorization: Bearer <jwt>
+### `GET /api/skills/inventory`
 
-Bearer Token obrigatório.
+✅ Disponível na `dev` — BE-041.
 
-Retorna o inventário de habilidades pertencentes ao usuário autenticado. O inventário representa também o conjunto de habilidades elegíveis para o Draft.
+Bearer obrigatório; o usuário é identificado pelo JWT. Sem parâmetros nem corpo.
+Retorna as habilidades associadas ao usuário autenticado, também usadas como conjunto
+elegível para o Draft.
 
-GET /api/skills/inventory
-Authorization: Bearer <jwt>
+Sucesso 200:
+```json
+[
+  {
+    "id": "123e4567-e89b-12d3-a456-426614174020",
+    "name": "Bomba",
+    "code": "BOMBA",
+    "description": "Remove uma peça adversária",
+    "initialSkill": false,
+    "offensive": true,
+    "priceCoins": 100
+  }
+]
+```
+
+Erros: 401 `UNAUTHORIZED`; 500 `INTERNAL_ERROR`.
+
+### `GET /api/characters/inventory`
+
+✅ Disponível na `dev` — BE-028.
+
+Retorna os personagens visuais associados ao usuário autenticado. Personagens são
+cosméticos e não têm poderes. Bearer obrigatório; usuário identificado pelo JWT;
+sem parâmetros nem corpo.
+
 Sucesso 200:
 
+```json
 [
-{
-"id": "123e4567-e89b-12d3-a456-426614174000",
-"name": "BOMBA",
-"code": "BOMBA",
-"description": "Remove uma peça do oponente do tabuleiro, deixando a casa vazia novamente.",
-"initialSkill": true,
-"offensive": true,
-"priceCoins": 0
-},
-{
-"id": "123e4567-e89b-12d3-a456-426614174001",
-"name": "TORNADO",
-"code": "TORNADO",
-"description": "Mover uma peça do oponente para uma casa adjacente que esteja vazia.",
-"initialSkill": false,
-"offensive": true,
-"priceCoins": 350
-}
+  {
+    "id": "123e4567-e89b-12d3-a456-426614174010",
+    "name": "X",
+    "symbol": "X",
+    "priceCoins": 0
+  }
 ]
-Campos retornados:
+```
 
-id: UUID da habilidade.
-name: nome de exibição.
-code: identificador de integração.
-description: descrição da habilidade.
-initialSkill: indica se a habilidade pertence ao conjunto inicial do jogo.
-offensive: indica se a habilidade é ofensiva.
-priceCoins: custo da habilidade em moedas.
-Erros:
+`symbol` pode ser `X`, `O`, `TRIANGULO`, `QUADRADO`, `ESTRELA` ou `CORACAO`.
+Erros: 401 `UNAUTHORIZED`; 500 `INTERNAL_ERROR`.
 
-401 UNAUTHORIZED — token ausente ou inválido.
-500 INTERNAL_ERROR — erro interno do servidor.
-
+Pendência: confirmar se X e O são atribuídos a todo jogador (RN-LOJ-01). O endpoint
+retorna apenas registros existentes em `user_characters`; compra e equipar estão na BE-029.
 ### Propostas REST
 
 Payload não definido adiante permanece **payload a definir**; nada abaixo está implementado.
@@ -270,7 +316,7 @@ Payload não definido adiante permanece **payload a definir**; nada abaixo está
 - Em clientes STOMP.js, passe o token por `connectHeaders`, por exemplo `client.connect({ Authorization: `Bearer ${token}` })` na API legada ou `new Client({ connectHeaders: { Authorization: `Bearer ${token}` } })` na API atual. O cabeçalho é um header nativo STOMP, não um header do handshake HTTP.
 - Falha de autenticação encerra/rejeita o CONNECT STOMP; não há sessão anônima e a resposta de falha pode ser um frame STOMP `ERROR`/fechamento, não um `ApiError` REST nem uma mensagem garantida em `/user/queue/errors` (a sessão ainda não foi autenticada).
 - ⚠️ O disconnect acima é o comportamento observado; reconexão/snapshot e heartbeat constam em BE-025 (24–27/10).
-- Erros são enviados por `@SendToUser` para `/user/queue/errors`, como `ApiError`. Nos handlers genéricos, `code` vem de `HttpStatus.name()` (por exemplo `BAD_REQUEST`, `CONFLICT`, `INTERNAL_SERVER_ERROR`) e existe também `error` com a frase HTTP; isso diverge do catálogo REST. A BE-014.1 preserva os dois códigos de habilidade descritos acima; o ajuste dos demais erros permanece na BE-044.
+- Erros são enviados por `@SendToUser` para `/user/queue/errors`, como `ApiError`. Nos handlers genéricos, `code` vem de `HttpStatus.name()` (por exemplo `BAD_REQUEST`, `CONFLICT`, `INTERNAL_SERVER_ERROR`) e existe também `error` com a frase HTTP; isso diverge do catálogo REST. As BE-014.1 e BE-014.2 preservam os quatro códigos de habilidade descritos acima; o ajuste dos demais erros permanece na BE-044.
 - A fila `/user/queue/errors` é destinada a sessões autenticadas; não se aplica ao CONNECT rejeitado, que ainda não tem usuário STOMP associado.
 
 ### `PLAYER_JOINED` — `/topic/rooms/{code}`
@@ -340,8 +386,7 @@ omitir o destino é pedido inválido. Destino informado inválido continua sendo
 a habilidade ou encerrar o turno. Consumo e encerramento dependem da BE-015;
 publicação do evento, da BE-023/BE-024. Nenhum destino novo é definido aqui.
 
-🚧 **BE-014.2:** os efeitos defensivos e de tempo estão implementados apenas no
-motor local, sem handler de ativação. Contadores começam em 2 e diminuem após a
+✅ **BE-014.2 (disponível na `dev`):** os efeitos defensivos e de tempo estão implementados no motor local, sem handler público de ativação. Contadores começam em 2 e diminuem após a
 conferência de vitória em cada ação, inclusive a de ativação. Silêncio rejeita
 habilidades com `SKILL_SILENCED`, sem impedir jogadas de peça. Ampulheta limita
 somente o próximo turno do oponente a 5s. Troca Rápida preserva congelamento e
@@ -427,5 +472,6 @@ Erros/compatibilidade:
 
 | Data | Mudança | Tipo | Card/PR |
 |---|---|---|---|
+| 21/10/2026 | Documentado o inventário REST de personagens; atualizado o status BE-014.2 e esclarecida a disponibilidade REST de habilidades. | NOVO | BE-028, BE-014.2 |
 | 15/10/2026 | Criação do contrato com o estado atual da dev. CORS, erro único, prefixo `/api` e códigos de habilidade entram como mudanças já disponíveis; rotas REST que ganharam `/api` são breaking. | NOVO; BREAKING (prefixo REST) | BE-034, BE-044; PR docs/contrato-integracao |
 | 23/10/2026 | Evento `PLAYER_JOINED` disponível em `/topic/rooms/{code}` (payload direto, sem envelope). | NOVO | BE-035; PR feat/room-joined-event |

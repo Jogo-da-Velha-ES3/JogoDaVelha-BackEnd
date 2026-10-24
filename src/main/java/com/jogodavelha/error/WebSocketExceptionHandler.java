@@ -1,6 +1,7 @@
 package com.jogodavelha.error;
 
 import com.jogodavelha.game.logic.SkillValidationException;
+import com.jogodavelha.game.logic.MoveValidationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
@@ -16,6 +17,13 @@ public class WebSocketExceptionHandler {
     public ApiError handleSkillValidation(SkillValidationException ex,
             @Header(SimpMessageHeaderAccessor.DESTINATION_HEADER) String destination) {
         return ApiError.of(ex.getCode().name(), ex.getMessage(), HttpStatus.BAD_REQUEST.value(), destination);
+    }
+
+    @MessageExceptionHandler(MoveValidationException.class)
+    @SendToUser(destinations = "/queue/errors", broadcast = false)
+    public ApiError handleMoveValidation(MoveValidationException ex,
+            @Header(SimpMessageHeaderAccessor.DESTINATION_HEADER) String destination) {
+        return ApiError.of(HttpStatus.BAD_REQUEST, ex.getMessage(), destination);
     }
 
     @MessageExceptionHandler({IllegalArgumentException.class})

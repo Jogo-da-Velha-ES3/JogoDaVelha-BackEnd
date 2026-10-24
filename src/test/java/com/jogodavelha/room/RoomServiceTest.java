@@ -96,17 +96,13 @@ class RoomServiceTest {
     void rejectsFullRoomWithoutReplacingSecondPlayer() {
         prepareJoin();
         User second = player("second");
-        room.join(second);
+        room.setPlayer2(second);          // sala cheia, mas ainda WAITING (guarda defensiva)
         var error = assertThrows(
                 RoomFullException.class,
                 () -> service.joinRoom("0042", guest.getId())
         );
 
-        assertEquals(
-                "A sala está cheia.",
-                error.getMessage()
-        );
-
+        assertEquals("A sala está cheia.", error.getMessage());
         verify(rooms, never()).saveAndFlush(any());
         assertSame(second, room.getPlayer2());
     }
