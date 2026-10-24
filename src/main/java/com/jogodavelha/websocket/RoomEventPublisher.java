@@ -6,6 +6,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.time.Instant;
+
 @Component
 @RequiredArgsConstructor
 public class RoomEventPublisher {
@@ -15,18 +17,26 @@ public class RoomEventPublisher {
     public void onPlayerJoined(PlayerJoinedRoomEvent event) {
         webSocketService.sendToTopic(
                 "/topic/rooms/" + event.roomCode(),
-                new RoomJoinedMessage(
+                new EventEnvelope<>(
                         "PLAYER_JOINED",
-                        event.roomCode(),
-                        event.guestId().toString(),
-                        event.guestUsername(),
-                        event.hostId().toString()
+                        new RoomJoinedPayload(
+                                event.roomCode(),
+                                event.guestId().toString(),
+                                event.guestUsername(),
+                                event.hostId().toString()
+                        ),
+                        Instant.now()
                 )
         );
     }
 
-    public record RoomJoinedMessage(
+    public record EventEnvelope<T>(
             String type,
+            T payload,
+            Instant serverTime
+    ) {}
+
+    public record RoomJoinedPayload(
             String roomCode,
             String guestId,
             String opponentName,

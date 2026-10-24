@@ -97,10 +97,13 @@ class RoomJoinedEventStompTest {
         Map<String, Object> message = received.poll(5, TimeUnit.SECONDS);
         assertNotNull(message);
         assertEquals("PLAYER_JOINED", message.get("type"));
-        assertEquals("0042", message.get("roomCode"));
-        assertEquals("guest-user", message.get("opponentName"));
-        assertEquals(GUEST_ID.toString(), message.get("guestId"));
-        assertEquals(HOST_ID.toString(), message.get("hostId"));
+        assertNotNull(message.get("serverTime"));
+        Map<String, Object> payload = (Map<String, Object>) message.get("payload");
+        assertNotNull(payload);
+        assertEquals("0042", payload.get("roomCode"));
+        assertEquals("guest-user", payload.get("opponentName"));
+        assertEquals(GUEST_ID.toString(), payload.get("guestId"));
+        assertEquals(HOST_ID.toString(), payload.get("hostId"));
     }
 
     @Test

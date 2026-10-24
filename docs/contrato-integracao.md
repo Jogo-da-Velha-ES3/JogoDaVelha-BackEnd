@@ -325,19 +325,22 @@ Payload não definido adiante permanece **payload a definir**; nada abaixo está
 
 Quando é enviado: após o commit da entrada do 2º jogador (`POST /api/rooms/{code}/join`). Entradas rejeitadas não geram mensagem.
 Quem recebe: todos os inscritos no tópico (broadcast). O cliente do host deve filtrar por `hostId`.
-Envelope: payload direto, sem o envelope proposto `{type, payload, serverTime}`.
+Envelope: `{ "type", "payload", "serverTime" }`. `serverTime` é o instante ISO-8601 definido pelo servidor; os dados do evento ficam em `payload`.
 
 ```json
 {
   "type": "PLAYER_JOINED",
-  "roomCode": "0042",
-  "guestId": "123e4567-e89b-12d3-a456-426614174002",
-  "opponentName": "bia",
-  "hostId": "123e4567-e89b-12d3-a456-426614174000"
+  "payload": {
+    "roomCode": "0042",
+    "guestId": "123e4567-e89b-12d3-a456-426614174002",
+    "opponentName": "bia",
+    "hostId": "123e4567-e89b-12d3-a456-426614174000"
+  },
+  "serverTime": "2026-10-23T12:00:00Z"
 }
 ```
 
-Compatibilidade/pendências: o tópico não restringe a inscrição; qualquer cliente que souber o código da sala recebe o evento (a restrição por `Principal` fica para depois). Não usa o envelope comum proposto; alinhar com o front quando o envelope for definido (BE-023/024).
+Compatibilidade: o tópico não restringe a inscrição; qualquer cliente que souber o código da sala recebe o evento (a restrição por `Principal` fica para depois).
 
 ### Propostas de destinos e eventos
 
@@ -474,4 +477,4 @@ Erros/compatibilidade:
 |---|---|---|---|
 | 21/10/2026 | Documentado o inventário REST de personagens; atualizado o status BE-014.2 e esclarecida a disponibilidade REST de habilidades. | NOVO | BE-028, BE-014.2 |
 | 15/10/2026 | Criação do contrato com o estado atual da dev. CORS, erro único, prefixo `/api` e códigos de habilidade entram como mudanças já disponíveis; rotas REST que ganharam `/api` são breaking. | NOVO; BREAKING (prefixo REST) | BE-034, BE-044; PR docs/contrato-integracao |
-| 23/10/2026 | Evento `PLAYER_JOINED` disponível em `/topic/rooms/{code}` (payload direto, sem envelope). | NOVO | BE-035; PR feat/room-joined-event |
+| 23/10/2026 | Evento `PLAYER_JOINED` disponível em `/topic/rooms/{code}` com envelope `{type, payload, serverTime}`. | NOVO | BE-035; PR feat/room-joined-event |

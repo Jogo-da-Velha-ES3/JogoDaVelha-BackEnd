@@ -86,6 +86,13 @@ Enviado quando o 2º jogador entra na sala, para o host exibir o "MATCH FEITO!".
 | Campo          | Tipo          | Descrição                                         |
 |----------------|---------------|---------------------------------------------------|
 | `type`         | string        | Sempre `PLAYER_JOINED`                            |
+| `payload`      | objeto        | Dados do jogador que entrou e da sala             |
+| `serverTime`   | string (ISO-8601) | Horário de publicação definido pelo servidor |
+
+Campos de `payload`:
+
+| Campo          | Tipo          | Descrição                                         |
+|----------------|---------------|---------------------------------------------------|
 | `roomCode`     | string        | Código da sala                                    |
 | `guestId`      | string (UUID) | ID de quem entrou                                 |
 | `opponentName` | string        | Username de quem entrou (o adversário do host)    |
@@ -96,10 +103,13 @@ Exemplo:
 ```json
 {
   "type": "PLAYER_JOINED",
-  "roomCode": "0042",
-  "guestId": "3f2b8c1e-0000-0000-0000-000000000002",
-  "opponentName": "guest",
-  "hostId": "3f2b8c1e-0000-0000-0000-000000000001"
+  "payload": {
+    "roomCode": "0042",
+    "guestId": "3f2b8c1e-0000-0000-0000-000000000002",
+    "opponentName": "guest",
+    "hostId": "3f2b8c1e-0000-0000-0000-000000000001"
+  },
+  "serverTime": "2026-10-23T12:00:00Z"
 }
 ```
 
@@ -109,6 +119,7 @@ Exemplo de inscrição (cliente STOMP):
 stompClient.subscribe('/topic/rooms/' + roomCode, function (message) {
     const event = JSON.parse(message.body);
     if (event.type === 'PLAYER_JOINED') {
+        const { roomCode, guestId, opponentName, hostId } = event.payload;
         // mostrar "MATCH FEITO!" com event.opponentName
     }
 });
