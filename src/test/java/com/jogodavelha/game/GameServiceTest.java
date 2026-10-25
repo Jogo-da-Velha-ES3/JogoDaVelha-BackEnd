@@ -3,6 +3,7 @@ package com.jogodavelha.game;
 import com.jogodavelha.auth.User;
 import com.jogodavelha.coins.CoinTransactionService;
 import com.jogodavelha.game.service.GameService;
+import com.jogodavelha.profile.UserStatsService;
 import com.jogodavelha.room.Room;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,6 +13,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import com.jogodavelha.profile.UserStatsService;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -28,6 +30,9 @@ class GameServiceTest {
 
     @Mock
     private CoinTransactionService coinTransactionService;
+
+    @Mock
+    private UserStatsService userStatsService;
 
     @InjectMocks
     private GameService gameService;

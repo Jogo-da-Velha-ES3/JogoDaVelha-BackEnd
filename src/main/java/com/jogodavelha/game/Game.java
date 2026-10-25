@@ -65,6 +65,14 @@ public class Game {
     @JoinColumn(name = "winner_id")
     private User winner;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "player1_character_id")
+    private com.jogodavelha.character.Character player1Character;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "player2_character_id")
+    private com.jogodavelha.character.Character player2Character;
+
     @Column(name = "rewards_granted", nullable = false)
     private boolean rewardsGranted = false;
 
@@ -105,6 +113,14 @@ public class Game {
             throw new IllegalArgumentException("Player2 deve ser diferente de Player1");
         }
         this.player2 = player2;
+    }
+
+    public void setPlayer1Character(com.jogodavelha.character.Character character) {
+        this.player1Character = character;
+    }
+
+    public void setPlayer2Character(com.jogodavelha.character.Character character) {
+        this.player2Character = character;
     }
 
     /**

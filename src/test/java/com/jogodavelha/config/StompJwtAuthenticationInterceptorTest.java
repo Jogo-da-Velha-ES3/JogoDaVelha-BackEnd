@@ -2,6 +2,7 @@ package com.jogodavelha.config;
 
 import com.jogodavelha.auth.JwtService;
 import com.jogodavelha.auth.User;
+import com.jogodavelha.room.RoomRepository;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,6 +21,7 @@ import java.util.Date;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class StompJwtAuthenticationInterceptorTest {
     private static final String SECRET = "this-is-a-very-long-secret-key-with-at-least-32-bytes";
@@ -53,6 +55,22 @@ class StompJwtAuthenticationInterceptorTest {
         Message<?> authenticated = interceptor.preSend(message, channel());
         StompHeaderAccessor authenticatedAccessor = StompHeaderAccessor.wrap(authenticated);
         assertEquals(USER_ID.toString(), authenticatedAccessor.getUser().getName());
+    }
+
+    @Test
+    void subscriptionRequiresMembershipInTheRequestedActiveRoom() {
+        RoomRepository rooms = mock(RoomRepository.class);
+        interceptor.setRooms(rooms);
+        when(rooms.findActiveMembership(eq("0042"), anyList(), eq(USER_ID)))
+                .thenReturn(java.util.Optional.empty());
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        accessor.setDestination("/topic/rooms/0042");
+        accessor.setUser(() -> USER_ID.toString());
+        accessor.setLeaveMutable(true);
+        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        assertThrows(AccessDeniedException.class, () -> interceptor.preSend(message, channel()));
+        verify(rooms).findActiveMembership(eq("0042"), anyList(), eq(USER_ID));
     }
 
     @Test

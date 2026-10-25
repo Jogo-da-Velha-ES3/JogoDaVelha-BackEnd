@@ -2,7 +2,7 @@
 
 **Propósito:** registrar o comportamento disponível e as propostas de integração entre backend e frontend.
 **Público:** time do front.
-**Atualizado em:** 24/10/2026.
+**Atualizado em:** 25/10/2026.
 **Fonte da verdade:** o contrato REST implementado está no Swagger (`/swagger-ui.html` e `/v3/api-docs`). Este documento é a visão voltada ao front e também acompanha o STOMP.
 
 ## Legenda de status
@@ -105,17 +105,21 @@ privado, não entrega por um broker real.
 
 ### Resumo
 
-| Método | Caminho                     | Auth           | Sucesso | Status / card |
-|--------|-----------------------------|----------------|--------:|---------------|
-| GET    | `/api/health`               | Pública        | 200     | ✅ BE-044     |
-| POST   | `/api/auth/register`        | Pública        | 201     | ✅ BE-006     |
-| POST   | `/api/auth/login`           | Pública        | 200     | ✅ BE-006     |
-| POST   | `/api/rooms`                | Bearer exigido | 201     | ✅ BE-009.1   | 
-| POST   | `/api/rooms/{code}/join`    | Bearer exigido | 200     | ✅ BE-009.1   |
-| POST   | `/api/rooms/{code}/leave`   | Bearer exigido | 204     | ✅ BE-036     |
-| GET    | `/api/skills/inventory`     | Bearer exigido | 200     | ✅ BE-041     |
-| GET    | `/api/coins/balance`        | Bearer exigido | 200     | ✅ BE-026     | 
-| GET    | `/api/characters/inventory` | Bearer exigido | 200     | ✅ BE-028     |
+| Método | Caminho | Auth | Sucesso | Status / card |
+|---|---|---|---:|---|
+| GET | `/api/health` | Pública | 200 | ✅ BE-044 |
+| POST | `/api/auth/register` | Pública | 201 | ✅ BE-006 |
+| POST | `/api/auth/login` | Pública | 200 | ✅ BE-006 |
+| POST | `/api/rooms` | Bearer exigido | 201 | ✅ BE-009.1 | 
+| POST | `/api/rooms/{code}/join` | Bearer exigido | 200 | ✅ BE-009.1 |
+| POST | `/api/rooms/{code}/leave` | Bearer exigido | 204 | ✅ BE-036 |
+| GET | `/api/skills/inventory` | Bearer exigido | 200 | ✅ BE-041 |
+| GET | `/api/coins/balance` | Bearer exigido | 200 | ✅ BE-026 |
+| GET | `/api/characters/inventory` | Bearer exigido | 200 | ✅ BE-028 |
+| GET | `/api/profile` | Bearer exigido | 200 | ✅ BE-027 |
+| GET | `/api/profile/stats` | Bearer exigido | 200 | ✅ BE-027 |
+| PATCH | `/api/profile/username` | Bearer exigido | 204 | ✅ BE-027 |
+| GET | `/api/profile/history` | Bearer exigido | 200 | ✅ BE-027 |
 
 ### `GET /api/health`
 
@@ -224,16 +228,7 @@ Sem corpo de requisição.
 ```http
 POST /api/rooms/0042/join
 Authorization: Bearer <jwt>
-```    
-Erros:
-
-400 ROOM_BAD_REQUEST — código inválido ou usuário inválido.
-404 ROOM_NOT_FOUND — sala inexistente ou encerrada.
-409 ROOM_FULL — sala já possui dois jogadores.
-409 ROOM_ALREADY_STARTED — partida já iniciada.
-409 ROOM_CONFLICT — jogador já está em sala ou partida ativa.
-401 UNAUTHORIZED — token ausente ou inválido.
-500 INTERNAL_ERROR — erro interno do servidor.
+```
 
 Sucesso 200:
 ```json
@@ -247,6 +242,15 @@ Sucesso 200:
   "player2Username": "bia"
 }
 ```
+Erros:
+
+400 ROOM_BAD_REQUEST — código inválido ou usuário inválido.
+404 ROOM_NOT_FOUND — sala inexistente ou encerrada.
+409 ROOM_FULL — sala já possui dois jogadores.
+409 ROOM_ALREADY_STARTED — partida já iniciada.
+409 ROOM_CONFLICT — jogador já está em sala ou partida ativa.
+401 UNAUTHORIZED — token ausente ou inválido.
+500 INTERNAL_ERROR — erro interno do servidor.
 
 Não há anotações Bean Validation nos parâmetros.
 
@@ -316,6 +320,121 @@ Erros: 401 `UNAUTHORIZED`; 500 `INTERNAL_ERROR`.
 
 Pendência: confirmar se X e O são atribuídos a todo jogador (RN-LOJ-01). O endpoint
 retorna apenas registros existentes em `user_characters`; compra e equipar estão na BE-029.
+
+### `GET /api/profile`
+
+✅ Disponível na dev — BE-027.
+
+Bearer Token obrigatório.
+
+Retorna o perfil do usuário autenticado, incluindo apelido, saldo de moedas e personagem favorito (baseado no histórico de partidas).
+
+Resposta 200 (OK):
+
+```json
+{
+  "username": "testuser",
+  "coinsBalance": 150,
+  "avatar": null,
+  "preferredCharacter": "X"
+}
+```
+
+- `username`: apelido atual do usuário
+- `coinsBalance`: saldo atual de moedas
+- `avatar`: campo reservado (sempre null nesta versão)
+- `preferredCharacter`: nome do personagem mais utilizado pelo usuário; em caso de empate, o usado mais recentemente. Retorna null se o usuário não tiver histórico de partidas ou se nenhuma partida tiver personagem registrado.
+
+Erros:
+- 401 UNAUTHORIZED — token ausente ou inválido.
+- 500 INTERNAL_ERROR — erro interno do servidor.
+
+### `GET /api/profile/stats`
+
+✅ Disponível na dev — BE-027.
+
+Bearer Token obrigatório.
+
+Retorna as estatísticas do usuário autenticado.
+
+Resposta 200 (OK):
+
+```json
+{
+  "matchesPlayed": 10,
+  "wins": 6,
+  "currentWinStreak": 2,
+  "longestWinStreak": 4,
+  "winRate": 60.0
+}
+```
+
+- `matchesPlayed`: total de partidas jogadas
+- `wins`: total de vitórias
+- `currentWinStreak`: sequência atual de vitórias (empate ou derrota quebram a sequência)
+- `longestWinStreak`: maior sequência de vitórias já alcançada
+- `winRate`: taxa de vitória em porcentagem (wins / matchesPlayed * 100)
+
+Erros:
+- 401 UNAUTHORIZED — token ausente ou inválido.
+- 500 INTERNAL_ERROR — erro interno do servidor.
+
+### `PATCH /api/profile/username`
+
+✅ Disponível na dev — BE-027.
+
+Bearer Token obrigatório.
+
+Altera o apelido do usuário autenticado. O apelido deve ter entre 3 e 15 caracteres e ser único (case-insensitive). O usuário pode enviar o próprio apelido atual sem causar erro.
+
+Request body:
+
+```json
+{
+  "username": "newusername"
+}
+```
+
+Resposta 204 (No Content) — apelido alterado com sucesso.
+
+Erros:
+- 400 VALIDATION_ERROR — apelido fora do tamanho permitido (3-15 caracteres).
+- 401 UNAUTHORIZED — token ausente ou inválido.
+- 409 USERNAME_ALREADY_EXISTS — apelido já está em uso por outro usuário.
+- 500 INTERNAL_ERROR — erro interno do servidor.
+
+### `GET /api/profile/history`
+
+✅ Disponível na dev — BE-027.
+
+Bearer Token obrigatório.
+
+Retorna o histórico de partidas do usuário autenticado, ordenado da mais recente para a mais antiga.
+
+Resposta 200 (OK):
+
+```json
+[
+  {
+    "gameId": "123e4567-e89b-12d3-a456-426614174000",
+    "opponentUsername": "opponentuser",
+    "result": "WIN",
+    "walkover": false,
+    "finishedAt": "2026-10-25T10:30:00Z"
+  }
+]
+```
+
+- `gameId`: UUID da partida
+- `opponentUsername`: apelido do oponente (ou "Desconhecido" se não disponível)
+- `result`: resultado da partida ("WIN", "LOSS" ou "DRAW")
+- `walkover`: true se a partida foi encerrada por W.O. (FORFEIT_TIMEOUT)
+- `finishedAt`: timestamp de encerramento da partida (ISO-8601 UTC)
+
+Erros:
+- 401 UNAUTHORIZED — token ausente ou inválido.
+- 500 INTERNAL_ERROR — erro interno do servidor.
+
 ### Propostas REST
 
 Payload não definido adiante permanece **payload a definir**; nada abaixo está implementado.
@@ -374,7 +493,48 @@ Envelope: `{ "type", "payload", "serverTime" }`.
 
 ### Propostas de destinos e eventos
 
-Todos os itens abaixo são 📝 e não possuem implementação atual. Envelope proposto: `{ "type", "payload", "serverTime" }`. Destino proposto pelo front: `/topic/rooms/{code}`. O backlog para evento de entrada usa `/topic/room/{code}` (singular); resolver a divergência antes da implementação.
+Os itens marcados 📝 ainda são propostas. Nesta branch, a BE-037 publica
+`DRAFT_UPDATE` em `/topic/rooms/{code}`, no envelope `{ "type", "payload", "serverTime" }`.
+O tópico no plural consta como confirmado pelo back na documentação do frontend
+(`docs/ARCHITECTURE.md`, seção 6). Os demais eventos mantêm o status indicado abaixo.
+
+🚧 **BE-037, implementada nesta branch:** prazo único de 20s, escolhas elegíveis,
+bloqueio após confirmar as duas habilidades e auto-escolha ao expirar. Alterar
+escolhas não reinicia o prazo; a auto-escolha não conta para W.O. A elegibilidade
+é consultada no início e inclui habilidades compradas, sem filtrar `initialSkill`.
+
+`DraftUpdated` é interno e aciona a publicação abaixo após gravar o Redis.
+`DraftCompleted` também é interno: leva as escolhas finais à BE-038, sem expor
+habilidades no tópico público. Os eventos não têm entrega persistente ou replay.
+
+Exemplo de `DRAFT_UPDATE` recebido pelos inscritos em `/topic/rooms/0042`:
+
+```json
+{
+  "type": "DRAFT_UPDATE",
+  "payload": {
+    "deadline": 1792670020000,
+    "characters": { "P1": "X", "P2": "O" },
+    "ready": { "P1": true, "P2": false }
+  },
+  "serverTime": 1792670000000
+}
+```
+
+`deadline` e `serverTime` são timestamps UTC em milissegundos. P1 é o host e P2
+o convidado; lados não dependem de quem começa a jogar. `characters` omite lados
+que ainda não escolheram e usa `X`, `O`, `TRIANGULO`, `QUADRADO`, `ESTRELA` ou
+`CORACAO`, não UUIDs. `ready` sempre contém os dois lados. Inventários e habilidades
+escolhidas não são publicados. A inscrição no tópico exige sessão STOMP autenticada e participante da sala ativa correspondente ao código.
+
+O formato corresponde a `src/types/events.ts` e `src/stores/serverEvents.ts` do
+[frontend, commit 718864c](https://github.com/Jogo-da-Velha-ES3/JogoDaVelha-FrontEnd/tree/718864c8124b9a5ca84466447875199f9b1dbaf9).
+A checagem do consumidor não substitui a validação conjunta da FE-17, ainda aberta.
+
+BE-011/BE-013 adicionam os handlers de escolha. BE-038 inicia o Draft e consome
+`DraftCompleted` para criar a partida. Na inicialização, a recuperação varre os estados persistidos no Redis e chama `resume(roomId)` para rearmar os prazos ativos. A integração STOMP da BE-037
+cobre dois clientes autenticados, conclusão antecipada e timeout, sem banco,
+Redis externo ou migrations.
 
 **Eventos de sala e jogo — janela solicitada pelo front até 21/10:**
 
@@ -394,7 +554,7 @@ Envio de jogada solicitado pelo front em `/move`; destino final completo e paylo
 
 | Evento | Quando / destinatário | Campos previstos | Card / status |
 |---|---|---|---|
-| `DRAFT_UPDATE` | Progresso/prontidão do draft; jogadores da sala | Etapas (personagem, habilidades iniciais), pronto do oponente e timer geral de 20s são descritos no BE-037; formato payload a definir | BE-037, 19/10; 📝 |
+| `DRAFT_UPDATE` | Início e mudanças do Draft; inscritos no tópico da sala | `deadline`, `characters` e `ready` por P1/P2; exemplo acima | BE-037; 🚧 implementado nesta branch, validação conjunta com front pendente |
 | `DRAW_OPTIONS` | Sorteio de três opções; somente dono | Três opções e janela de escolha de 8s (BE-013.1) | BE-013.1, 24/10; 📝 |
 | `DECK_UPDATE` | Atualização do deck; jogador dono | payload a definir; privado do jogador conforme pedido do front | BE-023/BE-024; 📝 |
 | `ABILITY_RESOLVED` | Resolução de habilidade; sala | `result`: `APPLIED`, `NO_VALID_TARGET` ou `BLOCKED_BY_FORCE_FIELD`; demais campos a definir | BE-023, 20/10; 📝 |

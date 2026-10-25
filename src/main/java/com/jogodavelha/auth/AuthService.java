@@ -15,6 +15,8 @@ import com.jogodavelha.skill.Skill;
 import com.jogodavelha.skill.SkillRepository;
 import com.jogodavelha.skill.UserSkill;
 import com.jogodavelha.skill.UserSkillRepository;
+import com.jogodavelha.profile.UserStats;
+import com.jogodavelha.profile.UserStatsRepository;
 
 /**
  * Service responsável pela lógica de autenticação.
@@ -31,6 +33,7 @@ public class AuthService {
     private final UserCharacterRepository userCharacterRepository;
     private final SkillRepository skillRepository;
     private final UserSkillRepository userSkillRepository;
+    private final UserStatsRepository userStatsRepository;
 
     public AuthService(
             UserRepository userRepository,
@@ -39,7 +42,8 @@ public class AuthService {
             CharacterRepository characterRepository,
             UserCharacterRepository userCharacterRepository,
             SkillRepository skillRepository,
-            UserSkillRepository userSkillRepository
+            UserSkillRepository userSkillRepository,
+            UserStatsRepository userStatsRepository
     ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
@@ -48,6 +52,7 @@ public class AuthService {
         this.userCharacterRepository = userCharacterRepository;
         this.skillRepository = skillRepository;
         this.userSkillRepository = userSkillRepository;
+        this.userStatsRepository = userStatsRepository;
     }
 
     /**
@@ -78,6 +83,10 @@ public class AuthService {
 
         try {
             User savedUser = userRepository.save(user);
+
+            userStatsRepository.save(
+                    new UserStats(savedUser)
+            );
 
             Character xCharacter = characterRepository
                     .findBySymbol(CharacterSymbol.X)
