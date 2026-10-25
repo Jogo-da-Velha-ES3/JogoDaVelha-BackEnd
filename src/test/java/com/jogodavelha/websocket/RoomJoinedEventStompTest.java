@@ -6,6 +6,8 @@ import com.jogodavelha.config.*;
 import com.jogodavelha.game.PlayerSessionRegistry;
 import com.jogodavelha.game.service.PlayerService;
 import com.jogodavelha.room.PlayerJoinedRoomEvent;
+import com.jogodavelha.room.Room;
+import com.jogodavelha.room.RoomRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,6 +33,7 @@ import org.springframework.web.socket.messaging.WebSocketStompClient;
 
 import java.lang.reflect.Type;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
@@ -38,7 +41,9 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest(classes = RoomJoinedEventStompTest.TestApplication.class,
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -74,6 +79,13 @@ class RoomJoinedEventStompTest {
                 protected void doCommit(org.springframework.transaction.support.DefaultTransactionStatus s) {}
                 protected void doRollback(org.springframework.transaction.support.DefaultTransactionStatus s) {}
             };
+        }
+        @Bean
+        RoomRepository rooms() {
+            var repository = mock(RoomRepository.class);
+            when(repository.findActiveMembership(anyString(), anyList(), any(UUID.class)))
+                    .thenReturn(Optional.of(mock(Room.class)));
+            return repository;
         }
     }
 
