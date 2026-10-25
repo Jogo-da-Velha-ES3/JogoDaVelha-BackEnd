@@ -13,34 +13,28 @@ public class UserStatsService {
 
     @Transactional
     public void registerWin(User user) {
-        UserStats stats = userStatsRepository
-                .findByUser_Id(user.getId())
-                .orElseThrow(() -> new IllegalStateException(
-                        "Estatísticas não encontradas para o usuário"
-                ));
-
+        UserStats stats = getOrCreateStats(user);
         stats.registerWin();
     }
 
     @Transactional
     public void registerDraw(User user) {
-        UserStats stats = userStatsRepository
-                .findByUser_Id(user.getId())
-                .orElseThrow(() -> new IllegalStateException(
-                        "Estatísticas não encontradas para o usuário"
-                ));
-
+        UserStats stats = getOrCreateStats(user);
         stats.registerDraw();
     }
 
     @Transactional
     public void registerLoss(User user) {
-        UserStats stats = userStatsRepository
-                .findByUser_Id(user.getId())
-                .orElseThrow(() -> new IllegalStateException(
-                        "Estatísticas não encontradas para o usuário"
-                ));
-
+        UserStats stats = getOrCreateStats(user);
         stats.registerLoss();
+    }
+
+    private UserStats getOrCreateStats(User user) {
+        return userStatsRepository
+                .findByUser_Id(user.getId())
+                .orElseGet(() -> {
+                    UserStats newStats = new UserStats(user);
+                    return userStatsRepository.save(newStats);
+                });
     }
 }

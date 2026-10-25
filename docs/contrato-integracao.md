@@ -2,7 +2,7 @@
 
 **Propósito:** registrar o comportamento disponível e as propostas de integração entre backend e frontend.
 **Público:** time do front.
-**Atualizado em:** 22/10/2026.
+**Atualizado em:** 25/10/2026.
 **Fonte da verdade:** o contrato REST implementado está no Swagger (`/swagger-ui.html` e `/v3/api-docs`). Este documento é a visão voltada ao front e também acompanha o STOMP.
 
 ## Legenda de status
@@ -113,8 +113,12 @@ privado, não entrega por um broker real.
 | POST | `/api/rooms` | Bearer exigido | 201 | ✅ BE-009.1 | 
 | POST | `/api/rooms/{code}/join` | Bearer exigido | 200 | ✅ BE-009.1 |
 | GET | `/api/skills/inventory` | Bearer exigido | 200 | ✅ BE-041 |
-| GET | `/api/coins/balance` | Bearer exigido | 200 | ✅ BE-026 | 
+| GET | `/api/coins/balance` | Bearer exigido | 200 | ✅ BE-026 |
 | GET | `/api/characters/inventory` | Bearer exigido | 200 | ✅ BE-028 |
+| GET | `/api/profile` | Bearer exigido | 200 | ✅ BE-027 |
+| GET | `/api/profile/stats` | Bearer exigido | 200 | ✅ BE-027 |
+| PATCH | `/api/profile/username` | Bearer exigido | 204 | ✅ BE-027 |
+| GET | `/api/profile/history` | Bearer exigido | 200 | ✅ BE-027 |
 
 ### `GET /api/health`
 
@@ -301,6 +305,121 @@ Erros: 401 `UNAUTHORIZED`; 500 `INTERNAL_ERROR`.
 
 Pendência: confirmar se X e O são atribuídos a todo jogador (RN-LOJ-01). O endpoint
 retorna apenas registros existentes em `user_characters`; compra e equipar estão na BE-029.
+
+### `GET /api/profile`
+
+✅ Disponível na dev — BE-027.
+
+Bearer Token obrigatório.
+
+Retorna o perfil do usuário autenticado, incluindo apelido, saldo de moedas e personagem favorito (baseado no histórico de partidas).
+
+Resposta 200 (OK):
+
+```json
+{
+  "username": "testuser",
+  "coinsBalance": 150,
+  "avatar": null,
+  "preferredCharacter": "X"
+}
+```
+
+- `username`: apelido atual do usuário
+- `coinsBalance`: saldo atual de moedas
+- `avatar`: campo reservado (sempre null nesta versão)
+- `preferredCharacter`: nome do personagem mais utilizado pelo usuário; em caso de empate, o usado mais recentemente. Retorna null se o usuário não tiver histórico de partidas ou se nenhuma partida tiver personagem registrado.
+
+Erros:
+- 401 UNAUTHORIZED — token ausente ou inválido.
+- 500 INTERNAL_ERROR — erro interno do servidor.
+
+### `GET /api/profile/stats`
+
+✅ Disponível na dev — BE-027.
+
+Bearer Token obrigatório.
+
+Retorna as estatísticas do usuário autenticado.
+
+Resposta 200 (OK):
+
+```json
+{
+  "matchesPlayed": 10,
+  "wins": 6,
+  "currentWinStreak": 2,
+  "longestWinStreak": 4,
+  "winRate": 60.0
+}
+```
+
+- `matchesPlayed`: total de partidas jogadas
+- `wins`: total de vitórias
+- `currentWinStreak`: sequência atual de vitórias (empate ou derrota quebram a sequência)
+- `longestWinStreak`: maior sequência de vitórias já alcançada
+- `winRate`: taxa de vitória em porcentagem (wins / matchesPlayed * 100)
+
+Erros:
+- 401 UNAUTHORIZED — token ausente ou inválido.
+- 500 INTERNAL_ERROR — erro interno do servidor.
+
+### `PATCH /api/profile/username`
+
+✅ Disponível na dev — BE-027.
+
+Bearer Token obrigatório.
+
+Altera o apelido do usuário autenticado. O apelido deve ter entre 3 e 15 caracteres e ser único (case-insensitive). O usuário pode enviar o próprio apelido atual sem causar erro.
+
+Request body:
+
+```json
+{
+  "username": "newusername"
+}
+```
+
+Resposta 204 (No Content) — apelido alterado com sucesso.
+
+Erros:
+- 400 VALIDATION_ERROR — apelido fora do tamanho permitido (3-15 caracteres).
+- 401 UNAUTHORIZED — token ausente ou inválido.
+- 409 USERNAME_ALREADY_EXISTS — apelido já está em uso por outro usuário.
+- 500 INTERNAL_ERROR — erro interno do servidor.
+
+### `GET /api/profile/history`
+
+✅ Disponível na dev — BE-027.
+
+Bearer Token obrigatório.
+
+Retorna o histórico de partidas do usuário autenticado, ordenado da mais recente para a mais antiga.
+
+Resposta 200 (OK):
+
+```json
+[
+  {
+    "gameId": "123e4567-e89b-12d3-a456-426614174000",
+    "opponent": "opponentuser",
+    "result": "WIN",
+    "wasForfeit": false,
+    "finishedAt": "2026-10-25T10:30:00Z"
+  }
+]
+```
+
+- `gameId`: UUID da partida
+- `opponent`: apelido do oponente (ou "Desconhecido" se não disponível)
+- `result`: resultado da partida ("WIN", "LOSS" ou "DRAW")
+- `wasForfeit`: true se a partida foi encerrada por W.O. (FORFEIT_TIMEOUT)
+- `finishedAt`: timestamp de encerramento da partida (ISO-8601 UTC)
+
+Erros:
+- 401 UNAUTHORIZED — token ausente ou inválido.
+- 500 INTERNAL_ERROR — erro interno do servidor.
+
 ### Propostas REST
 
 Payload não definido adiante permanece **payload a definir**; nada abaixo está implementado.
