@@ -8,6 +8,10 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+
 
 import java.util.UUID;
 
@@ -33,5 +37,33 @@ public class ProfileController {
         return ResponseEntity.ok(
                 profileService.getProfile(userId)
         );
+    }
+
+    @GetMapping("/stats")
+    public ResponseEntity<ProfileStatsResponse> stats(
+            Authentication authentication
+    ) {
+
+        UUID userId = (UUID) authentication.getPrincipal();
+
+        return ResponseEntity.ok(
+                profileService.getStats(userId)
+        );
+    }
+
+    @PatchMapping("/username")
+    public ResponseEntity<Void> updateUsername(
+            Authentication authentication,
+            @Valid @RequestBody UpdateUsernameRequest request
+    ) {
+
+        UUID userId = (UUID) authentication.getPrincipal();
+
+        profileService.updateUsername(
+                userId,
+                request.username()
+        );
+
+        return ResponseEntity.noContent().build();
     }
 }
