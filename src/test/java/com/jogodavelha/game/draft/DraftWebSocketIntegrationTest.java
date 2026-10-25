@@ -29,6 +29,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.broker.SimpleBrokerMessageHandler;
 import org.springframework.messaging.simp.stomp.*;
 import org.springframework.messaging.support.MessageBuilder;
@@ -62,15 +63,19 @@ class DraftWebSocketIntegrationTest {
     @Autowired MutableClock clock;
     @Autowired org.springframework.context.ApplicationContext applicationContext;
     @Autowired Completions completions;
+    @Autowired SimpMessagingTemplate simpMessagingTemplate;
+    @Autowired @org.springframework.beans.factory.annotation.Qualifier("webSocketServiceSpy") WebSocketService webSocketService;
     private final List<WebSocketStompClient> clients = new ArrayList<>();
     private final List<StompSession> sessions = new ArrayList<>();
+    private final List<String> connectionErrors = new ArrayList<>();
+    private final List<String> transportErrors = new ArrayList<>();
 
     @Configuration
     @EnableAutoConfiguration(exclude = {DataSourceAutoConfiguration.class, HibernateJpaAutoConfiguration.class,
             DataRedisAutoConfiguration.class, DataRedisRepositoriesAutoConfiguration.class})
     @EnableConfigurationProperties({JwtProperties.class, CorsProperties.class})
     @Import({WebSocketConfig.class, SecurityConfig.class, StompJwtAuthenticationInterceptor.class,
-            DraftService.class, DraftStateManager.class, DraftEventPublisher.class, WebSocketService.class})
+            DraftService.class, DraftStateManager.class, DraftEventPublisher.class})
     static class TestApplication {
         @Bean ObjectMapper objectMapper() { return new ObjectMapper(); }
         @Bean @Primary MutableClock testClock() { return new MutableClock(); }
@@ -123,6 +128,9 @@ class DraftWebSocketIntegrationTest {
                     });
             return redis;
         }
+        @Bean WebSocketService webSocketServiceSpy(SimpMessagingTemplate template) {
+            return spy(new WebSocketService(template));
+        }
     }
 
     static class MutableClock extends Clock {
@@ -140,6 +148,12 @@ class DraftWebSocketIntegrationTest {
     @BeforeEach void resetClock() {
         clock.now.set(System.currentTimeMillis());
         completions.received.clear();
+        connectionErrors.clear();
+        transportErrors.clear();
+        // Verificação 1: Confirmar que o bean SimpMessagingTemplate existe no contexto
+        assertNotNull(simpMessagingTemplate, "SimpMessagingTemplate não foi injetado - infraestrutura WebSocket não está configurada");
+        // Resetar o spy do WebSocketService
+        reset(webSocketService);
     }
 
     @AfterEach void stopClients() {
@@ -154,6 +168,24 @@ class DraftWebSocketIntegrationTest {
         awaitSubscriptions();
         UUID room = UUID.randomUUID();
         var state = drafts.start(room, "0042", P1, P2);
+
+        // Verificação 2: Verificar se o DraftEventPublisher realmente envia
+        verify(webSocketService, timeout(5000).atLeastOnce())
+                .sendToTopic(eq("/topic/rooms/0042"), any());
+
+        // Verificação 3: Observar o canal de saída do broker
+        var broker = applicationContext.getBean(SimpleBrokerMessageHandler.class);
+        var message = MessageBuilder.withPayload(new byte[0])
+                .setHeader(SimpMessageHeaderAccessor.MESSAGE_TYPE_HEADER, org.springframework.messaging.simp.SimpMessageType.MESSAGE)
+                .setHeader(SimpMessageHeaderAccessor.DESTINATION_HEADER, TOPIC).build();
+        var subscriptions = broker.getSubscriptionRegistry().findSubscriptions(message);
+        System.out.println("Número de inscrições encontradas: " + subscriptions.size());
+        assertEquals(2, subscriptions.size(), "Broker deve ter 2 inscrições");
+
+        // Verificar se há erros de conexão ou transporte
+        assertTrue(connectionErrors.isEmpty(), "Erros de conexão STOMP: " + connectionErrors);
+        assertTrue(transportErrors.isEmpty(), "Erros de transporte: " + transportErrors);
+
         drafts.updatePlayer(room, P1, player -> player.withCharacter(X));
         drafts.updatePlayer(room, P1, player -> player.withSkills(List.of("BOMBA", "ESCUDO")));
         drafts.updatePlayer(room, P2, player -> player.withCharacter(O));
@@ -206,19 +238,50 @@ class DraftWebSocketIntegrationTest {
     private BlockingQueue<JsonNode> subscribe(UUID playerId) throws Exception {
         var client = new WebSocketStompClient(new StandardWebSocketClient());
         clients.add(client);
-        client.setMessageConverter(new org.springframework.messaging.converter.JacksonJsonMessageConverter());
+        // Não usar conversor personalizado - deixar o padrão receber byte[]
         User user = new User("draft-user", "hashed", "draft@example.com");
         user.setId(playerId);
         var headers = new StompHeaders();
         headers.add("Authorization", "Bearer " + jwt.generateToken(user));
+
+        // Verificação 4: Capturar erros no cliente STOMP
+        var handler = new StompSessionHandlerAdapter() {
+            @Override
+            public void afterConnected(StompSession session, StompHeaders connectedHeaders) {
+                System.out.println("Cliente conectado com sucesso: " + playerId);
+            }
+
+            @Override
+            public void handleException(StompSession session, StompCommand command, StompHeaders headers, byte[] payload, Throwable exception) {
+                String error = "STOMP Exception - Command: " + command + ", Error: " + exception.getMessage();
+                connectionErrors.add(error);
+                System.err.println(error);
+                exception.printStackTrace();
+            }
+
+            @Override
+            public void handleTransportError(StompSession session, Throwable exception) {
+                String error = "Transport Error - Error: " + exception.getMessage();
+                transportErrors.add(error);
+                System.err.println(error);
+                exception.printStackTrace();
+            }
+        };
+
         var session = client.connectAsync("ws://localhost:" + port + "/ws", new WebSocketHttpHeaders(), headers,
-                new StompSessionHandlerAdapter() {}).get(5, TimeUnit.SECONDS);
+                handler).get(5, TimeUnit.SECONDS);
         sessions.add(session);
         BlockingQueue<JsonNode> received = new LinkedBlockingQueue<>();
         session.subscribe(TOPIC, new StompFrameHandler() {
-            public Type getPayloadType(StompHeaders headers) { return JsonNode.class; }
+            public Type getPayloadType(StompHeaders headers) { return byte[].class; }
             public void handleFrame(StompHeaders headers, Object payload) {
-                received.add((JsonNode) payload);
+                try {
+                    ObjectMapper mapper = new ObjectMapper();
+                    received.add(mapper.readTree((byte[]) payload));
+                } catch (Exception e) {
+                    System.err.println("Erro ao deserializar mensagem: " + e.getMessage());
+                    e.printStackTrace();
+                }
             }
         });
         return received;

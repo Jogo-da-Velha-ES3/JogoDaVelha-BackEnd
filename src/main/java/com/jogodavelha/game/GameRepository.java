@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import java.util.List;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -25,4 +26,15 @@ public interface GameRepository extends JpaRepository<Game, UUID> {
 
     @Query("SELECT g FROM Game g WHERE g.status = 'IN_PROGRESS' AND (g.player1.id = :userId OR g.player2.id = :userId)")
     Optional<Game> findActiveGameByPlayerId(@Param("userId") UUID userId);
+
+    @Query("""
+    SELECT g
+    FROM Game g
+    WHERE g.status = 'FINISHED'
+      AND (g.player1.id = :userId OR g.player2.id = :userId)
+    ORDER BY g.finishedAt DESC
+""")
+    List<Game> findFinishedGamesByPlayerId(
+            @Param("userId") UUID userId
+    );
 }

@@ -7,6 +7,7 @@ import com.jogodavelha.room.Room;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.jogodavelha.profile.UserStatsService;
 
 import java.util.UUID;
 
@@ -25,6 +26,7 @@ public class GameService {
 
     private final GameRepository gameRepository;
     private final CoinTransactionService coinTransactionService;
+    private final UserStatsService userStatsService;
 
     @Transactional
     public Game startGame(Room room) {
@@ -115,6 +117,7 @@ public class GameService {
                     "MATCH_FORFEIT_WIN"
             );
 
+            updateStats(game);
             game.markRewardsGranted();
 
             if (game.getWinner().getId().equals(game.getPlayer1().getId())) {
@@ -146,6 +149,7 @@ public class GameService {
                         "MATCH_DRAW"
                 );
 
+                updateStats(game);
                 game.markRewardsGranted();
 
                 return new RewardResult(
@@ -167,6 +171,7 @@ public class GameService {
                         "MATCH_LOSS"
                 );
 
+                updateStats(game);
                 game.markRewardsGranted();
 
                 return new RewardResult(
@@ -187,6 +192,7 @@ public class GameService {
                         "MATCH_LOSS"
                 );
 
+                updateStats(game);
                 game.markRewardsGranted();
 
                 return new RewardResult(
@@ -198,6 +204,64 @@ public class GameService {
         throw new IllegalStateException(
                 "Resultado da partida não suportado."
         );
+    }
+
+    private void updateStats(Game game) {
+
+        if (game.getEndReason() == GameEndReason.FORFEIT_TIMEOUT) {
+
+            userStatsService.registerWin(
+                    game.getWinner()
+            );
+
+            User loser =
+                    game.getWinner().getId().equals(
+                            game.getPlayer1().getId()
+                    )
+                            ? game.getPlayer2()
+                            : game.getPlayer1();
+
+            userStatsService.registerLoss(
+                    loser
+            );
+
+            return;
+        }
+
+        GameOutcome outcome = game.getOutcome();
+
+        switch (outcome) {
+
+            case DRAW -> {
+                userStatsService.registerDraw(
+                        game.getPlayer1()
+                );
+
+                userStatsService.registerDraw(
+                        game.getPlayer2()
+                );
+            }
+
+            case PLAYER1_WIN -> {
+                userStatsService.registerWin(
+                        game.getPlayer1()
+                );
+
+                userStatsService.registerLoss(
+                        game.getPlayer2()
+                );
+            }
+
+            case PLAYER2_WIN -> {
+                userStatsService.registerLoss(
+                        game.getPlayer1()
+                );
+
+                userStatsService.registerWin(
+                        game.getPlayer2()
+                );
+            }
+        }
     }
 
     private void creditCoins(

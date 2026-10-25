@@ -4,6 +4,7 @@
 
     import com.jogodavelha.character.Character;
     import com.jogodavelha.config.JwtProperties;
+    import com.jogodavelha.profile.UserStatsRepository;
     import com.jogodavelha.skill.Skill;
     import com.jogodavelha.skill.SkillCategory;
     import com.jogodavelha.skill.SkillRepository;
@@ -55,6 +56,9 @@
 
         @Mock
         private UserSkillRepository userSkillRepository;
+
+        @Mock
+        private UserStatsRepository userStatsRepository;
 
         @InjectMocks
         private AuthService authService;
