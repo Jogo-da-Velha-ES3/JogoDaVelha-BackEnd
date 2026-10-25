@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import java.util.List;
 
 
 import java.util.UUID;
@@ -65,5 +66,17 @@ public class ProfileController {
         );
 
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/history")
+    public ResponseEntity<List<MatchHistoryResponse>> history(
+            Authentication authentication
+    ) {
+
+        UUID userId = (UUID) authentication.getPrincipal();
+
+        return ResponseEntity.ok(
+                profileService.getHistory(userId)
+        );
     }
 }

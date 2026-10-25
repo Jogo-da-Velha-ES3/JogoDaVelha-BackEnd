@@ -6,6 +6,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.jogodavelha.auth.UsernameAlreadyExistsException;
+import com.jogodavelha.game.Game;
+import com.jogodavelha.game.GameEndReason;
+import com.jogodavelha.game.GameRepository;
+import java.util.List;
 
 import java.util.UUID;
 
@@ -14,6 +18,7 @@ import java.util.UUID;
 @Transactional(readOnly = true)
 public class ProfileService {
 
+    private final GameRepository gameRepository;
     private final UserRepository userRepository;
     private final UserStatsRepository userStatsRepository;
 
@@ -72,6 +77,43 @@ public class ProfileService {
         user.setUsername(normalizedUsername);
 
         userRepository.save(user);
+    }
+
+    public List<MatchHistoryResponse> getHistory(UUID userId) {
+
+        return gameRepository.findFinishedGamesByPlayerId(userId)
+                .stream()
+                .map(game -> {
+
+                    boolean isPlayer1 =
+                            game.getPlayer1().getId().equals(userId);
+
+                    User opponent =
+                            isPlayer1
+                                    ? game.getPlayer2()
+                                    : game.getPlayer1();
+
+                    String result;
+
+                    if (game.getWinner() == null) {
+                        result = "DRAW";
+                    } else if (game.getWinner().getId().equals(userId)) {
+                        result = "WIN";
+                    } else {
+                        result = "LOSS";
+                    }
+
+                    return new MatchHistoryResponse(
+                            game.getId(),
+                            opponent != null
+                                    ? opponent.getUsername()
+                                    : "Desconhecido",
+                            result,
+                            game.getEndReason() == GameEndReason.FORFEIT_TIMEOUT,
+                            game.getFinishedAt()
+                    );
+                })
+                .toList();
     }
 
 }
