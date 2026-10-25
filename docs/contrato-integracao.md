@@ -402,18 +402,18 @@ Resposta 200 (OK):
 [
   {
     "gameId": "123e4567-e89b-12d3-a456-426614174000",
-    "opponent": "opponentuser",
+    "opponentUsername": "opponentuser",
     "result": "WIN",
-    "wasForfeit": false,
+    "walkover": false,
     "finishedAt": "2026-10-25T10:30:00Z"
   }
 ]
 ```
 
 - `gameId`: UUID da partida
-- `opponent`: apelido do oponente (ou "Desconhecido" se não disponível)
+- `opponentUsername`: apelido do oponente (ou "Desconhecido" se não disponível)
 - `result`: resultado da partida ("WIN", "LOSS" ou "DRAW")
-- `wasForfeit`: true se a partida foi encerrada por W.O. (FORFEIT_TIMEOUT)
+- `walkover`: true se a partida foi encerrada por W.O. (FORFEIT_TIMEOUT)
 - `finishedAt`: timestamp de encerramento da partida (ISO-8601 UTC)
 
 Erros:
