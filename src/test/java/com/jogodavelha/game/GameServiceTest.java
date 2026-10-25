@@ -1,6 +1,7 @@
 package com.jogodavelha.game;
 
 import com.jogodavelha.auth.User;
+import com.jogodavelha.coins.CoinTransactionService;
 import com.jogodavelha.game.service.GameService;
 import com.jogodavelha.room.Room;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,6 +25,9 @@ class GameServiceTest {
 
     @Mock
     private GameRepository gameRepository;
+
+    @Mock
+    private CoinTransactionService coinTransactionService;
 
     @InjectMocks
     private GameService gameService;
@@ -111,6 +115,18 @@ class GameServiceTest {
 
         verify(gameRepository, times(2)).findById(gameId);
         verify(gameRepository, times(2)).save(game);
+        verify(coinTransactionService).registerCredit(
+                player1,
+                GameService.COINS_WIN,
+                "MATCH_WIN"
+        );
+
+        verify(coinTransactionService).registerCredit(
+                player2,
+                GameService.COINS_LOSS,
+                "MATCH_LOSS"
+        );
+
     }
 
     @Test
@@ -133,6 +149,17 @@ class GameServiceTest {
 
         verify(gameRepository, times(2)).findById(gameId);
         verify(gameRepository, times(2)).save(game);
+        verify(coinTransactionService).registerCredit(
+                player2,
+                GameService.COINS_WIN,
+                "MATCH_WIN"
+        );
+
+        verify(coinTransactionService).registerCredit(
+                player1,
+                GameService.COINS_LOSS,
+                "MATCH_LOSS"
+        );
     }
 
     @Test
@@ -156,6 +183,17 @@ class GameServiceTest {
 
         verify(gameRepository, times(3)).findById(gameId);
         verify(gameRepository, times(3)).save(game);
+        verify(coinTransactionService).registerCredit(
+                player1,
+                GameService.COINS_DRAW,
+                "MATCH_DRAW"
+        );
+
+        verify(coinTransactionService).registerCredit(
+                player2,
+                GameService.COINS_DRAW,
+                "MATCH_DRAW"
+        );
     }
 
     @Test
@@ -179,6 +217,17 @@ class GameServiceTest {
 
         verify(gameRepository, times(3)).findById(gameId);
         verify(gameRepository, times(3)).save(game);
+        verify(coinTransactionService).registerCredit(
+                player1,
+                GameService.COINS_DRAW,
+                "MATCH_DRAW"
+        );
+
+        verify(coinTransactionService).registerCredit(
+                player2,
+                GameService.COINS_DRAW,
+                "MATCH_DRAW"
+        );
     }
 
     @Test
@@ -257,6 +306,11 @@ class GameServiceTest {
         assertEquals(finishedAt, finished.getFinishedAt());
         verify(gameRepository, times(2)).findById(gameId);
         verify(gameRepository, times(1)).save(game);
+        verify(coinTransactionService).registerCredit(
+                winner,
+                GameService.COINS_FORFEIT_WIN,
+                "MATCH_FORFEIT_WIN"
+        );
     }
 
     @Test

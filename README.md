@@ -1042,6 +1042,52 @@ como uso na futura integração de consumo, que continua na BE-015.
 Sem endpoints, destinos STOMP, migrations ou mudanças no formato do `GameState`.
 O evento `ABILITY_RESOLVED` continua sendo proposta no contrato.
 
+## Draft (BE-037)
+
+`DraftService.start(roomId, roomCode, player1Id, player2Id)` inicia o Draft da sala,
+com prazo único de 20s contado no servidor. A partida ainda não existe nessa etapa;
+criar `Game` e `GameState` após `DraftCompleted` continua na BE-038.
+
+`DraftEligibilityProvider` consulta os inventários por um adaptador dos serviços
+de personagens e habilidades. O conjunto elegível é guardado no início do Draft,
+incluindo habilidades compradas, independentemente de `initialSkill`. São exigidos
+dois jogadores diferentes, personagens que permitam escolhas distintas e pelo
+menos duas habilidades elegíveis distintas para cada jogador.
+
+`updatePlayer` é o ponto de integração das BE-011/BE-013. O callback deve ser puro,
+pois pode ser reexecutado em conflito. O estado passa por personagem, habilidades
+e pronto; duas habilidades confirmadas bloqueiam novas alterações daquele jogador.
+Mudar escolhas não reinicia o prazo. No instante do prazo, a confirmação já é
+rejeitada, e o timer completa somente o que estiver pendente com sorteio do servidor.
+Personagens não se repetem entre os jogadores; habilidades não se repetem no par
+do mesmo jogador. O sorteio é injetável e ocorre antes dos retries do Redis.
+
+O estado usa `draft:state:{roomId}`, com gravação inicial exclusiva e updates por
+versão. A retenção usa `game.state.ttl` (30 min por padrão), não 20s, para não apagar
+o Draft antes da auto-escolha. O timer usa o agendador já existente. Após reinício,
+a futura orquestração deve chamar `resume(roomId)` para rearmar o prazo original;
+`cancel(roomId)` cancela o agendamento e `DraftStateManager.delete(roomId)` limpa
+o estado ao encerrar/reutilizar a sala.
+
+Após persistir, `DraftUpdated` dispara `DRAFT_UPDATE` em `/topic/rooms/{code}`.
+O payload contém `deadline`, `characters` por lado (`P1`/`P2`, símbolos do catálogo)
+e `ready` por lado, no envelope `{ type, payload, serverTime }`. A ordem dos
+jogadores passada a `start` define P1 (host) e P2 (convidado). Inventários e
+habilidades escolhidas não são enviados ao tópico. O formato acompanha o consumidor
+existente no frontend; a validação conjunta segue pendente na FE-17.
+
+`DraftCompleted` é interno e leva as escolhas finais à BE-038. A auto-escolha não
+chama o serviço de turnos nem altera contadores de W.O. Os eventos não têm fila
+persistente ou reentrega automática após falha/reinício.
+
+As BE-011/BE-013 implementam as mensagens de escolha usando `updatePlayer`;
+a BE-038 liga o início do Draft à sala e cria a partida ao receber `DraftCompleted`.
+Essas integrações não fazem parte da BE-037. Não há novos handlers de escolha,
+códigos públicos de erro, migrations ou alterações no `GameState` nesta entrega.
+Os testes usam Redis, inventários e agendador simulados. A integração STOMP usa
+servidor local em porta aleatória e dois clientes autenticados, sem PostgreSQL,
+Redis externo ou Flyway, cobrindo conclusão antecipada e auto-escolha por prazo.
+
 ## 🧪 Testes
 
 O `RoomService` da BE-008 cria salas com `createRoom(playerId)` e permite entrada
@@ -1188,6 +1234,7 @@ Erros de habilidade no STOMP (BE-014.1 e BE-014.2), enviados ao autor em `/user/
 | `SKILL_SILENCED` | 400 | Jogador sob Silêncio tenta ativar uma habilidade |
 | `BAD_REQUEST` | 400 | Ação de jogo fora da fase permitida, fora da vez ou após o prazo |
 | `SKILL_ALREADY_USED` | 400 | Jogador tenta reutilizar o mesmo código de habilidade no round atual |
+| `SKILL_NOT_IN_DECK` | 400 | Habilidade não está no deck selecionado para o round atual |
 
 Esses códigos preservam o erro de domínio no `ApiError`, sem `fields` ou `error`.
 Não há endpoint REST de habilidade nem handler público de ativação; a exposição STOMP
