@@ -98,6 +98,7 @@ class RoomPersistenceIT {
                         status varchar(16) NOT NULL CHECK (status IN ('WAITING', 'IN_GAME', 'CLOSED')),
                         player1_id uuid NOT NULL REFERENCES users(id),
                         player2_id uuid REFERENCES users(id),
+                        created_at timestamptz NOT NULL DEFAULT now(),
                         CHECK (player2_id IS NULL OR player1_id <> player2_id),
                         CHECK (status <> 'IN_GAME' OR player2_id IS NOT NULL)
                     )
