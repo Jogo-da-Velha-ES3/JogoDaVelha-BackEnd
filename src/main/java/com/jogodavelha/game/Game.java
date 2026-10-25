@@ -78,6 +78,13 @@ public class Game {
     @Column(name = "finished_at")
     private Instant finishedAt;
 
+    /**
+     * Resultado das recompensas concedidas na finalização da partida.
+     * Utilizado pela publicação do evento MATCH_END.
+     */
+    @Transient
+    private RewardResult rewardResult;
+
     public Game(Room room, User player1) {
         if (room == null || room.getId() == null) {
             throw new IllegalArgumentException("Room não pode ser nula");
@@ -112,6 +119,10 @@ public class Game {
      */
     public Score getScore() {
         return new Score(victoriesPlayer1, victoriesPlayer2);
+    }
+
+    public void setRewardResult(RewardResult rewardResult) {
+        this.rewardResult = rewardResult;
     }
 
     /**

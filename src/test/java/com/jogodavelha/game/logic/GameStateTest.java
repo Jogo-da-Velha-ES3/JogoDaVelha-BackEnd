@@ -10,6 +10,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -117,6 +118,30 @@ class GameStateTest {
         state.recordSkillUse(player1Id, "TORNADO");
         assertTrue(state.hasUsedSkill(player2Id, "BOMBA"));
         assertTrue(state.hasUsedSkill(player1Id, "TORNADO"));
+    }
+
+    @Test
+    void tracksRoundDeckByPlayerAndClearsItAtNewRound() {
+        GameState state = completeState(true);
+        state.setRoundSkillDeck(player1Id, List.of("BOMBA", "SILENCIO", "TORNADO"));
+
+        assertTrue(state.hasSkillInRoundDeck(player1Id, "SILENCIO"));
+        assertFalse(state.hasSkillInRoundDeck(player2Id, "SILENCIO"));
+
+        state.startRound(2, 10_000, 1_000);
+
+        assertFalse(state.hasSkillInRoundDeck(player1Id, "SILENCIO"));
+    }
+
+    @Test
+    void serializesRoundDeckIncludingSelectedDrawnSkills() throws JsonProcessingException {
+        GameState state = completeState(true);
+        state.setRoundSkillDeck(player1Id, List.of("BOMBA", "SILENCIO", "TORNADO"));
+
+        GameState restored = objectMapper.readValue(objectMapper.writeValueAsString(state), GameState.class);
+
+        assertTrue(restored.hasSkillInRoundDeck(player1Id, "SILENCIO"));
+        assertFalse(restored.hasSkillInRoundDeck(player2Id, "SILENCIO"));
     }
 
     @Test

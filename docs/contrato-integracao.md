@@ -75,6 +75,7 @@ implementa consumo por round nesta branch, mas a exposição STOMP continua pert
 | `SKILL_INVALID_DESTINATION` | 400 | Destino do Tornado ou Troca Rápida ausente quando há opção, fora do tabuleiro, ocupado, bloqueado por Escudo ou não adjacente. |
 | `SKILL_SILENCED` | 400 | Jogador sob Silêncio tenta ativar uma habilidade. |
 | `SKILL_ALREADY_USED` | 400 | Jogador tenta reutilizar o mesmo código de habilidade no round atual. |
+| `SKILL_NOT_IN_DECK` | 400 | Habilidade não pertence ao deck selecionado pelo jogador para o round atual. |
 
 O catálogo de códigos acima corresponde às habilidades da BE-014.1 e BE-014.2 já
 implementadas. `NO_VALID_TARGET` e `BLOCKED_BY_FORCE_FIELD` são resultados válidos,
@@ -82,6 +83,11 @@ consomem a habilidade e a ação, e não são erros. Ativação válida grava o 
 `Skill.code`, encerra a ação via `TurnService` e publica a mudança somente após persistir.
 Rejeições de fase, jogador da vez ou prazo usam `BAD_REQUEST` (400) no erro STOMP,
 com a mensagem da validação existente; reutilização usa `SKILL_ALREADY_USED` (400).
+Habilidades são aceitas somente quando fazem parte do deck corrente persistido no estado
+Redis, que é definido pelo fluxo de Draft; isso inclui a habilidade sorteada e selecionada.
+O fluxo de Draft deve gravar o deck dos dois jogadores antes de iniciar as ações do round.
+Até essa integração ser concluída por BE-037/BE-013.1, ativações sem deck configurado
+falham de forma segura com `SKILL_NOT_IN_DECK`.
 
 Pedidos inválidos não devem consumir a habilidade ou encerrar o turno: o chamador
 precisa validar antes do consumo e não prosseguir com o fim da ação após a exceção.
@@ -107,6 +113,7 @@ privado, não entrega por um broker real.
 | POST | `/api/rooms` | Bearer exigido | 201 | ✅ BE-009.1 | 
 | POST | `/api/rooms/{code}/join` | Bearer exigido | 200 | ✅ BE-009.1 |
 | GET | `/api/skills/inventory` | Bearer exigido | 200 | ✅ BE-041 |
+| GET | `/api/coins/balance` | Bearer exigido | 200 | ✅ BE-026 | 
 | GET | `/api/characters/inventory` | Bearer exigido | 200 | ✅ BE-028 |
 
 ### `GET /api/health`
@@ -120,6 +127,24 @@ Endpoint leve para confirmar disponibilidade. Sem auth. Sem parâmetros ou corpo
 ```
 
 Erros: nenhum erro de domínio documentado; erros HTTP genéricos seguem o catálogo `ApiError`.
+
+### `GET /api/coins/balance`
+
+✅ Disponível na dev — BE-026.
+
+Bearer Token obrigatório.
+
+Retorna o saldo atual de moedas do usuário autenticado.
+
+Resposta 200 (OK):
+
+```json
+{"coinsBalance": 150}
+```
+Erros:
+
+401 UNAUTHORIZED — token ausente ou inválido.
+500 INTERNAL_ERROR — erro interno do servidor.
 
 ### `POST /api/auth/register`
 
@@ -198,16 +223,7 @@ Sem corpo de requisição.
 ```http
 POST /api/rooms/0042/join
 Authorization: Bearer <jwt>
-```    
-Erros:
-
-400 ROOM_BAD_REQUEST — código inválido ou usuário inválido.
-404 ROOM_NOT_FOUND — sala inexistente ou encerrada.
-409 ROOM_FULL — sala já possui dois jogadores.
-409 ROOM_ALREADY_STARTED — partida já iniciada.
-409 ROOM_CONFLICT — jogador já está em sala ou partida ativa.
-401 UNAUTHORIZED — token ausente ou inválido.
-500 INTERNAL_ERROR — erro interno do servidor.
+```
 
 Sucesso 200:
 ```json
@@ -221,6 +237,15 @@ Sucesso 200:
   "player2Username": "bia"
 }
 ```
+Erros:
+
+400 ROOM_BAD_REQUEST — código inválido ou usuário inválido.
+404 ROOM_NOT_FOUND — sala inexistente ou encerrada.
+409 ROOM_FULL — sala já possui dois jogadores.
+409 ROOM_ALREADY_STARTED — partida já iniciada.
+409 ROOM_CONFLICT — jogador já está em sala ou partida ativa.
+401 UNAUTHORIZED — token ausente ou inválido.
+500 INTERNAL_ERROR — erro interno do servidor.
 
 Não há anotações Bean Validation nos parâmetros.
 
@@ -294,11 +319,35 @@ Payload não definido adiante permanece **payload a definir**; nada abaixo está
 - Endpoint `/ws`, WebSocket STOMP puro; `WebSocketConfig` não configura SockJS. Prefixo de aplicação `/app`; brokers simples `/topic` e `/queue`; destinos privados usam `/user/queue/...`.
 - ✅ `/ws/**` permanece público no handshake HTTP para permitir o upgrade WebSocket. Cada frame STOMP `CONNECT` precisa conter `Authorization: Bearer <jwt>`; o backend valida assinatura e expiração por `JwtService` e rejeita o CONNECT ausente/malformado/inválido. O `sub` UUID validado é o nome do `Principal` associado à sessão e usado nos handlers.
 - ✅ Único handler implementado: `SEND /app/room/{code}/connect` sem corpo de identidade (pode ser enviado sem body). **BREAKING (BE-040):** não envie `playerId`; a identidade vem do `Principal` estabelecido no CONNECT. O registro associa sessão, sala e jogador e marca jogador conectado. `PlayerDisconnectionListener` remove associação da sessão e, se conhecida, marca jogador desconectado; sessão desconhecida não produz ação no serviço.
+- ✅ Gameplay (BE-023): `SEND /app/game/{gameId}/move` recebe `{ "position": 0 }`; `SEND /app/game/{gameId}/skill` recebe `{ "skillCode": "BOMBA", "targetPosition": 1, "destinationPosition": 2 }` (posições opcionais conforme habilidade). Campos `playerId` enviados pelo cliente são ignorados. A identidade vem do `Principal`. O sucesso não tem ACK de mensagem nesta etapa; turno/resultado de round é publicado como `TurnChangedEvent` interno após persistência, para consumo pela integração de broadcast da BE-024. Destino e payload público final seguem pendentes de alinhamento com o front conforme seção 4.
 - Em clientes STOMP.js, passe o token por `connectHeaders`, por exemplo `client.connect({ Authorization: `Bearer ${token}` })` na API legada ou `new Client({ connectHeaders: { Authorization: `Bearer ${token}` } })` na API atual. O cabeçalho é um header nativo STOMP, não um header do handshake HTTP.
 - Falha de autenticação encerra/rejeita o CONNECT STOMP; não há sessão anônima e a resposta de falha pode ser um frame STOMP `ERROR`/fechamento, não um `ApiError` REST nem uma mensagem garantida em `/user/queue/errors` (a sessão ainda não foi autenticada).
 - ⚠️ O disconnect acima é o comportamento observado; reconexão/snapshot e heartbeat constam em BE-025 (24–27/10).
 - Erros são enviados por `@SendToUser` para `/user/queue/errors`, como `ApiError`. Nos handlers genéricos, `code` vem de `HttpStatus.name()` (por exemplo `BAD_REQUEST`, `CONFLICT`, `INTERNAL_SERVER_ERROR`) e existe também `error` com a frase HTTP; isso diverge do catálogo REST. As BE-014.1 e BE-014.2 preservam os quatro códigos de habilidade descritos acima; o ajuste dos demais erros permanece na BE-044.
 - A fila `/user/queue/errors` é destinada a sessões autenticadas; não se aplica ao CONNECT rejeitado, que ainda não tem usuário STOMP associado.
+
+### `PLAYER_JOINED` — `/topic/rooms/{code}`
+
+✅ Disponível na `dev` — BE-035.
+
+Quando é enviado: após o commit da entrada do 2º jogador (`POST /api/rooms/{code}/join`). Entradas rejeitadas não geram mensagem.
+Quem recebe: todos os inscritos no tópico (broadcast). O cliente do host deve filtrar por `hostId`.
+Envelope: `{ "type", "payload", "serverTime" }`. `serverTime` é o instante ISO-8601 definido pelo servidor; os dados do evento ficam em `payload`.
+
+```json
+{
+  "type": "PLAYER_JOINED",
+  "payload": {
+    "roomCode": "0042",
+    "guestId": "123e4567-e89b-12d3-a456-426614174002",
+    "opponentName": "bia",
+    "hostId": "123e4567-e89b-12d3-a456-426614174000"
+  },
+  "serverTime": "2026-10-23T12:00:00Z"
+}
+```
+
+Compatibilidade: o tópico não restringe a inscrição; qualquer cliente que souber o código da sala recebe o evento (a restrição por `Principal` fica para depois).
 
 ### Propostas de destinos e eventos
 
@@ -350,7 +399,6 @@ Redis externo ou migrations.
 | Evento | Quando / destinatário | Campos previstos | Card / status |
 |---|---|---|---|
 | `ROOM_SNAPSHOT` | Estado completo ao conectar/reconectar; jogador da sala | payload a definir (BE-025 descreve snapshot com estado e prazo do turno) | BE-025, 27/10; 📝 |
-| `PLAYER_JOINED` | Entrada do segundo jogador; sala / host | Nome do adversário (BE-035) | BE-035, 18/10; 📝 |
 | `PHASE_CHANGE` | Mudança de fase do jogo; sala | payload a definir | BE-023/BE-024; 20/10 e 24/10; 📝 |
 | `TURN_START` | Começo de turno; sala | Prazo do turno como timestamp do servidor (BE-024); demais campos a definir | BE-020/BE-024; 15/10 e 24/10; 📝 |
 | `BOARD_UPDATE` | Após ação válida; ambos na sala | Prazo como timestamp do servidor, round, placar, flag de morte súbita, estado de cada casa (vazia/P1/P2/bloqueada/congelada/reforçada) e motivo de W.O. ao fim da partida | BE-024, 24/10; 📝 |
@@ -422,6 +470,7 @@ Adicional do backlog não incluído na lista inicial do front:
 | Envelope STOMP comum, conteúdo de eventos e destino final `/move` | Back + front | BE-023/024/035/037/038 |
 | URL pública de produção indisponível | Back/infra | BE-033/033.1 |
 | Formato de data geral além do timestamp ISO UTC de erro | Back + front | — |
+| Tópico `/topic/rooms/{code}` sem restrição de inscrição; restringir por Principal | Back | BE-035 |
 
 ## 5. Como manter este contrato
 
@@ -476,3 +525,4 @@ Erros/compatibilidade:
 |---|---|---|---|
 | 21/10/2026 | Documentado o inventário REST de personagens; atualizado o status BE-014.2 e esclarecida a disponibilidade REST de habilidades. | NOVO | BE-028, BE-014.2 |
 | 15/10/2026 | Criação do contrato com o estado atual da dev. CORS, erro único, prefixo `/api` e códigos de habilidade entram como mudanças já disponíveis; rotas REST que ganharam `/api` são breaking. | NOVO; BREAKING (prefixo REST) | BE-034, BE-044; PR docs/contrato-integracao |
+| 23/10/2026 | Evento `PLAYER_JOINED` disponível em `/topic/rooms/{code}` com envelope `{type, payload, serverTime}`. | NOVO | BE-035; PR feat/room-joined-event |

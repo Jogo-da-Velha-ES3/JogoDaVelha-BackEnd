@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.Optional;
@@ -22,7 +23,8 @@ class RoomServiceTest {
     private final UserRepository users = mock(UserRepository.class);
     private final GameRepository games = mock(GameRepository.class);
     private final RoomCodeAllocator allocator = spy(new RoomCodeAllocator(rooms, games, mock(JdbcTemplate.class)));
-    private final RoomService service = new RoomService(rooms, users, allocator);
+    private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
+    private final RoomService service = new RoomService(rooms, users, allocator, events);
     private final User owner = player("owner");
     private final User guest = player("guest");
     private final Room room = new Room("0042", owner);
@@ -55,6 +57,14 @@ class RoomServiceTest {
         order.verify(allocator).lockMembership();
         order.verify(rooms).findByCodeAndStatusIn("0042", RoomCodeAllocator.ACTIVE);
         order.verify(rooms).saveAndFlush(room);
+        var captor = org.mockito.ArgumentCaptor.forClass(PlayerJoinedRoomEvent.class);
+        verify(events).publishEvent(captor.capture());
+        PlayerJoinedRoomEvent event = captor.getValue();
+        assertEquals("0042", event.roomCode());
+        assertEquals(guest.getId(), event.guestId());
+        assertEquals("guest", event.guestUsername());
+        assertEquals(owner.getId(), event.hostId());
+        assertEquals("owner", event.hostUsername());
     }
 
     @ParameterizedTest
@@ -62,7 +72,7 @@ class RoomServiceTest {
     @ValueSource(strings = {"42", "12345", "abcd", "１２３４", " 0042"})
     void rejectsInvalidCodeBeforeAccessingDatabase(String code) {
         assertThrows(IllegalArgumentException.class, () -> service.joinRoom(code, guest.getId()));
-        verifyNoInteractions(users, rooms, allocator);
+        verifyNoInteractions(users, rooms, allocator, events);
     }
 
     @Test
@@ -86,18 +96,27 @@ class RoomServiceTest {
     void rejectsFullRoomWithoutReplacingSecondPlayer() {
         prepareJoin();
         User second = player("second");
-        room.join(second);
+        room.setPlayer2(second);          // sala cheia, mas ainda WAITING (guarda defensiva)
         var error = assertThrows(
                 RoomFullException.class,
                 () -> service.joinRoom("0042", guest.getId())
         );
 
-        assertEquals(
-                "A sala está cheia.",
-                error.getMessage()
-        );
+        assertEquals("A sala está cheia.", error.getMessage());
+        verify(rooms, never()).saveAndFlush(any());
+        assertSame(second, room.getPlayer2());
+    }
+
+    @Test
+    void rejectsJoinWhenRoomAlreadyHasSecondPlayer() {
+        prepareJoin();
+        User second = player("second");
+        room.join(second);
+
+        assertThrows(RoomAlreadyStartedException.class, () -> service.joinRoom("0042", guest.getId()));
 
         verify(rooms, never()).saveAndFlush(any());
+        verify(events, never()).publishEvent(any(Object.class));
         assertSame(second, room.getPlayer2());
     }
 
@@ -165,6 +184,7 @@ class RoomServiceTest {
         var error = assertThrows(IllegalStateException.class, () -> service.joinRoom("0042", guest.getId()));
         assertEquals(message, error.getMessage());
         verify(rooms, never()).saveAndFlush(any());
+        verify(events, never()).publishEvent(any(Object.class));
     }
 
     private static User player(String name) {
