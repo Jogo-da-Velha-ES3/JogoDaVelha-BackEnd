@@ -14,6 +14,11 @@ C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\j
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\config\StompJwtWebSocketIntegrationTest.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\error\GlobalExceptionHandlerTest.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\error\WebSocketExceptionHandlerTest.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\game\draft\DraftEventPublisherTest.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\game\draft\DraftServiceTest.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\game\draft\DraftStateManagerTest.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\game\draft\DraftWebSocketIntegrationTest.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\game\draft\InventoryDraftEligibilityProviderTest.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\game\GameServiceTest.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\game\GameTest.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\game\logic\GameStateManagerIT.java
@@ -31,6 +36,7 @@ C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\j
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\room\RoomTest.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\skill\DefensiveEffectsTest.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\skill\OffensiveEffectsTest.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\skill\SkillActivationServiceTest.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\skill\SkillCodePersistenceIT.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\skill\SkillEngineTest.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\test\java\com\jogodavelha\skill\SkillServiceTest.java

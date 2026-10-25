@@ -334,16 +334,14 @@ Exemplo de `DRAFT_UPDATE` recebido pelos inscritos em `/topic/rooms/0042`:
 o convidado; lados não dependem de quem começa a jogar. `characters` omite lados
 que ainda não escolheram e usa `X`, `O`, `TRIANGULO`, `QUADRADO`, `ESTRELA` ou
 `CORACAO`, não UUIDs. `ready` sempre contém os dois lados. Inventários e habilidades
-escolhidas não são publicados. O tópico é de broadcast a sessões STOMP autenticadas;
-não há autorização de inscrição por sala nesta tarefa.
+escolhidas não são publicados. A inscrição no tópico exige sessão STOMP autenticada e participante da sala ativa correspondente ao código.
 
 O formato corresponde a `src/types/events.ts` e `src/stores/serverEvents.ts` do
 [frontend, commit 718864c](https://github.com/Jogo-da-Velha-ES3/JogoDaVelha-FrontEnd/tree/718864c8124b9a5ca84466447875199f9b1dbaf9).
 A checagem do consumidor não substitui a validação conjunta da FE-17, ainda aberta.
 
 BE-011/BE-013 adicionam os handlers de escolha. BE-038 inicia o Draft e consome
-`DraftCompleted` para criar a partida; após reinício deve chamar `resume(roomId)`.
-Essas ligações não são implementadas nesta entrega. A integração STOMP da BE-037
+`DraftCompleted` para criar a partida. Na inicialização, a recuperação varre os estados persistidos no Redis e chama `resume(roomId)` para rearmar os prazos ativos. A integração STOMP da BE-037
 cobre dois clientes autenticados, conclusão antecipada e timeout, sem banco,
 Redis externo ou migrations.
 

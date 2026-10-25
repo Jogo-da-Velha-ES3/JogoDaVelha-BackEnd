@@ -10,6 +10,7 @@ import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Set;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
@@ -59,6 +60,12 @@ public class DraftStateManager {
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Estado de Draft inválido no Redis.", exception);
         }
+    }
+
+    public List<UUID> findAllRoomIds() {
+        Set<String> keys = redis.keys("draft:state:*");
+        if (keys == null || keys.isEmpty()) return List.of();
+        return keys.stream().map(key -> UUID.fromString(key.substring("draft:state:".length()))).toList();
     }
 
     public void delete(UUID roomId) {

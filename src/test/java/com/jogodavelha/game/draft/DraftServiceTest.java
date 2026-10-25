@@ -197,6 +197,26 @@ class DraftServiceTest {
     }
 
     @Test
+    void retriedChoiceRechecksTheClockAfterAConcurrentRedisVersionConflict() throws Exception {
+        service.start(room, "0042", p1, p2);
+        AtomicInteger attempts = new AtomicInteger();
+        when(redis.execute(any(RedisScript.class), eq(List.of(key)), anyString(), anyString(), anyString()))
+                .thenAnswer(invocation -> {
+                    if (attempts.incrementAndGet() == 1) {
+                        stored.set(mapper.writeValueAsString(snapshot().withVersion(1)));
+                        now.set(21000);
+                        return 0L;
+                    }
+                    return compareAndSet(invocation);
+                });
+
+        assertThrows(IllegalStateException.class,
+                () -> service.updatePlayer(room, p1, player -> player.withCharacter(a)));
+        assertNull(snapshot().player1().characterId());
+        assertEquals(1, snapshot().version());
+    }
+
+    @Test
     void rejectsWrongOrderIneligibleChoicesAndNonParticipantWithoutChangingState() {
         service.start(room, "0042", p1, p2);
         DraftState before = snapshot();
@@ -250,6 +270,7 @@ class DraftServiceTest {
         }
 
         assertTrue(snapshot().completed());
+        assertNotEquals(snapshot().player1().characterId(), snapshot().player2().characterId());
         assertEquals(1, snapshot().version());
         assertEquals(1, completedCount());
         assertEquals(2, published.stream().filter(DraftUpdated.class::isInstance).count());

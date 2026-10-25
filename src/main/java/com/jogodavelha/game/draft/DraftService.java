@@ -1,6 +1,7 @@
 package com.jogodavelha.game.draft;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Service;
@@ -30,7 +31,7 @@ public class DraftService {
 
     @Autowired
     public DraftService(DraftStateManager states, DraftEligibilityProvider eligibility, Clock clock,
-                        TaskScheduler scheduler, ApplicationEventPublisher events) {
+                        @Qualifier("turnTaskScheduler") TaskScheduler scheduler, ApplicationEventPublisher events) {
         this(states, eligibility, clock, scheduler, events, new SecureRandom());
     }
 
@@ -57,9 +58,8 @@ public class DraftService {
 
     // Integração das BE-011/BE-013. Callback puro: pode ser reexecutado em conflito de versão.
     public void updatePlayer(UUID roomId, UUID playerId, UnaryOperator<DraftState.Player> selection) {
-        long now = clock.millis();
         states.update(roomId, current -> {
-            if (current.completed() || now >= current.deadlineEpochMillis()) {
+            if (current.completed() || clock.millis() >= current.deadlineEpochMillis()) {
                 throw new IllegalStateException("Prazo encerrado ou Draft já concluído.");
             }
             DraftState.Player before = current.player(playerId);

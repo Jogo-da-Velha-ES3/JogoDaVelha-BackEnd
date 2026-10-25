@@ -34,6 +34,15 @@ C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\j
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\error\ApiError.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\error\GlobalExceptionHandler.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\error\WebSocketExceptionHandler.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\draft\DraftCompleted.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\draft\DraftEligibilityProvider.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\draft\DraftEventPublisher.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\draft\DraftRecovery.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\draft\DraftService.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\draft\DraftState.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\draft\DraftStateManager.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\draft\DraftUpdated.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\draft\InventoryDraftEligibilityProvider.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\Game.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\GameController.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\game\GameDTO.java
@@ -83,6 +92,7 @@ C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\j
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\skill\ShieldEffect.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\skill\SilenceEffect.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\skill\Skill.java
+C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\skill\SkillActivationService.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\skill\SkillCategory.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\skill\SkillContext.java
 C:\Users\vhmil\Development\Projects\Jogo da Velha\JogoDaVelha-BackEnd\src\main\java\com\jogodavelha\skill\SkillController.java

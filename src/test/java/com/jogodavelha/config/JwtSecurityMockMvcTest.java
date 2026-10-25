@@ -28,7 +28,7 @@ class JwtSecurityMockMvcTest {
     private static final UUID USER_ID = UUID.fromString("123e4567-e89b-12d3-a456-426614174000");
 
     @Autowired MockMvc mvc;
-    @Autowired JwtService jwtService;
+    @Autowired @org.springframework.beans.factory.annotation.Qualifier("testJwtService") JwtService jwtService;
 
     @TestConfiguration
     static class TestBeans {

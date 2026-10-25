@@ -8,6 +8,8 @@ import com.jogodavelha.character.Character;
 import com.jogodavelha.character.CharacterRepository;
 import com.jogodavelha.character.CharacterSymbol;
 import com.jogodavelha.config.*;
+import com.jogodavelha.room.Room;
+import com.jogodavelha.room.RoomRepository;
 import com.jogodavelha.websocket.WebSocketService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,7 +28,6 @@ import org.springframework.context.event.EventListener;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.script.RedisScript;
-import org.springframework.messaging.converter.MappingJackson2MessageConverter;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.broker.SimpleBrokerMessageHandler;
 import org.springframework.messaging.simp.stomp.*;
@@ -57,9 +58,9 @@ class DraftWebSocketIntegrationTest {
     private static final String TOPIC = "/topic/rooms/0042";
     @LocalServerPort int port;
     @Autowired DraftService drafts;
-    @Autowired JwtService jwt;
+    @Autowired @org.springframework.beans.factory.annotation.Qualifier("jwtService") JwtService jwt;
     @Autowired MutableClock clock;
-    @Autowired SimpleBrokerMessageHandler broker;
+    @Autowired org.springframework.context.ApplicationContext applicationContext;
     @Autowired Completions completions;
     private final List<WebSocketStompClient> clients = new ArrayList<>();
     private final List<StompSession> sessions = new ArrayList<>();
@@ -75,7 +76,13 @@ class DraftWebSocketIntegrationTest {
         @Bean @Primary MutableClock testClock() { return new MutableClock(); }
         @Bean JwtService jwtService(JwtProperties properties, MutableClock clock) { return new JwtService(properties, clock); }
         @Bean Completions completions() { return new Completions(); }
-        @Bean TaskScheduler scheduler() {
+        @Bean RoomRepository rooms() {
+            var repository = mock(RoomRepository.class);
+            when(repository.findActiveMembership(eq("0042"), anyList(), any(UUID.class)))
+                    .thenReturn(Optional.of(mock(Room.class)));
+            return repository;
+        }
+        @Bean @Primary TaskScheduler turnTaskScheduler() {
             var scheduler = mock(TaskScheduler.class);
             when(scheduler.schedule(any(Runnable.class), any(Instant.class))).thenReturn(mock(ScheduledFuture.class));
             return scheduler;
@@ -199,7 +206,7 @@ class DraftWebSocketIntegrationTest {
     private BlockingQueue<JsonNode> subscribe(UUID playerId) throws Exception {
         var client = new WebSocketStompClient(new StandardWebSocketClient());
         clients.add(client);
-        client.setMessageConverter(new MappingJackson2MessageConverter());
+        client.setMessageConverter(new org.springframework.messaging.converter.JacksonJsonMessageConverter());
         User user = new User("draft-user", "hashed", "draft@example.com");
         user.setId(playerId);
         var headers = new StompHeaders();
@@ -221,7 +228,8 @@ class DraftWebSocketIntegrationTest {
         var message = MessageBuilder.withPayload(new byte[0])
                 .setHeader(SimpMessageHeaderAccessor.MESSAGE_TYPE_HEADER, org.springframework.messaging.simp.SimpMessageType.MESSAGE)
                 .setHeader(SimpMessageHeaderAccessor.DESTINATION_HEADER, TOPIC).build();
-        await().atMost(Duration.ofSeconds(5)).until(() -> broker.getSubscriptionRegistry().findSubscriptions(message).size() == 2);
+        await().atMost(Duration.ofSeconds(5)).until(() -> applicationContext.getBean(SimpleBrokerMessageHandler.class)
+                .getSubscriptionRegistry().findSubscriptions(message).size() == 2);
     }
 
     private JsonNode receive(BlockingQueue<JsonNode> events) throws InterruptedException {
