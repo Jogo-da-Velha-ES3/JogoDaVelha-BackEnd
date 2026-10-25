@@ -1088,6 +1088,25 @@ Os testes usam Redis, inventários e agendador simulados. A integração STOMP u
 servidor local em porta aleatória e dois clientes autenticados, sem PostgreSQL,
 Redis externo ou Flyway, cobrindo conclusão antecipada e auto-escolha por prazo.
 
+## Escolha das habilidades iniciais (BE-013)
+
+Durante o Draft, envie `SEND /app/rooms/{code}/draft/abilities` com
+`{"abilities":["BOMBA","ESCUDO"]}` e `content-type: application/json`.
+O jogador vem do `Principal` autenticado no STOMP; `playerId` no corpo é ignorado.
+
+É preciso participar da sala e já ter escolhido o personagem. São aceitas exatamente
+duas habilidades distintas do conjunto elegível guardado no início do Draft,
+incluindo as compradas. A confirmação grava as escolhas no Redis e bloqueia novas
+alterações, sem reiniciar os 20s. O oponente recebe apenas o progresso em
+`DRAFT_UPDATE`; as habilidades escolhidas não são divulgadas.
+
+Erros vão somente para `/user/queue/errors`, como `ApiError`: `BAD_REQUEST` (400)
+para código da sala ou seleção inválidos; `FORBIDDEN` (403) para quem não participa
+da sala; `CONFLICT` (409) para Draft ausente, encerrado, expirado ou escolhas já
+confirmadas. A fila privada exige uma sessão autenticada e não depende da inscrição
+no tópico público da sala. Não há novo endpoint REST, código de erro ou migration.
+O sorteio da terceira habilidade e o deck de cada round ficam na BE-013.1.
+
 ## 🧪 Testes
 
 O `RoomService` da BE-008 cria salas com `createRoom(playerId)` e permite entrada

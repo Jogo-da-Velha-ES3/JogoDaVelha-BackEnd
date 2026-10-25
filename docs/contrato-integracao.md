@@ -437,13 +437,50 @@ Payload não definido adiante permanece **payload a definir**; nada abaixo está
 
 - Endpoint `/ws`, WebSocket STOMP puro; `WebSocketConfig` não configura SockJS. Prefixo de aplicação `/app`; brokers simples `/topic` e `/queue`; destinos privados usam `/user/queue/...`.
 - ✅ `/ws/**` permanece público no handshake HTTP para permitir o upgrade WebSocket. Cada frame STOMP `CONNECT` precisa conter `Authorization: Bearer <jwt>`; o backend valida assinatura e expiração por `JwtService` e rejeita o CONNECT ausente/malformado/inválido. O `sub` UUID validado é o nome do `Principal` associado à sessão e usado nos handlers.
-- ✅ Único handler implementado: `SEND /app/room/{code}/connect` sem corpo de identidade (pode ser enviado sem body). **BREAKING (BE-040):** não envie `playerId`; a identidade vem do `Principal` estabelecido no CONNECT. O registro associa sessão, sala e jogador e marca jogador conectado. `PlayerDisconnectionListener` remove associação da sessão e, se conhecida, marca jogador desconectado; sessão desconhecida não produz ação no serviço.
+- ✅ Conexão à sala: `SEND /app/room/{code}/connect` sem corpo de identidade (pode ser enviado sem body). **BREAKING (BE-040):** não envie `playerId`; a identidade vem do `Principal` estabelecido no CONNECT. O registro associa sessão, sala e jogador e marca jogador conectado. `PlayerDisconnectionListener` remove associação da sessão e, se conhecida, marca jogador desconectado; sessão desconhecida não produz ação no serviço.
 - ✅ Gameplay (BE-023): `SEND /app/game/{gameId}/move` recebe `{ "position": 0 }`; `SEND /app/game/{gameId}/skill` recebe `{ "skillCode": "BOMBA", "targetPosition": 1, "destinationPosition": 2 }` (posições opcionais conforme habilidade). Campos `playerId` enviados pelo cliente são ignorados. A identidade vem do `Principal`. O sucesso não tem ACK de mensagem nesta etapa; turno/resultado de round é publicado como `TurnChangedEvent` interno após persistência, para consumo pela integração de broadcast da BE-024. Destino e payload público final seguem pendentes de alinhamento com o front conforme seção 4.
 - Em clientes STOMP.js, passe o token por `connectHeaders`, por exemplo `client.connect({ Authorization: `Bearer ${token}` })` na API legada ou `new Client({ connectHeaders: { Authorization: `Bearer ${token}` } })` na API atual. O cabeçalho é um header nativo STOMP, não um header do handshake HTTP.
 - Falha de autenticação encerra/rejeita o CONNECT STOMP; não há sessão anônima e a resposta de falha pode ser um frame STOMP `ERROR`/fechamento, não um `ApiError` REST nem uma mensagem garantida em `/user/queue/errors` (a sessão ainda não foi autenticada).
 - ⚠️ O disconnect acima é o comportamento observado; reconexão/snapshot e heartbeat constam em BE-025 (24–27/10).
 - Erros são enviados por `@SendToUser` para `/user/queue/errors`, como `ApiError`. Nos handlers genéricos, `code` vem de `HttpStatus.name()` (por exemplo `BAD_REQUEST`, `CONFLICT`, `INTERNAL_SERVER_ERROR`) e existe também `error` com a frase HTTP; isso diverge do catálogo REST. As BE-014.1 e BE-014.2 preservam os quatro códigos de habilidade descritos acima; o ajuste dos demais erros permanece na BE-044.
 - A fila `/user/queue/errors` é destinada a sessões autenticadas; não se aplica ao CONNECT rejeitado, que ainda não tem usuário STOMP associado.
+
+### Escolher duas habilidades iniciais — BE-013
+
+🚧 Implementado nesta branch. Destino compatível com `DRAFT_ABILITIES` no frontend
+(`src/sockets/destinations.ts` e `src/types/events.ts`, commit `b3a6626`).
+
+Envie `SEND /app/rooms/{code}/draft/abilities`, com `content-type: application/json`:
+
+```json
+{ "abilities": ["BOMBA", "ESCUDO"] }
+```
+
+O `Principal` do CONNECT identifica o jogador. Campos extras de identidade no corpo,
+como `playerId`, são ignorados. O código tem quatro dígitos e o usuário precisa
+participar da sala ativa. O personagem já deve estar escolhido e o prazo de 20s
+precisa estar aberto; confirmar habilidades não reinicia esse prazo.
+
+São aceitos exatamente dois códigos distintos do conjunto elegível guardado no
+início do Draft (gratuitas e compradas). A confirmação salva as escolhas no estado
+Redis, marca o jogador como pronto e impede novas alterações. Não há ACK específico:
+o resultado chega no `DRAFT_UPDATE` já descrito abaixo, sem expor as habilidades.
+Quando ambos ficam prontos, `DraftCompleted` continua sinalizando a futura BE-038.
+
+Erros chegam apenas à sessão autora em `/user/queue/errors`, como `ApiError`,
+com `path` igual ao destino da requisição. A fila aceita inscrição autenticada
+sem exigir participação em uma sala; a checagem de inscrição no tópico público
+continua exigindo participação. Não são criados novos códigos de erro:
+
+| Código | Status no payload | Quando |
+|---|---:|---|
+| `BAD_REQUEST` | 400 | Código da sala inválido; seleção ausente, quantidade diferente de dois, duplicada, vazia ou não elegível; personagem ainda não escolhido. |
+| `FORBIDDEN` | 403 | Usuário não participa da sala ativa. |
+| `CONFLICT` | 409 | Draft ausente, concluído, prazo encerrado ou escolhas já confirmadas. |
+
+Não há endpoint REST, escolha de personagem ou sorteio por round nesta entrega.
+A BE-011 continua responsável pelo personagem e a BE-013.1 pelo sorteio de 8s e
+pela montagem do deck de cada round. A validação conjunta geral da FE-17 segue pendente.
 
 ### `PLAYER_JOINED` — `/topic/rooms/{code}`
 
@@ -508,7 +545,7 @@ O formato corresponde a `src/types/events.ts` e `src/stores/serverEvents.ts` do
 [frontend, commit 718864c](https://github.com/Jogo-da-Velha-ES3/JogoDaVelha-FrontEnd/tree/718864c8124b9a5ca84466447875199f9b1dbaf9).
 A checagem do consumidor não substitui a validação conjunta da FE-17, ainda aberta.
 
-BE-011/BE-013 adicionam os handlers de escolha. BE-038 inicia o Draft e consome
+BE-011 adiciona a escolha de personagem; a seleção de habilidades da BE-013 está descrita acima. BE-038 inicia o Draft e consome
 `DraftCompleted` para criar a partida. Na inicialização, a recuperação varre os estados persistidos no Redis e chama `resume(roomId)` para rearmar os prazos ativos. A integração STOMP da BE-037
 cobre dois clientes autenticados, conclusão antecipada e timeout, sem banco,
 Redis externo ou migrations.
@@ -642,6 +679,7 @@ Erros/compatibilidade:
 
 | Data | Mudança | Tipo | Card/PR |
 |---|---|---|---|
+| 25/10/2026 | Seleção de duas habilidades iniciais por STOMP, confirmação no Draft e erros privados. | NOVO | BE-013 |
 | 21/10/2026 | Documentado o inventário REST de personagens; atualizado o status BE-014.2 e esclarecida a disponibilidade REST de habilidades. | NOVO | BE-028, BE-014.2 |
 | 15/10/2026 | Criação do contrato com o estado atual da dev. CORS, erro único, prefixo `/api` e códigos de habilidade entram como mudanças já disponíveis; rotas REST que ganharam `/api` são breaking. | NOVO; BREAKING (prefixo REST) | BE-034, BE-044; PR docs/contrato-integracao |
 | 23/10/2026 | Evento `PLAYER_JOINED` disponível em `/topic/rooms/{code}` com envelope `{type, payload, serverTime}`. | NOVO | BE-035; PR feat/room-joined-event |
