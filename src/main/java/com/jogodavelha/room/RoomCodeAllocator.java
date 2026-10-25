@@ -15,7 +15,7 @@ import java.util.Locale;
 @Service
 @RequiredArgsConstructor
 public class RoomCodeAllocator {
-    static final List<RoomStatus> ACTIVE = List.of(RoomStatus.WAITING, RoomStatus.IN_GAME);
+    public static final List<RoomStatus> ACTIVE = List.of(RoomStatus.WAITING, RoomStatus.IN_GAME);
     private final RoomRepository rooms;
     private final GameRepository gameRepository;
     private final JdbcTemplate jdbc;

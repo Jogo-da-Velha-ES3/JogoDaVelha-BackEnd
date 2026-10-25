@@ -9,6 +9,7 @@ import com.jogodavelha.skill.SkillEngine;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.TaskScheduler;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -38,7 +39,7 @@ public class TurnService {
     private final ConcurrentHashMap<UUID, ScheduledFuture<?>> timers = new ConcurrentHashMap<>();
 
     public TurnService(GameStateManager stateManager, SkillEngine skillEngine, Clock clock,
-                       TaskScheduler turnTaskScheduler, ApplicationEventPublisher events) {
+                       @Qualifier("turnTaskScheduler") TaskScheduler turnTaskScheduler, ApplicationEventPublisher events) {
         this.stateManager = stateManager;
         this.skillEngine = skillEngine;
         this.clock = clock;

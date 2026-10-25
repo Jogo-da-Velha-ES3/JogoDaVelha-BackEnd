@@ -62,6 +62,9 @@ public class GameState {
     /** Códigos de habilidades já consumidos por jogador no round atual. */
     @Builder.Default
     private Map<UUID, Set<String>> usedSkillsByPlayer = new HashMap<>();
+    /** Habilidades disponíveis a cada jogador no deck selecionado para o round atual. */
+    @Builder.Default
+    private Map<UUID, Set<String>> roundSkillDecks = new HashMap<>();
 
     /**
      * Calcula o tempo restante do turno atual em milissegundos.
@@ -152,6 +155,7 @@ public class GameState {
         board = EMPTY_BOARD;
         clearEffects(); // Efeitos não atravessam rounds
         if (usedSkillsByPlayer != null) usedSkillsByPlayer.clear();
+        if (roundSkillDecks != null) roundSkillDecks.clear();
         roundNumber = round;
         phase = GamePhase.PLAYING;
         suddenDeath = round == 3;
@@ -170,6 +174,22 @@ public class GameState {
             usedSkillsByPlayer = new HashMap<>();
         }
         usedSkillsByPlayer.computeIfAbsent(playerId, ignored -> new HashSet<>()).add(skillCode);
+    }
+
+    public boolean hasSkillInRoundDeck(UUID playerId, String skillCode) {
+        return roundSkillDecks != null
+                && roundSkillDecks.getOrDefault(playerId, Set.of()).contains(skillCode);
+    }
+
+    /** Define o deck escolhido para um jogador neste round, incluindo habilidades sorteadas. */
+    public void setRoundSkillDeck(UUID playerId, Collection<String> skillCodes) {
+        if (playerId == null || skillCodes == null || skillCodes.stream().anyMatch(code -> code == null || code.isBlank())) {
+            throw new IllegalArgumentException("Informe jogador e códigos válidos para o deck do round.");
+        }
+        if (roundSkillDecks == null) {
+            roundSkillDecks = new HashMap<>();
+        }
+        roundSkillDecks.put(playerId, new HashSet<>(skillCodes));
     }
 
     private boolean isPlayer1(UUID playerId) {
