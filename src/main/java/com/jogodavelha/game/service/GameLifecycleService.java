@@ -62,24 +62,35 @@ public class GameLifecycleService implements RoundLifecycle {
         } catch (DataIntegrityViolationException duplicateStart) {
             return; // The concurrent winner owns initialization and will publish the initial state.
         }
-        if (game.getStatus() != GameStatus.IN_PROGRESS || states.find(game.getId()).isPresent()) {
+        if (game.getStatus() != GameStatus.IN_PROGRESS) {
             return;
         }
-        try {
-            states.create(game.getId(), game.getPlayer1().getId(), game.getPlayer2().getId(),
-                    GameState.DEFAULT_TURN_DURATION_MILLIS);
-        } catch (IllegalStateException duplicateState) {
-            if (states.find(game.getId()).isPresent()) {
-                return;
+        GameState state = states.find(game.getId()).orElse(null);
+        boolean stateCreated = state == null;
+        if (state == null) {
+            try {
+                states.create(game.getId(), game.getPlayer1().getId(), game.getPlayer2().getId(),
+                        GameState.DEFAULT_TURN_DURATION_MILLIS);
+            } catch (IllegalStateException duplicateState) {
+                state = states.find(game.getId()).orElseThrow(() -> duplicateState);
             }
-            throw duplicateState;
+            state = states.find(game.getId()).orElseThrow();
         }
+        states.update(game.getId(), current -> {
+            current.setInitialSkills(game.getPlayer1().getId(), player1.initialSkills());
+            current.setInitialSkills(game.getPlayer2().getId(), player2.initialSkills());
+            return current;
+        });
         if (room.getStatus() == RoomStatus.WAITING) {
             room.setStatus(RoomStatus.IN_GAME);
             rooms.save(room);
         }
-        GameState state = states.find(game.getId()).orElseThrow();
-        beginRound(game, state);
+        state = states.find(game.getId()).orElseThrow();
+        if (stateCreated || state.getPhase() == GamePhase.DRAFT) {
+            beginRound(game, state);
+        } else if (state.getPhase() == GamePhase.PLAYING) {
+            turns.schedule(game.getId(), state.getTurnDeadlineEpochMillis());
+        }
     }
 
     @Override
