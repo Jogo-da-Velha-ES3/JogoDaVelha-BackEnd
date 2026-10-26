@@ -452,7 +452,7 @@ Payload não definido adiante permanece **payload a definir**; nada abaixo está
 
 - Endpoint `/ws`, WebSocket STOMP puro; `WebSocketConfig` não configura SockJS. Prefixo de aplicação `/app`; brokers simples `/topic` e `/queue`; destinos privados usam `/user/queue/...`.
 - ✅ `/ws/**` permanece público no handshake HTTP para permitir o upgrade WebSocket. Cada frame STOMP `CONNECT` precisa conter `Authorization: Bearer <jwt>`; o backend valida assinatura e expiração por `JwtService` e rejeita o CONNECT ausente/malformado/inválido. O `sub` UUID validado é o nome do `Principal` associado à sessão e usado nos handlers.
-- ✅ Conexão à sala: `SEND /app/room/{code}/connect` sem corpo de identidade (pode ser enviado sem body). **BREAKING (BE-040):** não envie `playerId`; a identidade vem do `Principal` estabelecido no CONNECT. O registro associa sessão, sala e jogador e marca jogador conectado. `PlayerDisconnectionListener` remove associação da sessão e, se conhecida, marca jogador desconectado; sessão desconhecida não produz ação no serviço.
+- ✅ Conexão à sala: `SEND /app/rooms/{code}/connect` sem corpo de identidade (pode ser enviado sem body). **BREAKING (BE-040):** não envie `playerId`; a identidade vem do `Principal` estabelecido no CONNECT. O registro associa sessão, sala e jogador e marca jogador conectado. `PlayerDisconnectionListener` remove associação da sessão e, se conhecida, marca jogador desconectado; sessão desconhecida não produz ação no serviço.
 - ✅ Gameplay (BE-023): `SEND /app/game/{gameId}/move` recebe `{ "position": 0 }`; `SEND /app/game/{gameId}/skill` recebe `{ "skillCode": "BOMBA", "targetPosition": 1, "destinationPosition": 2 }` (posições opcionais conforme habilidade). Campos `playerId` enviados pelo cliente são ignorados. A identidade vem do `Principal`. O sucesso não tem ACK de mensagem nesta etapa; turno/resultado de round é publicado como `TurnChangedEvent` interno após persistência, para consumo pela integração de broadcast da BE-024. Destino e payload público final seguem pendentes de alinhamento com o front conforme seção 4.
 - Em clientes STOMP.js, passe o token por `connectHeaders`, por exemplo `client.connect({ Authorization: `Bearer ${token}` })` na API legada ou `new Client({ connectHeaders: { Authorization: `Bearer ${token}` } })` na API atual. O cabeçalho é um header nativo STOMP, não um header do handshake HTTP.
 - Falha de autenticação encerra/rejeita o CONNECT STOMP; não há sessão anônima e a resposta de falha pode ser um frame STOMP `ERROR`/fechamento, não um `ApiError` REST nem uma mensagem garantida em `/user/queue/errors` (a sessão ainda não foi autenticada).
@@ -503,7 +503,7 @@ pela montagem do deck de cada round. A validação conjunta geral da FE-17 segue
 
 Quando é enviado: após o commit da entrada do 2º jogador (`POST /api/rooms/{code}/join`). Entradas rejeitadas não geram mensagem.
 Quem recebe: todos os inscritos no tópico (broadcast). O cliente do host deve filtrar por `hostId`.
-Envelope: `{ "type", "payload", "serverTime" }`. `serverTime` é o instante ISO-8601 definido pelo servidor; os dados do evento ficam em `payload`.
+Envelope: `{ "type", "payload", "serverTime" }`. `serverTime` é um número inteiro com milissegundos desde Unix epoch (epoch milliseconds), no mesmo formato usado por `ROOM_SNAPSHOT`; os dados do evento ficam em `payload`.
 
 ```json
 {
@@ -515,7 +515,7 @@ Envelope: `{ "type", "payload", "serverTime" }`. `serverTime` é o instante ISO-
     "hostId": "123e4567-e89b-12d3-a456-426614174000",
     "hostUsername": "ana"
   },
-  "serverTime": "2026-10-23T12:00:00Z"
+  "serverTime": 1792756800000
 }
 ```
 Campos do `payload`:
@@ -595,7 +595,7 @@ Exemplo resumido de snapshot público em sala `WAITING` (os campos privados usam
 
 A conexão e a inscrição em `/topic/rooms/{code}` exigem JWT no `CONNECT` e participação ativa validada pelo `Principal`; o handler de conexão também deriva o jogador do `Principal`.
 
-Sincronização sob demanda: envie `SEND /app/rooms/{code}/sync` sem corpo. A identidade do solicitante vem do `Principal` autenticado pelo JWT. O backend valida sala ativa e participação antes de publicar o snapshot atualizado em `/topic/rooms/{code}`; não aceite nem envie `playerId` no payload. Como a resposta usa o tópico compartilhado, todos os participantes inscritos na sala podem receber o snapshot. Códigos inválidos ou sala inexistente/encerrada seguem o handler STOMP existente como `BAD_REQUEST` (400); usuário autenticado que não pertence à sala recebe `FORBIDDEN` (403) em `/user/queue/errors`.
+Sincronização sob demanda: envie `SEND /app/rooms/{code}/sync` sem corpo. A identidade do solicitante vem do `Principal` autenticado pelo JWT. O backend valida sala ativa e participação e responde somente ao solicitante em `/user/queue/room`, com um `ROOM_SNAPSHOT` individualizado. O sync não publica no tópico compartilhado, para não substituir o `mySlot`/`myDeck` do outro jogador. Não aceite nem envie `playerId` no payload. Códigos inválidos ou sala inexistente/encerrada seguem o handler STOMP existente como `BAD_REQUEST` (400); usuário autenticado que não pertence à sala recebe `FORBIDDEN` (403) em `/user/queue/errors`.
 
 ```text
 SEND /app/rooms/0042/sync
@@ -661,7 +661,7 @@ Redis externo ou migrations.
 
 | Evento | Quando / destinatário | Campos previstos | Card / status |
 |---|---|---|---|
-| `ROOM_SNAPSHOT` | Estado atual ao conectar e em transições da sala, Draft e partida; participantes | `room`, `draft`, `match`; `rematch` ainda não implementado | BE-035.2; ✅ |
+| `ROOM_SNAPSHOT` | Estado atual ao conectar e em transições da sala, Draft e partida; tópico público e fila privada por jogador | Formato `RoomSnapshot` compatível com o frontend | BE-035.2; ✅ |
 | `PLAYER_JOINED` | Entrada do segundo jogador; sala / host | Nome do adversário (BE-035) | BE-035, 18/10; 📝 |
 | `PHASE_CHANGE` | Mudança de fase do jogo; sala | payload a definir | BE-023/BE-024; 20/10 e 24/10; 📝 |
 | `TURN_START` | Começo de turno; sala | Prazo do turno como timestamp do servidor (BE-024); demais campos a definir | BE-020/BE-024; 15/10 e 24/10; 📝 |
@@ -720,7 +720,7 @@ Adicional do backlog não incluído na lista inicial do front:
 
 | Evento | Quando / destinatário | Campos previstos | Card / status |
 |---|---|---|---|
-| `ROOM_CLOSED` | Sala encerrada/expirada; oponente | payload a definir | BE-036, 20/10; ✅ |
+| `ROOM_CLOSED` | Sala encerrada/expirada; oponente | payload a definir; `serverTime` em epoch millis | BE-036, 20/10; ✅ |
 
 ## 4. Pendências e decisões em aberto
 
@@ -794,6 +794,7 @@ Erros/compatibilidade:
 | 15/10/2026 | Criação do contrato com o estado atual da dev. CORS, erro único, prefixo `/api` e códigos de habilidade entram como mudanças já disponíveis; rotas REST que ganharam `/api` são breaking. | NOVO; BREAKING (prefixo REST) | BE-034, BE-044; PR docs/contrato-integracao |
 | 23/10/2026 | Evento `PLAYER_JOINED` disponível em `/topic/rooms/{code}` com envelope `{type, payload, serverTime}`. | NOVO | BE-035; PR feat/room-joined-event |
 | 25/10/2026 | `PLAYER_JOINED` ganha `hostUsername` e, quando houver avatar equipado, `guestAvatar`/`hostAvatar` (hoje omitidos). Acréscimo compatível. | ALTERADO | BE-035.1 |
+| 26/10/2026 | `PLAYER_JOINED` e `ROOM_CLOSED` serializam `serverTime` como epoch milliseconds, alinhado a `ROOM_SNAPSHOT`. | ALTERADO | BE-035.2 |
 | 23/10/2026 | Evento `PLAYER_JOINED` disponível em `/topic/rooms/{code}` com envelope `{type, payload, serverTime}`.                                                                                    | NOVO                          | BE-035; PR feat/room-joined-event           |
 | 24/10/2026 | `POST /api/rooms/{code}/leave`, evento `ROOM_CLOSED` e expiração de salas `WAITING` abandonadas.                                                                                          | NOVO                          | BE-036; PR feat/room-leave-expiration       |
 | 25/10/2026 | BE-038: `DraftCompleted` do pacote `draft`, personagens persistidos, sala permanece `IN_GAME` no `MATCH_END` (revanche BE-039) e `coinsCredited` reflete o crédito real. | NOVO | BE-038 |

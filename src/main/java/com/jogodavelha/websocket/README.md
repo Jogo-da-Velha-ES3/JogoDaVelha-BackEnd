@@ -87,7 +87,7 @@ Enviado quando o 2º jogador entra na sala, para o host exibir o "MATCH FEITO!".
 |----------------|---------------|---------------------------------------------------|
 | `type`         | string        | Sempre `PLAYER_JOINED`                            |
 | `payload`      | objeto        | Dados do jogador que entrou e da sala             |
-| `serverTime`   | string (ISO-8601) | Horário de publicação definido pelo servidor |
+| `serverTime`   | number (epoch millis) | Instante de publicação definido pelo servidor, em milissegundos desde Unix epoch |
 
 Campos de `payload`:
 
@@ -115,7 +115,7 @@ Exemplo:
     "hostId": "3f2b8c1e-0000-0000-0000-000000000001",
     "hostUsername": "host"
   },
-  "serverTime": "2026-10-25T12:00:00Z"
+  "serverTime": 1792929600000
 }
 ```
 
@@ -139,7 +139,7 @@ Publicado em `/topic/rooms/{code}` ao conectar, após a entrada do segundo jogad
 
 Cada jogador também recebe o mesmo `ROOM_SNAPSHOT` individualizado em `/user/queue/room`, com seu `mySlot` e `myDeck`. Opções de sorteio não são mantidas pelo estado atual do backend e permanecem `null`.
 
-Para sincronizar sob demanda, envie `SEND /app/rooms/{code}/sync` sem corpo. O backend deriva a identidade do `Principal`, valida participação ativa e publica o snapshot seguro no tópico e a cópia individual na fila privada.
+Para sincronizar sob demanda, envie `SEND /app/rooms/{code}/sync` sem corpo. O backend deriva a identidade do `Principal`, valida participação ativa e responde somente ao solicitante em `/user/queue/room`. Não há broadcast durante sync, preservando os dados privados do outro jogador.
 
 #### `ROOM_CLOSED`
 
@@ -149,7 +149,7 @@ Enviado quando a sala é fechada: o host saiu enquanto ela estava `WAITING` (`PO
 |--------------|-------------------|-----------------------------------------------|
 | `type`       | string            | Sempre `ROOM_CLOSED`                          |
 | `payload`    | objeto            | Dados do fechamento                           |
-| `serverTime` | string (ISO-8601) | Horário de publicação definido pelo servidor  |
+| `serverTime` | number (epoch millis) | Instante de publicação definido pelo servidor, em milissegundos desde Unix epoch |
 
 Campos de `payload`:
 
@@ -169,7 +169,7 @@ Exemplo:
     "closedBy": "3f2b8c1e-0000-0000-0000-000000000001",
     "reason": "HOST_LEFT"
   },
-  "serverTime": "2026-10-24T12:00:00Z"
+  "serverTime": 1792843200000
 }
 ```
 

@@ -26,7 +26,7 @@ public class PlayerConnectionController {
         this.snapshots = snapshots;
     }
 
-    @MessageMapping("/room/{code}/connect")
+    @MessageMapping("/rooms/{code}/connect")
     public void connect(
             @DestinationVariable String code,
             Principal principal,

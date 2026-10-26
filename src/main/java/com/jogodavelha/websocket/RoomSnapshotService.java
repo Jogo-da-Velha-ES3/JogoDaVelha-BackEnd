@@ -79,9 +79,8 @@ public class RoomSnapshotService {
 
         long serverTime = System.currentTimeMillis();
         State state = readState(room);
-        websocket.sendToTopic("/topic/rooms/" + code,
-                new SnapshotEnvelope("ROOM_SNAPSHOT", snapshot(room, null, false, state, serverTime), serverTime));
-        sendPrivate(room, requesterId, requesterSlot, state, serverTime);
+        websocket.sendToUser(requesterId.toString(), "/queue/room",
+                new SnapshotEnvelope("ROOM_SNAPSHOT", snapshot(room, requesterSlot, true, state, serverTime), serverTime));
     }
 
     private RoomSnapshot compose(Room room, Slot mySlot, boolean includePrivate, long serverTime) {

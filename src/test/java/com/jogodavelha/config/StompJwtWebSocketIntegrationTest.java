@@ -81,7 +81,7 @@ class StompJwtWebSocketIntegrationTest {
                 .get(5, TimeUnit.SECONDS);
 
         assertTrue(session.isConnected());
-        session.send("/app/room/0042/connect", null);
+        session.send("/app/rooms/0042/connect", null);
         verify(playerService, timeout(3000)).markConnected("0042", USER_ID);
         verify(playerSessionRegistry, timeout(3000)).register(anyString(), eq("0042"), eq(USER_ID));
         session.disconnect();

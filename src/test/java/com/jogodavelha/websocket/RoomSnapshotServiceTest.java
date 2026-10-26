@@ -150,9 +150,13 @@ class RoomSnapshotServiceTest {
 
         snapshots.sync("0042", fixture.host().getId());
 
-        verify(websocket).sendToTopic(eq("/topic/rooms/0042"), any());
-        verify(websocket).sendToUser(eq(fixture.host().getId().toString()), eq("/queue/room"), any());
+        var captor = org.mockito.ArgumentCaptor.forClass(Object.class);
+        verify(websocket, never()).sendToTopic(anyString(), any());
+        verify(websocket).sendToUser(eq(fixture.host().getId().toString()), eq("/queue/room"), captor.capture());
         verify(websocket, never()).sendToUser(eq(fixture.guest().getId().toString()), anyString(), any());
+        var envelope = (RoomSnapshotService.SnapshotEnvelope) captor.getValue();
+        assertEquals("ROOM_SNAPSHOT", envelope.type());
+        assertEquals(RoomSnapshotService.Slot.P1, envelope.payload().mySlot());
     }
 
     @Test

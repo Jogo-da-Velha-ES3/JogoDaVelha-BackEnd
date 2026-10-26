@@ -37,7 +37,7 @@
 - Envie o mesmo JWT retornado pelo login como header nativo `Authorization: Bearer <token>` em `connectHeaders` do cliente STOMP.js. Exemplo atual: `new Client({ brokerURL, connectHeaders: { Authorization: `Bearer ${token}` } })`. Na API legada: `client.connect({ Authorization: `Bearer ${token}` }, onConnect, onError)`.
 - Não coloque o token em query string, corpo de mensagem ou headers de handshake HTTP. Renove `connectHeaders` antes de reconectar após renovação/login.
 - Um CONNECT sem token Bearer único e válido é rejeitado. Falhas devem ser tratadas no callback/evento de erro da conexão; não espere resposta em `/user/queue/errors`, pois a sessão ainda não tem identidade autenticada.
-- **BREAKING BE-040:** envie `SEND /app/room/{code}/connect` sem `playerId` no payload (sem corpo). O backend obtém o UUID exclusivamente do `Principal` autenticado.
+- **BREAKING BE-040:** envie `SEND /app/rooms/{code}/connect` sem `playerId` no payload (sem corpo). O backend obtém o UUID exclusivamente do `Principal` autenticado.
 
 ### 7. Padronização e Sincronização do Catálogo de Erros
 
