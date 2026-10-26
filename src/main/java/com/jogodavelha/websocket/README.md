@@ -135,9 +135,11 @@ stompClient.subscribe('/topic/rooms/' + roomCode, function (message) {
 
 #### `ROOM_SNAPSHOT`
 
-Publicado em `/topic/rooms/{code}` ao conectar, após a entrada do segundo jogador, nas atualizações do Draft e nas transições de round/partida. O evento usa o envelope `{type, payload, serverTime}`. O payload tem blocos `room` (jogadores e status), `draft` (etapa e progresso público), `match` (placar e estado Redis ativo) e `rematch` (omitido enquanto a revanche não for implementada). Blocos inexistentes e campos nulos são omitidos. Consulte o contrato de integração para campos e exemplo completos.
+Publicado em `/topic/rooms/{code}` ao conectar, após a entrada do segundo jogador, nas atualizações do Draft e nas transições de round/partida. O evento usa `{type, payload, serverTime}` e `serverTime` é epoch millis. O payload segue o `RoomSnapshot` do frontend (`code`, `phase`, `players`, `mySlot`, `round`, `suddenDeath`, `board`, `turn`, `myDeck`, `outcome` e campos opcionais do Draft/resultado). No tópico compartilhado `mySlot` é `null`, `myDeck` é `[]` e `drawOptions` é `null`.
 
-Para sincronizar sob demanda, envie `SEND /app/rooms/{code}/sync` sem corpo. O backend deriva a identidade do `Principal`, valida participação ativa e publica o mesmo `ROOM_SNAPSHOT` no tópico da sala; o evento pode ser recebido por todos os participantes inscritos.
+Cada jogador também recebe o mesmo `ROOM_SNAPSHOT` individualizado em `/user/queue/room`, com seu `mySlot` e `myDeck`. Opções de sorteio não são mantidas pelo estado atual do backend e permanecem `null`.
+
+Para sincronizar sob demanda, envie `SEND /app/rooms/{code}/sync` sem corpo. O backend deriva a identidade do `Principal`, valida participação ativa e publica o snapshot seguro no tópico e a cópia individual na fila privada.
 
 #### `ROOM_CLOSED`
 

@@ -536,28 +536,60 @@ Compatibilidade: acréscimo de campos, sem quebra; `roomCode`, `guestId`, `oppon
 
 ### `ROOM_SNAPSHOT` — `/topic/rooms/{code}`
 
-✅ Implementado na BE-035.2. O backend publica uma visão atual da sala depois da conexão autenticada em `/app/room/{code}/connect`, após a entrada do segundo jogador, em alterações de Draft e nas transições de início/fim de partida ou round. A publicação usa o envelope `{ "type", "payload", "serverTime" }`, com `serverTime` ISO-8601 UTC. O snapshot complementa os demais eventos; eles continuam publicados com seu formato próprio.
+✅ Implementado na BE-035.2, com payload compatível com `RoomSnapshot` em `src/types/game.ts` e envelope `ServerEnvelope` em `src/types/events.ts` do frontend. Publica ao conectar, após a entrada do segundo jogador, nas alterações do Draft e nas transições de round/partida. O evento complementa os demais eventos existentes.
 
-`payload` contém blocos tipados. Blocos ainda indisponíveis são `null` no DTO e omitidos pela serialização padrão:
+O payload segue esta estrutura (nomes e formatos iguais aos tipos do frontend):
 
-- `room`: sempre presente; código, status (`WAITING`/`IN_GAME`), `player1` (host) e `player2` (omitido enquanto não entrou). Cada jogador contém `id`, `username` e `avatar` (avatar nulo omitido; fonte de avatar equipado ainda não existe).
-- `draft`: presente enquanto existe estado de Draft no Redis; contém `deadline`, `version` e jogadores com `playerId`, `stage` (`CHARACTER`, `SKILLS`, `READY`), `characterId` (omitido se não escolhido) e `ready`. Inventários e habilidades elegíveis/escolhidas não são expostos.
-- `match`: partida ativa ou mais recente da sala; contém `gameId`, `status`, `round`, `score`, `suddenDeath`, `winnerId` (omitido até haver vencedor) e, se houver estado Redis, `board`, `phase`, `currentTurnPlayerId` e `turnDeadline` (epoch millis). Após o fim, o estado temporário Redis é apagado e esses quatro campos são omitidos; os dados persistidos da partida continuam disponíveis.
-- `rematch`: omitido; o fluxo de revanche ainda não existe no backend.
+- `code`: código textual de quatro dígitos.
+- `phase`: `WAITING`, `MATCHED`, `DRAFT`, `VERSUS`, `ROUND_DRAW`, `PLAYING`, `ROUND_END` ou `RESULT`, derivado do estado de sala, Draft e partida disponível.
+- `players`: lista de `PlayerState`: `slot` (`P1`/`P2`), `userId` (UUID textual), `nickname`, `character` (símbolo textual ou `null`), `roundsWon`, `consecutiveTimeouts`, `forceFieldTurnsLeft`, `silenced` e `connected`.
+- `mySlot`: slot do destinatário na cópia privada; no tópico compartilhado, o campo é `null` (sem valor individual).
+- `round`, `suddenDeath`, `board`: round atual, flag booleana e 16 células (`index`, `owner` como `P1`/`P2`/`null`, `effects` com `kind` e `turnsLeft`).
+- `turn`: `null` ou `{player, startedAt, durationSeconds}`; `startedAt` é epoch millis.
+- `myDeck`: lista privada de `{ability, source, usedThisRound}`. É enviado somente ao jogador correspondente. No tópico compartilhado é sempre lista vazia.
+- `outcome`: `null`, `{kind:"WIN", winner, score:[p1,p2]}`, `{kind:"ABSOLUTE_DRAW"}` ou `{kind:"WO", winner}`.
+- `serverTime`: epoch millis também presente dentro do payload, como exigido pelo tipo `RoomSnapshot`.
+- `draft` é opcional e contém `{deadline, ready:{P1,P2}}`; `drawOptions`, `coins` e `rematch` são opcionais. Campos sem fonte atual confiável são omitidos. O backend não persiste opções do sorteio e revanche ainda não está implementada.
 
-Exemplo de sala aguardando o segundo jogador (campos nulos foram omitidos):
+O envelope externo também contém `serverTime` como número inteiro de milissegundos desde Unix epoch. O valor do envelope e do payload é o mesmo. No tópico `/topic/rooms/{code}`, `mySlot` é `null`, `myDeck` é `[]` e `drawOptions` é `null`; nenhum valor individual de slot, deck ou opções privadas é publicado. Cada participante recebe em `/user/queue/room` um `ROOM_SNAPSHOT` individualizado com seu `mySlot` e `myDeck`; `drawOptions` segue nulo porque o backend não mantém esse estado. A inscrição nessa fila privada exige sessão autenticada no `CONNECT`; o cliente já a assina e aplica o snapshot pelo mesmo handler de eventos.
+
+Exemplo resumido de snapshot público em sala `WAITING` (os campos privados usam `null`/lista vazia):
 
 ```json
 {
   "type": "ROOM_SNAPSHOT",
   "payload": {
-    "room": {
-      "code": "0042",
-      "status": "WAITING",
-      "player1": { "id": "123e4567-e89b-12d3-a456-426614174000", "username": "ana" }
-    }
+    "code": "0042",
+    "phase": "WAITING",
+    "players": [{
+      "slot": "P1", "userId": "123e4567-e89b-12d3-a456-426614174000",
+      "nickname": "ana", "character": null, "roundsWon": 0,
+      "consecutiveTimeouts": 0, "forceFieldTurnsLeft": 0,
+      "silenced": false, "connected": true
+    }],
+    "mySlot": null,
+    "round": 1,
+    "suddenDeath": false,
+    "board": [
+      {"index":0,"owner":null,"effects":[]}, {"index":1,"owner":null,"effects":[]},
+      {"index":2,"owner":null,"effects":[]}, {"index":3,"owner":null,"effects":[]},
+      {"index":4,"owner":null,"effects":[]}, {"index":5,"owner":null,"effects":[]},
+      {"index":6,"owner":null,"effects":[]}, {"index":7,"owner":null,"effects":[]},
+      {"index":8,"owner":null,"effects":[]}, {"index":9,"owner":null,"effects":[]},
+      {"index":10,"owner":null,"effects":[]}, {"index":11,"owner":null,"effects":[]},
+      {"index":12,"owner":null,"effects":[]}, {"index":13,"owner":null,"effects":[]},
+      {"index":14,"owner":null,"effects":[]}, {"index":15,"owner":null,"effects":[]}
+    ],
+    "turn": null,
+    "myDeck": [],
+    "outcome": null,
+    "serverTime": 1793026800000,
+    "draft": null,
+    "drawOptions": null,
+    "coins": null,
+    "rematch": null
   },
-  "serverTime": "2026-10-26T15:00:00Z"
+  "serverTime": 1793026800000
 }
 ```
 

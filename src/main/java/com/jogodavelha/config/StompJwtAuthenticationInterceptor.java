@@ -40,7 +40,8 @@ public class StompJwtAuthenticationInterceptor implements ChannelInterceptor {
             if (existingAccessor == null || existingAccessor.getCommand() != StompCommand.SUBSCRIBE) return message;
             String destination = existingAccessor.getDestination();
             var principal = existingAccessor.getUser();
-            if ("/user/queue/errors".equals(destination) && principal != null) return message;
+            if (("/user/queue/errors".equals(destination) || "/user/queue/room".equals(destination))
+                    && principal != null) return message;
             if (destination == null || !destination.matches("/topic/rooms/[0-9]{4}") || principal == null) {
                 throw new AccessDeniedException("Inscri\u00e7\u00e3o de sala inv\u00e1lida");
             }
