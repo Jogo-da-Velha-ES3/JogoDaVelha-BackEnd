@@ -89,6 +89,7 @@ class CoinTransactionPersistenceIT {
                     "com.jogodavelha.auth",
                     "com.jogodavelha.room",
                     "com.jogodavelha.game",
+                    "com.jogodavelha.character",
                     "com.jogodavelha.coins"
             );
 

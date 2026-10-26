@@ -1,4 +1,4 @@
--- V17: cria estatísticas agregadas dos usuários (user_stats)
+-- V19: cria estatísticas agregadas dos usuários (user_stats)
 CREATE TABLE user_stats
 (
     id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
