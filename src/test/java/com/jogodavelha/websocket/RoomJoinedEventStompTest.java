@@ -118,6 +118,9 @@ class RoomJoinedEventStompTest {
         assertEquals("guest-user", payload.get("opponentName"));
         assertEquals(GUEST_ID.toString(), payload.get("guestId"));
         assertEquals(HOST_ID.toString(), payload.get("hostId"));
+        assertEquals("host-user", payload.get("hostUsername"));
+        assertFalse(payload.containsKey("guestAvatar"));
+        assertFalse(payload.containsKey("hostAvatar"));
     }
 
     @Test
