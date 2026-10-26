@@ -14,7 +14,7 @@ public record ApiError(
         @Schema(example = "400") int status,
         @Schema(example = "2026-10-15T12:34:56Z") String timestamp,
         @Schema(example = "/api/auth/register") String path,
-        @Schema(description = "Presente somente em erros de validação", nullable = true)
+        @Schema(description = "Presente em erros de validação, null em outros casos")
         Map<String, String> fields,
         @Schema(hidden = true) String error) {
 

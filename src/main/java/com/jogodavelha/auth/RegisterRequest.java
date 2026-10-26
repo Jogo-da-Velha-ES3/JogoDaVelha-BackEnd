@@ -1,5 +1,6 @@
 package com.jogodavelha.auth;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -10,6 +11,7 @@ import jakarta.validation.constraints.Size;
  * DTO para requisição de registro de novo usuário.
  * Contém as informações necessárias para cadastro de um novo usuário no sistema.
  */
+@JsonInclude(JsonInclude.Include.ALWAYS)
 public record RegisterRequest(
         @NotBlank(message = "Username é obrigatório")
         @Size(min = 3, max = 15, message = "Username deve ter entre 3 e 15 caracteres")

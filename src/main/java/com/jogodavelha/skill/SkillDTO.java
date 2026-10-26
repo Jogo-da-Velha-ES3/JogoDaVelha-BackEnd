@@ -1,7 +1,9 @@
 package com.jogodavelha.skill;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.UUID;
 
+@JsonInclude(JsonInclude.Include.ALWAYS)
 public record SkillDTO(
         UUID id,
         String name,

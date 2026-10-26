@@ -35,8 +35,10 @@ class WebSocketExceptionHandlerTest {
         assertEquals(400, json.get("status").asInt());
         assertEquals("/app/test", json.get("path").asText());
         assertTrue(json.hasNonNull("timestamp"));
-        assertFalse(json.has("fields"));
-        assertFalse(json.has("error"));
+        assertTrue(json.has("fields"));
+        assertTrue(json.get("fields").isNull());
+        assertTrue(json.has("error"));
+        assertTrue(json.get("error").isNull());
     }
 
     @Test

@@ -1,7 +1,9 @@
 package com.jogodavelha.room;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.UUID;
 
+@JsonInclude(JsonInclude.Include.ALWAYS)
 public record RoomDTO(
         UUID id,
         String code,

@@ -1,8 +1,10 @@
 package com.jogodavelha.profile;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
+@JsonInclude(JsonInclude.Include.ALWAYS)
 public record UpdateUsernameRequest(
 
         @NotBlank(message = "Username é obrigatório")

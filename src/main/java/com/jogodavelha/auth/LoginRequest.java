@@ -1,5 +1,6 @@
 package com.jogodavelha.auth;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -9,6 +10,7 @@ import jakarta.validation.constraints.Size;
  * <p>
  * O campo identifier pode ser e-mail ou username.
  */
+@JsonInclude(JsonInclude.Include.ALWAYS)
 public record LoginRequest(
         @NotBlank(message = "Identifier é obrigatório")
         @Size(max = 254, message = "Identifier deve ter no máximo 254 caracteres")

@@ -1,11 +1,13 @@
 package com.jogodavelha.game;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.UUID;
 
 /**
  * DTO para representação de dados de uma partida.
  * Utilizado para transferência de dados entre API e clientes.
  */
+@JsonInclude(JsonInclude.Include.ALWAYS)
 public record GameDTO(
         UUID id,
         UUID roomId,

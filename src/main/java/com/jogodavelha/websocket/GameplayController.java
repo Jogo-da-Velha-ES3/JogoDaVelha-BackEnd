@@ -1,5 +1,6 @@
  package com.jogodavelha.websocket;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.jogodavelha.game.service.MoveActionService;
 import com.jogodavelha.skill.SkillActivationService;
 import com.jogodavelha.skill.SkillContext;
@@ -16,7 +17,9 @@ import java.util.UUID;
 @Controller
 @RequiredArgsConstructor
 public class GameplayController {
+    @JsonInclude(JsonInclude.Include.ALWAYS)
     public record MoveRequest(Integer position, UUID playerId) {}
+    @JsonInclude(JsonInclude.Include.ALWAYS)
     public record SkillRequest(String skillCode, Integer targetPosition, Integer destinationPosition, UUID playerId) {}
 
     private final MoveActionService moves;

@@ -1,5 +1,6 @@
 package com.jogodavelha.game.draft;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -13,6 +14,7 @@ import java.util.UUID;
 
 @Controller
 public class DraftAbilitiesController {
+    @JsonInclude(JsonInclude.Include.ALWAYS)
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Request(List<String> abilities) { }
 

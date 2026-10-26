@@ -86,12 +86,11 @@ A versão anterior (`docs/contrato-integracao.md`) foi preservada integralmente 
   "status": 400,
   "timestamp": "2026-10-26T10:30:00Z",
   "path": "/api/auth/register",
-  "fields": { "email": "E-mail inválido" },
-  "error": null
+  "fields": { "email": "E-mail inválido" }
 }
 ```
 
-O campo `fields` é preenchido apenas para erros de validação de campos (`VALIDATION_ERROR`), caso contrário é `null`. Todos os campos são sempre incluídos na serialização (configuração `@JsonInclude(JsonInclude.Include.ALWAYS)`).
+O campo `fields` é incluído apenas para erros de validação de campos (`VALIDATION_ERROR`). O campo `error` é omitido quando nulo e incluído nos erros STOMP genéricos quando preenchido.
 
 ### 2.5 Formato de Erros STOMP
 
@@ -103,7 +102,8 @@ Erros STOMP são enviados como `ApiError` para `/user/queue/errors`:
   "message": "Mensagem de erro",
   "status": 400,
   "timestamp": "2026-10-26T10:30:00Z",
-  "path": "/app/game/{gameId}/move"
+  "path": "/app/game/{gameId}/move",
+  "error": "Bad Request"
 }
 ```
 
@@ -111,8 +111,8 @@ Para erros de habilidade, o campo `code` usa valores específicos do domínio (e
 
 ### 2.6 Campos Opcionais, Nulos e Ausentes
 
-- **Todos os DTOs principais:** Todos os campos são sempre incluídos na serialização, mesmo quando nulos (`@JsonInclude.Include.ALWAYS`)
-  - `ApiError`, `RoomDTO`, `SkillDTO`, `CharacterDTO`, `GameDTO`
+- **DTOs principais:** Campos nulos são omitidos em `ApiError` (`@JsonInclude.Include.NON_NULL`); nos demais DTOs listados, são sempre incluídos (`@JsonInclude.Include.ALWAYS`)
+  - `RoomDTO`, `SkillDTO`, `CharacterDTO`, `GameDTO`
   - `LoginResponse`, `RegisterResponse`, `BalanceResponse`
   - `ProfileResponse`, `ProfileStatsResponse`, `MatchHistoryResponse`
   - `RoomSnapshot`, `GameState`
