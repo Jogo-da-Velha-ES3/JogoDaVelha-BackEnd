@@ -111,9 +111,11 @@ Para erros de habilidade, o campo `code` usa valores específicos do domínio (e
 
 ### 2.6 Campos Opcionais, Nulos e Ausentes
 
-- **Erros (ApiError):** Todos os campos são sempre incluídos na serialização, mesmo quando nulos (`@JsonInclude.Include.ALWAYS`)
-- **Outros DTOs:** Campos nulos são omitidos da serialização JSON (`@JsonInclude.Include.NON_NULL`)
-- **RoomSnapshot:** Campos são sempre incluídos na serialização (`@JsonInclude.Include.ALWAYS`)
+- **Todos os DTOs principais:** Todos os campos são sempre incluídos na serialização, mesmo quando nulos (`@JsonInclude.Include.ALWAYS`)
+  - `ApiError`, `RoomDTO`, `SkillDTO`, `CharacterDTO`, `GameDTO`
+  - `LoginResponse`, `RegisterResponse`, `BalanceResponse`
+  - `ProfileResponse`, `ProfileStatsResponse`, `MatchHistoryResponse`
+  - `RoomSnapshot`, `GameState`
 - Campos opcionais não presentes no payload são tratados como `null`
 - Listas vazias são serializadas como `[]`
 
