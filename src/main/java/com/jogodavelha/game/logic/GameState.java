@@ -2,6 +2,7 @@ package com.jogodavelha.game.logic;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.jogodavelha.game.draw.RoundDrawState;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -68,6 +69,7 @@ public class GameState {
     /** Habilidades escolhidas no Draft inicial, preservadas durante toda a partida. */
     @Builder.Default
     private Map<UUID, Set<String>> initialSkillsByPlayer = new HashMap<>();
+    private RoundDrawState roundDraw;
 
     /**
      * Calcula o tempo restante do turno atual em milissegundos.
@@ -159,6 +161,7 @@ public class GameState {
         clearEffects(); // Efeitos não atravessam rounds
         if (usedSkillsByPlayer != null) usedSkillsByPlayer.clear();
         if (roundSkillDecks != null) roundSkillDecks.clear();
+        roundDraw = null;
         roundNumber = round;
         phase = GamePhase.PLAYING;
         suddenDeath = round == 3;

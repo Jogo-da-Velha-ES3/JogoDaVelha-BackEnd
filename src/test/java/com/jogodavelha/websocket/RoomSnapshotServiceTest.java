@@ -8,6 +8,7 @@ import com.jogodavelha.game.GameRepository;
 import com.jogodavelha.game.Game;
 import com.jogodavelha.game.GameStatus;
 import com.jogodavelha.game.draft.DraftStateManager;
+import com.jogodavelha.game.draw.RoundDrawState;
 import com.jogodavelha.game.logic.GamePhase;
 import com.jogodavelha.game.logic.GameState;
 import com.jogodavelha.game.logic.GameStateManager;
@@ -191,6 +192,37 @@ class RoomSnapshotServiceTest {
         when(playerService.isConnected("0042", host.getId())).thenReturn(true);
         when(playerService.isConnected("0042", guest.getId())).thenReturn(false);
         return new RoomFixture(room, host, guest);
+    }
+
+    @Test
+    void reconnectRestoresOnlyTheViewersPendingOptionsAndPublicSnapshotHidesBothDraws() throws Exception {
+        RoomFixture fixture = activeRoom(false);
+        UUID p1 = fixture.host().getId(), p2 = fixture.guest().getId(), gameId = UUID.randomUUID();
+        Game game = new Game(fixture.room(), fixture.host());
+        game.setPlayer2(fixture.guest());
+        setId(game, gameId);
+        when(games.findByRoomIdAndStatus(fixture.room().getId(), GameStatus.IN_PROGRESS)).thenReturn(Optional.of(game));
+        GameState state = GameState.builder().gameId(gameId).board(GameState.EMPTY_BOARD)
+                .player1Id(p1).player2Id(p2).roundNumber(1).phase(GamePhase.DRAFT).build();
+        state.setRoundDraw(new RoundDrawState("0042", 1, 9_000, Map.of(
+                p1, new RoundDrawState.Player(List.of("TORNADO", "SILENCIO", "CONGELAR"), null),
+                p2, new RoundDrawState.Player(List.of("BOMBA", "ESCUDO", "AMPULHETA"), null))));
+        when(gameStates.find(gameId)).thenReturn(Optional.of(state));
+
+        var own = snapshots.compose("0042", p1);
+        assertEquals(RoomSnapshotService.RoomPhase.ROUND_DRAW, own.phase());
+        assertNull(own.turn());
+        assertEquals(9_000, own.drawOptions().deadline());
+        assertEquals(state.getRoundDraw().players().get(p1).options(), own.drawOptions().options());
+        snapshots.publish("0042");
+        var captor = org.mockito.ArgumentCaptor.forClass(Object.class);
+        verify(websocket).sendToTopic(anyString(), captor.capture());
+        var publicSnapshot = (RoomSnapshotService.SnapshotEnvelope) captor.getValue();
+        assertNull(publicSnapshot.payload().drawOptions());
+        assertTrue(publicSnapshot.payload().myDeck().isEmpty());
+        state.setRoundDraw(state.getRoundDraw().select(p1, "TORNADO"));
+        assertNull(snapshots.compose("0042", p1).drawOptions());
+        assertNotNull(snapshots.compose("0042", p2).drawOptions());
     }
 
     private User user(String username) {

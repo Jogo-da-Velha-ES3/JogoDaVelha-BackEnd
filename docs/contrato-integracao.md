@@ -86,8 +86,8 @@ com a mensagem da validação existente; reutilização usa `SKILL_ALREADY_USED`
 Habilidades são aceitas somente quando fazem parte do deck corrente persistido no estado
 Redis, que é definido pelo fluxo de Draft; isso inclui a habilidade sorteada e selecionada.
 O fluxo de Draft deve gravar o deck dos dois jogadores antes de iniciar as ações do round.
-Até essa integração ser concluída por BE-037/BE-013.1, ativações sem deck configurado
-falham de forma segura com `SKILL_NOT_IN_DECK`.
+A BE-013.1 grava os decks antes de liberar o turno. Ativações sem deck configurado
+continuam falhando de forma segura com `SKILL_NOT_IN_DECK`.
 
 Pedidos inválidos não devem consumir a habilidade ou encerrar o turno: o chamador
 precisa validar antes do consumo e não prosseguir com o fim da ação após a exceção.
@@ -497,6 +497,35 @@ Não há endpoint REST, escolha de personagem ou sorteio por round nesta entrega
 A BE-011 continua responsável pelo personagem e a BE-013.1 pelo sorteio de 8s e
 pela montagem do deck de cada round. A validação conjunta geral da FE-17 segue pendente.
 
+### Sorteio de habilidades por round — BE-013.1
+
+Implementado nesta branch. Os destinos e payloads seguem `DRAW_PICK`, `DRAW_OPTIONS`
+e `DECK_UPDATE` dos tipos e destinos do frontend.
+
+- Envie `SEND /app/rooms/{code}/draw/pick`, com `content-type: application/json` e
+  `{"ability":"TORNADO"}`. O jogador é obtido do `Principal` autenticado; campos
+  extras como `playerId` são ignorados. É necessário participar da sala ativa.
+- O servidor sorteia três códigos distintos do catálogo completo, incluindo
+  habilidades não compradas e excluindo as duas fixas. Envia `DRAW_OPTIONS`
+  exclusivamente em `/user/queue/room`, com `{"options":["TORNADO","CONGELAR","SILENCIO"],"deadline":1793026808000}`.
+- A janela dura 8 segundos. O jogador escolhe uma opção e não pode trocar depois
+  de confirmar. No prazo, quem não confirmou recebe uma escolha aleatória entre
+  as próprias opções. Ambos precisam ter deck antes de iniciar o turno.
+- `DECK_UPDATE`, na mesma fila privada, contém `{"deck":[{"ability":"BOMBA","source":"INITIAL","usedThisRound":false},{"ability":"ESCUDO","source":"INITIAL","usedThisRound":false},{"ability":"TORNADO","source":"DRAWN","usedThisRound":false}]}`.
+- Os eventos usam `{type, payload, serverTime}`, com `serverTime` numérico em epoch
+  millis. O tópico `/topic/rooms/{code}` recebe apenas a fase pública `ROUND_DRAW`
+  em `PHASE_CHANGE` e a projeção pública do snapshot, sem opções ou decks.
+- Opções, escolhas e prazo ficam no Redis. O snapshot privado restaura
+  `drawOptions:{options,deadline}` para quem ainda não escolheu; para quem confirmou,
+  `drawOptions` é `null` e `myDeck` contém seu deck. A reconexão não reinicia o prazo.
+- No round seguinte, o sorteio e o consumo são reiniciados. As habilidades fixas
+  e os contadores de timeout permanecem. Os 8 segundos não contam como turno ou W.O.
+
+Erros privados em `/user/queue/errors`, também documentados no README:
+`BAD_REQUEST` (400) para código inválido, habilidade ausente ou fora das opções;
+`FORBIDDEN` (403) para não participante; `CONFLICT` (409) para sorteio ausente,
+encerrado, expirado ou escolha já confirmada. Não há novo código de erro ou rota REST.
+
 ### `PLAYER_JOINED` — `/topic/rooms/{code}`
 
 ✅ Disponível na `dev` — BE-035; dados dos jogadores ampliados na BE-035.1.
@@ -549,12 +578,12 @@ O payload segue esta estrutura (nomes e formatos iguais aos tipos do frontend):
 - `myDeck`: lista privada de `{ability, source, usedThisRound}`. É enviado somente ao jogador correspondente. No tópico compartilhado é sempre lista vazia.
 - `outcome`: `null`, `{kind:"WIN", winner, score:[p1,p2]}`, `{kind:"ABSOLUTE_DRAW"}` ou `{kind:"WO", winner}`.
 - `serverTime`: epoch millis também presente dentro do payload, como exigido pelo tipo `RoomSnapshot`.
-- `draft` é opcional e contém `{deadline, ready:{P1,P2}}`; `drawOptions`, `coins` e `rematch` são opcionais. Campos sem fonte atual confiável são omitidos. O backend não persiste opções do sorteio e revanche ainda não está implementada.
+- `draft` contém `{deadline, ready:{P1,P2}}` enquanto o Draft inicial está ativo. `drawOptions` contém `{options,deadline}` durante o sorteio do round, somente para o dono que ainda não escolheu. Sem dados, esses campos são `null`, assim como `coins` e `rematch`. A revanche ainda não está implementada.
 
 O envelope externo também contém `serverTime` como número inteiro de milissegundos desde Unix epoch. O valor do envelope e do payload é o mesmo. Existem duas entregas com semânticas distintas:
 
 - **Projeção pública:** publicada em `/topic/rooms/{code}` para os participantes inscritos. `mySlot` é `null`, `myDeck` é `[]` e `drawOptions` é `null`; não contém valores individuais. O frontend pode usar os campos compartilhados para atualizar a sala, mas **não deve aplicar esta mensagem como estado individual do jogador nem substituir `mySlot`, `myDeck` ou outros dados locais privados**.
-- **Snapshot individual:** enviado a cada participante em `/user/queue/room`, com o `mySlot` e `myDeck` daquele destinatário; `drawOptions` segue nulo porque o backend não mantém esse estado. Este é o único destino cujo `ROOM_SNAPSHOT` deve atualizar o estado individual do jogador no frontend. A fila exige sessão autenticada no `CONNECT`.
+- **Snapshot individual:** enviado a cada participante em `/user/queue/room`, com `mySlot`, `myDeck` e as opções pendentes em `drawOptions` daquele destinatário, incluindo o prazo original da BE-013.1. Este é o único destino cujo `ROOM_SNAPSHOT` deve atualizar o estado individual do jogador no frontend. A fila exige sessão autenticada no `CONNECT`.
 
 Embora ambos usem `type: "ROOM_SNAPSHOT"` e compartilhem o formato base `RoomSnapshot`, são projeções diferentes: o cliente deve distinguir pelo destino STOMP de origem. Não encaminhe a mensagem do tópico público ao reducer/handler que substitui o snapshot individual; trate-a apenas como atualização dos dados compartilhados.
 
@@ -682,8 +711,8 @@ Envio de jogada solicitado pelo front em `/move`; destino final completo e paylo
 | Evento | Quando / destinatário | Campos previstos | Card / status |
 |---|---|---|---|
 | `DRAFT_UPDATE` | Início e mudanças do Draft; inscritos no tópico da sala | `deadline`, `characters` e `ready` por P1/P2; exemplo acima |
-| `DRAW_OPTIONS` | Sorteio de três opções; somente dono | Três opções e janela de escolha de 8s (BE-013.1) | BE-013.1, 24/10; 📝 |
-| `DECK_UPDATE` | Atualização do deck; jogador dono | payload a definir; privado do jogador conforme pedido do front | BE-023/BE-024; 📝 |
+| `DRAW_OPTIONS` | Sorteio de três opções; somente dono | `{options,deadline}`, prazo de 8s, `/user/queue/room` | BE-013.1; implementado nesta branch |
+| `DECK_UPDATE` | Confirmação do deck; somente dono | `{deck:[{ability,source,usedThisRound}]}`, `/user/queue/room` | BE-013.1; implementado nesta branch |
 | `ABILITY_RESOLVED` | Resolução de habilidade; sala | `result`: `APPLIED`, `NO_VALID_TARGET` ou `BLOCKED_BY_FORCE_FIELD`; demais campos a definir | BE-023, 20/10; 📝 |
 | `TURN_TIMEOUT` | Expiração do turno; sala | Timeout e contador previsto em BE-021; payload a definir | BE-020/BE-021; 15/10 e 25/10; 📝 |
 
@@ -804,6 +833,7 @@ Erros/compatibilidade:
 | 24/10/2026 | `POST /api/rooms/{code}/leave`, evento `ROOM_CLOSED` e expiração de salas `WAITING` abandonadas.                                                                                          | NOVO                          | BE-036; PR feat/room-leave-expiration       |
 | 25/10/2026 | BE-038: `DraftCompleted` do pacote `draft`, personagens persistidos, sala permanece `IN_GAME` no `MATCH_END` (revanche BE-039) e `coinsCredited` reflete o crédito real. | NOVO | BE-038 |
 | 25/10/2026 | Seleção de duas habilidades iniciais por STOMP, confirmação no Draft e erros privados. | NOVO | BE-013 |
+| 26/10/2026 | Sorteio privado de três opções por round, escolha em 8s, auto-escolha, deck e recuperação das opções no snapshot. | NOVO | BE-013.1 |
 
 ### Implementação BE-038 (2026-10-25)
 

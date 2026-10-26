@@ -126,6 +126,7 @@ public class GameLifecycleService implements RoundLifecycle {
         long now = System.currentTimeMillis();
         states.update(gameId, current -> {
             current.startRound(game.getCurrentRound(), duration, now);
+            current.setPhase(GamePhase.DRAFT);
             return current;
         });
         GameState state = states.find(gameId).orElseThrow();

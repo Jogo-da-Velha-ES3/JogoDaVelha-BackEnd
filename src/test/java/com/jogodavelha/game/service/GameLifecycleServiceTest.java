@@ -15,6 +15,11 @@ import com.jogodavelha.game.RoundUpdate;
 import com.jogodavelha.game.Score;
 import com.jogodavelha.game.TurnChangedEvent;
 import com.jogodavelha.game.draft.DraftCompleted;
+import com.jogodavelha.game.draw.RoundSkillDrawService;
+import com.jogodavelha.skill.Skill;
+import com.jogodavelha.skill.SkillCategory;
+import com.jogodavelha.skill.SkillRepository;
+import org.springframework.scheduling.TaskScheduler;
 import com.jogodavelha.game.logic.GamePhase;
 import com.jogodavelha.game.logic.GameState;
 import com.jogodavelha.game.logic.GameStateManager;
@@ -34,6 +39,10 @@ import org.springframework.dao.DataIntegrityViolationException;
 
 import java.lang.reflect.Field;
 import java.security.SecureRandom;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.Random;
+import java.util.concurrent.ScheduledFuture;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -142,6 +151,54 @@ class GameLifecycleServiceTest {
         assertEquals(1, event.getValue().payload().get("round"));
         verify(turns).schedule(eq(game.getId()), anyLong());
         assertEquals(GamePhase.PLAYING, redisState.get().getPhase());
+    }
+
+    @Test
+    void roundDrawDelaysTurnUntilBothDecksAreResolvedWithoutCountingTimeouts() {
+        var catalog = mock(SkillRepository.class);
+        when(catalog.findAll()).thenReturn(List.of("BOMBA", "ESCUDO", "CONGELAR", "TORNADO", "SILENCIO", "AMPULHETA")
+                .stream().map(code -> new Skill(code, code, SkillCategory.OFFENSE, code, false, true, 0)).toList());
+        var clock = mock(Clock.class);
+        var now = new java.util.concurrent.atomic.AtomicLong(1_000);
+        when(clock.millis()).thenAnswer(ignored -> now.get());
+        var scheduler = mock(TaskScheduler.class);
+        when(scheduler.schedule(any(Runnable.class), any(Instant.class))).thenReturn(mock(ScheduledFuture.class));
+        var draw = new RoundSkillDrawService(states, catalog, rooms, gameRepository, clock,
+                scheduler, websocket, snapshots, new Random(1));
+        when(skillDraft.getIfAvailable()).thenReturn(draw);
+        when(rooms.findById(room.getId())).thenReturn(Optional.of(room));
+        when(games.startGame(room, character1Id, character2Id)).thenReturn(game);
+        when(gameRepository.findById(game.getId())).thenReturn(Optional.of(game));
+
+        lifecycle.onDraftCompleted(draftEvent(false));
+
+        assertEquals(GamePhase.DRAFT, redisState.get().getPhase());
+        verify(turns, never()).schedule(any(), anyLong());
+        now.set(9_000);
+        draw.expire(game.getId(), 1, 9_000);
+
+        assertEquals(GamePhase.PLAYING, redisState.get().getPhase());
+        assertEquals(3, redisState.get().getRoundSkillDecks().get(player1.getId()).size());
+        assertEquals(3, redisState.get().getRoundSkillDecks().get(player2.getId()).size());
+        assertEquals(0, redisState.get().getConsecutiveTimeouts(player1.getId()));
+        assertEquals(0, redisState.get().getConsecutiveTimeouts(player2.getId()));
+        verify(turns).schedule(eq(game.getId()), anyLong());
+        draw.expire(game.getId(), 1, 9_000);
+        verify(turns, times(1)).schedule(eq(game.getId()), anyLong());
+
+        when(games.applyRoundResult(game.getId(), 1, RoundResult.PLAYER1_WIN)).thenAnswer(ignored -> {
+            game.registerRoundResult(RoundResult.PLAYER1_WIN);
+            return new RoundUpdate(game, true);
+        });
+        lifecycle.finishRound(game.getId(), 1, RoundResult.PLAYER1_WIN);
+        assertEquals(GamePhase.DRAFT, redisState.get().getPhase());
+        assertTrue(redisState.get().getRoundSkillDecks().isEmpty());
+        verify(turns, times(1)).schedule(eq(game.getId()), anyLong());
+        now.set(17_000);
+        draw.expire(game.getId(), 2, 17_000);
+        assertEquals(GamePhase.PLAYING, redisState.get().getPhase());
+        assertEquals(3, redisState.get().getRoundSkillDecks().get(player1.getId()).size());
+        verify(turns, times(2)).schedule(eq(game.getId()), anyLong());
     }
 
     @Test
