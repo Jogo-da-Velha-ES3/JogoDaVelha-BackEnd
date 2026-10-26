@@ -48,4 +48,31 @@ class RoomTest {
 
         assertEquals("A partida desta sala já foi iniciada.", error.getMessage());
     }
+
+    @Test
+    void closeChangesStatusToClosed() {
+        Room room = new Room("0042", user);
+        room.close();
+        assertEquals(RoomStatus.CLOSED, room.getStatus());
+    }
+
+    @Test
+    void closeIsIdempotent() {
+        Room room = new Room("0042", user);
+        room.close();
+        assertDoesNotThrow(room::close);
+        assertEquals(RoomStatus.CLOSED, room.getStatus());
+    }
+
+    @Test
+    void joinFailsOnClosedRoom() {
+        Room room = new Room("0042", user);
+        room.close();
+
+        User guest = new User("guest", "hash", "guest@example.test");
+        guest.setId(UUID.randomUUID());
+
+        assertThrows(RuntimeException.class, () -> room.join(guest));
+        assertNull(room.getPlayer2());
+    }
 }

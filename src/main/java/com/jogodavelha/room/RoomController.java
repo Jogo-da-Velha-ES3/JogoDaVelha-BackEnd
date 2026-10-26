@@ -72,4 +72,19 @@ public class RoomController {
 
         return ResponseEntity.ok(roomDTO);
     }
+
+    @Operation(summary = "Sair da sala", description = "Fecha a sala aguardando jogador. Sala em partida não pode ser abandonada por aqui.")
+    @ApiResponse(responseCode = "204", description = "Saiu da sala")
+    @ApiResponse(responseCode = "400", description = "Código inválido ou jogador não pertence à sala", content = @Content(schema = @Schema(implementation = com.jogodavelha.error.ApiError.class)))
+    @ApiResponse(responseCode = "404", description = "Sala não encontrada ou encerrada", content = @Content(schema = @Schema(implementation = com.jogodavelha.error.ApiError.class)))
+    @ApiResponse(responseCode = "409", description = "Partida já iniciada", content = @Content(schema = @Schema(implementation = com.jogodavelha.error.ApiError.class)))
+    @PostMapping("/{code}/leave")
+    public ResponseEntity<Void> leaveRoom(
+            @PathVariable String code,
+            Authentication authentication
+    ) {
+        UUID playerId = (UUID) authentication.getPrincipal();
+        roomService.leaveRoom(code, playerId);
+        return ResponseEntity.noContent().build();
+    }
 }

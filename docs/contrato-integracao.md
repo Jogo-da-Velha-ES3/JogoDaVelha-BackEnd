@@ -112,6 +112,7 @@ privado, não entrega por um broker real.
 | POST | `/api/auth/login` | Pública | 200 | ✅ BE-006 |
 | POST | `/api/rooms` | Bearer exigido | 201 | ✅ BE-009.1 | 
 | POST | `/api/rooms/{code}/join` | Bearer exigido | 200 | ✅ BE-009.1 |
+| POST | `/api/rooms/{code}/leave` | Bearer exigido | 204 | ✅ BE-036 |
 | GET | `/api/skills/inventory` | Bearer exigido | 200 | ✅ BE-041 |
 | GET | `/api/coins/balance` | Bearer exigido | 200 | ✅ BE-026 |
 | GET | `/api/characters/inventory` | Bearer exigido | 200 | ✅ BE-028 |
@@ -253,6 +254,20 @@ Erros:
 
 Não há anotações Bean Validation nos parâmetros.
 
+### `POST /api/rooms/{code}/leave`
+
+✅ Disponível na `dev` — BE-036.
+
+Bearer Token obrigatório. O usuário autenticado sai da sala; o host de sala `WAITING` fecha a sala.
+Sem corpo. Sucesso: 204, sem corpo.
+
+Erros:
+
+- 400 ROOM_BAD_REQUEST — código inválido ou jogador não pertence à sala.
+- 404 ROOM_NOT_FOUND — sala inexistente ou já encerrada.
+- 409 ROOM_ALREADY_STARTED — partida já iniciada (abandono em partida será tratado como W.O. em outra tarefa).
+- 401 UNAUTHORIZED — token ausente ou inválido.
+- 500 INTERNAL_ERROR — erro interno.
 
 ### `GET /api/skills/inventory`
 
@@ -468,6 +483,14 @@ Envelope: `{ "type", "payload", "serverTime" }`. `serverTime` é o instante ISO-
 
 Compatibilidade: o tópico não restringe a inscrição; qualquer cliente que souber o código da sala recebe o evento (a restrição por `Principal` fica para depois).
 
+### `ROOM_CLOSED` — `/topic/rooms/{code}`
+
+✅ Disponível na `dev` — BE-036.
+
+Quando é enviado: após o commit do fechamento da sala, por saída do host (`HOST_LEFT`) ou expiração de sala `WAITING` sem 2º jogador (`EXPIRED`).
+Quem recebe: todos os inscritos no tópico (broadcast).
+Envelope: `{ "type", "payload", "serverTime" }`.
+
 ### Propostas de destinos e eventos
 
 Os itens marcados 📝 ainda são propostas. Nesta branch, a BE-037 publica
@@ -575,7 +598,7 @@ Adicional do backlog não incluído na lista inicial do front:
 
 | Evento | Quando / destinatário | Campos previstos | Card / status |
 |---|---|---|---|
-| `ROOM_CLOSED` | Sala encerrada/expirada; oponente | payload a definir | BE-036, 20/10; 📝 |
+| `ROOM_CLOSED` | Sala encerrada/expirada; oponente | payload a definir | BE-036, 20/10; ✅ |
 
 ## 4. Pendências e decisões em aberto
 
@@ -590,6 +613,8 @@ Adicional do backlog não incluído na lista inicial do front:
 | URL pública de produção indisponível | Back/infra | BE-033/033.1 |
 | Formato de data geral além do timestamp ISO UTC de erro | Back + front | — |
 | Tópico `/topic/rooms/{code}` sem restrição de inscrição; restringir por Principal | Back | BE-035 |
+| Expiração de salas WAITING: TTL de 10 min (room.waiting.ttl-minutes) e varredura de 60 s; valores a confirmar com o time | Back | BE-036 |
+| Saída em sala IN_GAME (W.O.) fora do escopo da BE-036 | Back | BE-036 |
 
 ## 5. Como manter este contrato
 
@@ -640,8 +665,9 @@ Erros/compatibilidade:
 
 ## 6. Changelog
 
-| Data | Mudança | Tipo | Card/PR |
-|---|---|---|---|
-| 21/10/2026 | Documentado o inventário REST de personagens; atualizado o status BE-014.2 e esclarecida a disponibilidade REST de habilidades. | NOVO | BE-028, BE-014.2 |
+| Data       | Mudança                                                                                                                                                                                   | Tipo                          | Card/PR                                     |
+|------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------|---------------------------------------------|
+| 21/10/2026 | Documentado o inventário REST de personagens; atualizado o status BE-014.2 e esclarecida a disponibilidade REST de habilidades.                                                           | NOVO                          | BE-028, BE-014.2                            |
 | 15/10/2026 | Criação do contrato com o estado atual da dev. CORS, erro único, prefixo `/api` e códigos de habilidade entram como mudanças já disponíveis; rotas REST que ganharam `/api` são breaking. | NOVO; BREAKING (prefixo REST) | BE-034, BE-044; PR docs/contrato-integracao |
-| 23/10/2026 | Evento `PLAYER_JOINED` disponível em `/topic/rooms/{code}` com envelope `{type, payload, serverTime}`. | NOVO | BE-035; PR feat/room-joined-event |
+| 23/10/2026 | Evento `PLAYER_JOINED` disponível em `/topic/rooms/{code}` com envelope `{type, payload, serverTime}`.                                                                                    | NOVO                          | BE-035; PR feat/room-joined-event           |
+| 24/10/2026 | `POST /api/rooms/{code}/leave`, evento `ROOM_CLOSED` e expiração de salas `WAITING` abandonadas.                                                                                          | NOVO                          | BE-036; PR feat/room-leave-expiration       |
