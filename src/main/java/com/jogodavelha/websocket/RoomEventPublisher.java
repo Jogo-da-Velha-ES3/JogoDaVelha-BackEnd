@@ -1,6 +1,7 @@
 package com.jogodavelha.websocket;
 
 import com.jogodavelha.room.PlayerJoinedRoomEvent;
+import com.jogodavelha.room.RoomClosedEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
@@ -30,6 +31,22 @@ public class RoomEventPublisher {
         );
     }
 
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onRoomClosed(RoomClosedEvent event) {
+        webSocketService.sendToTopic(
+                "/topic/rooms/" + event.roomCode(),
+                new EventEnvelope<>(
+                        "ROOM_CLOSED",
+                        new RoomClosedPayload(
+                                event.roomCode(),
+                                event.closedBy() == null ? null : event.closedBy().toString(),
+                                event.reason()
+                        ),
+                        Instant.now()
+                )
+        );
+    }
+
     public record EventEnvelope<T>(
             String type,
             T payload,
@@ -42,4 +59,11 @@ public class RoomEventPublisher {
             String opponentName,
             String hostId
     ) {}
+
+    public record RoomClosedPayload(
+            String roomCode,
+            String closedBy,
+            String reason
+    ) {}
+
 }

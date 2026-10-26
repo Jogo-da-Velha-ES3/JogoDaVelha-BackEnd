@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -33,6 +34,9 @@ public class Room {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "player2_id")
     private User player2;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
 
     public Room(String code, User player1) {
         if (code == null || !code.matches("[0-9]{4}")) {
@@ -78,5 +82,19 @@ public class Room {
 
     public boolean isReadyToStart() {
         return (status == RoomStatus.WAITING || status == RoomStatus.IN_GAME) && player1 != null && player2 != null;
+    }
+
+    public void close() {
+        if (status == RoomStatus.CLOSED) {
+            return; // idempotente
+        }
+        status = RoomStatus.CLOSED;
+    }
+
+    @PrePersist
+    void onCreate() {
+        if (createdAt == null) {
+            createdAt = Instant.now();
+        }
     }
 }
