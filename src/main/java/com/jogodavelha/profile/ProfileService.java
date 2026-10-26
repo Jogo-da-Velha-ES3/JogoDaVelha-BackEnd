@@ -54,10 +54,10 @@ public class ProfileService {
         Map<UUID, Long> characterUsageCount = finishedGames.stream()
                 .flatMap(game -> {
                     List<UUID> characters = new java.util.ArrayList<>();
-                    if (game.getPlayer1().getId().equals(userId) && game.getPlayer1Character() != null) {
+                    if (game.getPlayer1() != null && userId.equals(game.getPlayer1().getId()) && game.getPlayer1Character() != null) {
                         characters.add(game.getPlayer1Character().getId());
                     }
-                    if (game.getPlayer2() != null && game.getPlayer2().getId().equals(userId) && game.getPlayer2Character() != null) {
+                    if (game.getPlayer2() != null && userId.equals(game.getPlayer2().getId()) && game.getPlayer2Character() != null) {
                         characters.add(game.getPlayer2Character().getId());
                     }
                     return characters.stream();
@@ -85,10 +85,10 @@ public class ProfileService {
         Map<UUID, Instant> lastUsed = finishedGames.stream()
                 .flatMap(game -> {
                     List<Map.Entry<UUID, Instant>> entries = new java.util.ArrayList<>();
-                    if (game.getPlayer1().getId().equals(userId) && game.getPlayer1Character() != null) {
+                    if (game.getPlayer1() != null && userId.equals(game.getPlayer1().getId()) && game.getPlayer1Character() != null) {
                         entries.add(Map.entry(game.getPlayer1Character().getId(), game.getFinishedAt()));
                     }
-                    if (game.getPlayer2() != null && game.getPlayer2().getId().equals(userId) && game.getPlayer2Character() != null) {
+                    if (game.getPlayer2() != null && userId.equals(game.getPlayer2().getId()) && game.getPlayer2Character() != null) {
                         entries.add(Map.entry(game.getPlayer2Character().getId(), game.getFinishedAt()));
                     }
                     return entries.stream();

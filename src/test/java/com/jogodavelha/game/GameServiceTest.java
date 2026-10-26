@@ -1,6 +1,9 @@
 package com.jogodavelha.game;
 
 import com.jogodavelha.auth.User;
+import com.jogodavelha.character.Character;
+import com.jogodavelha.character.CharacterRepository;
+import com.jogodavelha.character.CharacterSymbol;
 import com.jogodavelha.coins.CoinTransactionService;
 import com.jogodavelha.game.service.GameService;
 import com.jogodavelha.profile.UserStatsService;
@@ -13,7 +16,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import com.jogodavelha.profile.UserStatsService;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -29,6 +31,9 @@ class GameServiceTest {
     private GameRepository gameRepository;
 
     @Mock
+    private CharacterRepository characterRepository;
+
+    @Mock
     private CoinTransactionService coinTransactionService;
 
     @Mock
@@ -42,6 +47,8 @@ class GameServiceTest {
     private User player1;
     private User player2;
     private Room room;
+    private Character character1;
+    private Character character2;
 
     @BeforeEach
     void setUp() {
@@ -52,8 +59,41 @@ class GameServiceTest {
         player2.setId(UUID.randomUUID());
         room = new Room("1234", player1);
         room.setId(UUID.randomUUID());
+        room.join(player2);
         game = new Game(room, player1);
         game.setPlayer2(player2);
+        character1 = new Character("X", CharacterSymbol.X, 0);
+        character1.setId(UUID.randomUUID());
+        character2 = new Character("O", CharacterSymbol.O, 0);
+        character2.setId(UUID.randomUUID());
+    }
+
+    @Test
+    void startGamePersistsSelectedCharacters() {
+        when(characterRepository.findById(character1.getId())).thenReturn(Optional.of(character1));
+        when(characterRepository.findById(character2.getId())).thenReturn(Optional.of(character2));
+        when(gameRepository.findByRoomIdAndStatus(room.getId(), GameStatus.IN_PROGRESS)).thenReturn(Optional.empty());
+        when(gameRepository.saveAndFlush(any(Game.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Game created = gameService.startGame(room, character1.getId(), character2.getId());
+
+        assertSame(character1, created.getPlayer1Character());
+        assertSame(character2, created.getPlayer2Character());
+        verify(gameRepository).saveAndFlush(created);
+    }
+
+    @Test
+    void startGameIsIdempotentForActiveMatch() {
+        game.setPlayer1Character(character1);
+        game.setPlayer2Character(character2);
+        when(characterRepository.findById(character1.getId())).thenReturn(Optional.of(character1));
+        when(characterRepository.findById(character2.getId())).thenReturn(Optional.of(character2));
+        when(gameRepository.findByRoomIdAndStatus(room.getId(), GameStatus.IN_PROGRESS)).thenReturn(Optional.of(game));
+
+        Game existing = gameService.startGame(room, character1.getId(), character2.getId());
+
+        assertSame(game, existing);
+        verify(gameRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -83,6 +123,21 @@ class GameServiceTest {
 
         verify(gameRepository).findById(gameId);
         verify(gameRepository).save(game);
+    }
+
+    @Test
+    void expectedRoundCallbackIsAppliedOnlyOnce() {
+        when(gameRepository.findByIdForUpdate(gameId)).thenReturn(Optional.of(game));
+        when(gameRepository.save(game)).thenReturn(game);
+
+        RoundUpdate first = gameService.applyRoundResult(gameId, 1, RoundResult.PLAYER1_WIN);
+        RoundUpdate duplicate = gameService.applyRoundResult(gameId, 1, RoundResult.PLAYER1_WIN);
+
+        assertTrue(first.applied());
+        assertFalse(duplicate.applied());
+        assertEquals(new Score(1, 0), game.getScore());
+        assertEquals(2, game.getCurrentRound());
+        verify(gameRepository, times(1)).save(game);
     }
 
     @Test
@@ -274,7 +329,7 @@ class GameServiceTest {
         loser.addCoins(100);
         winner.addCoins(40);
         game.registerRoundResult(player1Loses ? RoundResult.PLAYER1_WIN : RoundResult.PLAYER2_WIN);
-        when(gameRepository.findById(gameId)).thenReturn(Optional.of(game));
+        when(gameRepository.findByIdForUpdate(gameId)).thenReturn(Optional.of(game));
         when(gameRepository.save(game)).thenReturn(game);
 
         Game finished = gameService.forfeit(gameId, loser);
@@ -294,7 +349,7 @@ class GameServiceTest {
         assertEquals(70, winner.getCoinsBalance());
         assertEquals(100, loser.getCoinsBalance());
         assertEquals(finishedAt, finished.getFinishedAt());
-        verify(gameRepository, times(2)).findById(gameId);
+        verify(gameRepository, times(2)).findByIdForUpdate(gameId);
         verify(gameRepository, times(1)).save(game);
         verify(coinTransactionService).registerCredit(
                 winner,
@@ -305,7 +360,7 @@ class GameServiceTest {
 
     @Test
     void forfeitOfMissingGameDoesNotSaveOrPay() {
-        when(gameRepository.findById(gameId)).thenReturn(Optional.empty());
+        when(gameRepository.findByIdForUpdate(gameId)).thenReturn(Optional.empty());
         assertThrows(GameNotFoundException.class, () -> gameService.forfeit(gameId, player1));
         verify(gameRepository, never()).save(any());
         assertEquals(0, player1.getCoinsBalance());
@@ -316,7 +371,7 @@ class GameServiceTest {
     void forfeitOfUnknownPlayerDoesNotSaveOrPay() {
         User unknown = new User("unknown", "pass", "unknown@test.com");
         unknown.setId(UUID.randomUUID());
-        when(gameRepository.findById(gameId)).thenReturn(Optional.of(game));
+        when(gameRepository.findByIdForUpdate(gameId)).thenReturn(Optional.of(game));
         assertThrows(IllegalArgumentException.class, () -> gameService.forfeit(gameId, unknown));
         verify(gameRepository, never()).save(any());
         assertEquals(GameStatus.IN_PROGRESS, game.getStatus());
@@ -328,6 +383,7 @@ class GameServiceTest {
     @Test
     void forfeitCannotReplaceAnAlreadyPaidNormalResult() {
         when(gameRepository.findById(gameId)).thenReturn(Optional.of(game));
+        when(gameRepository.findByIdForUpdate(gameId)).thenReturn(Optional.of(game));
         when(gameRepository.save(game)).thenReturn(game);
         gameService.registerRoundResult(gameId, RoundResult.PLAYER1_WIN);
         gameService.registerRoundResult(gameId, RoundResult.PLAYER1_WIN);

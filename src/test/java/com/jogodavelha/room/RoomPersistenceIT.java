@@ -7,6 +7,9 @@ import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.migration.BaseJavaMigration;
 import org.flywaydb.core.api.migration.Context;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
+import org.mockito.Mockito;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.*;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -66,8 +69,8 @@ class RoomPersistenceIT {
             return new JpaTransactionManager(emf);
         }
         @Bean JdbcTemplate jdbcTemplate(DataSource ds) { return new JdbcTemplate(ds); }
-        @Bean RoomCodeAllocator allocator(RoomRepository repo, JdbcTemplate jdbc) {
-            return new RoomCodeAllocator(repo, org.mockito.Mockito.mock(GameRepository.class), jdbc);
+        @Bean RoomCodeAllocator allocator(@Qualifier("roomRepository") RoomRepository repo, JdbcTemplate jdbc) {
+            return new RoomCodeAllocator(repo, Mockito.mock(GameRepository.class), jdbc);
         }
     }
 
@@ -146,7 +149,7 @@ class RoomPersistenceIT {
         }
     }
 
-    private static void assertSqlState(String state, org.junit.jupiter.api.function.Executable action) {
+    private static void assertSqlState(String state, Executable action) {
         Throwable error = assertThrows(Exception.class, action);
         while (error != null && !(error instanceof SQLException)) error = error.getCause();
         assertNotNull(error, "Expected a PostgreSQL constraint error");

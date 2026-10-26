@@ -65,6 +65,9 @@ public class GameState {
     /** Habilidades disponíveis a cada jogador no deck selecionado para o round atual. */
     @Builder.Default
     private Map<UUID, Set<String>> roundSkillDecks = new HashMap<>();
+    /** Habilidades escolhidas no Draft inicial, preservadas durante toda a partida. */
+    @Builder.Default
+    private Map<UUID, Set<String>> initialSkillsByPlayer = new HashMap<>();
 
     /**
      * Calcula o tempo restante do turno atual em milissegundos.
@@ -190,6 +193,14 @@ public class GameState {
             roundSkillDecks = new HashMap<>();
         }
         roundSkillDecks.put(playerId, new HashSet<>(skillCodes));
+    }
+
+    public void setInitialSkills(UUID playerId, Collection<String> skillCodes) {
+        if (playerId == null || skillCodes == null || skillCodes.stream().anyMatch(code -> code == null || code.isBlank())) {
+            throw new IllegalArgumentException("Informe jogador e habilidades iniciais válidas.");
+        }
+        if (initialSkillsByPlayer == null) initialSkillsByPlayer = new HashMap<>();
+        initialSkillsByPlayer.put(playerId, new HashSet<>(skillCodes));
     }
 
     private boolean isPlayer1(UUID playerId) {

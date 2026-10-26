@@ -2,7 +2,10 @@ package com.jogodavelha.game.service;
 
 import com.jogodavelha.coins.CoinTransactionService;
 import com.jogodavelha.auth.User;
+import com.jogodavelha.character.Character;
+import com.jogodavelha.character.CharacterRepository;
 import com.jogodavelha.game.*;
+import com.jogodavelha.room.Room;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,8 +27,51 @@ public class GameService {
     public static final int COINS_FORFEIT_WIN = 30;
 
     private final GameRepository gameRepository;
+    private final CharacterRepository characterRepository;
     private final CoinTransactionService coinTransactionService;
     private final UserStatsService userStatsService;
+
+    /**
+     * Cria a partida da sala no máximo uma vez enquanto estiver IN_PROGRESS.
+     * Persiste os personagens do Draft para estatísticas (personagem favorito).
+     */
+    @Transactional
+    public Game startGame(Room room, UUID player1CharacterId, UUID player2CharacterId) {
+        if (room == null || !room.isReadyToStart()) {
+            throw new IllegalArgumentException("Sala sem dois jogadores prontos para iniciar.");
+        }
+        if (player1CharacterId == null || player2CharacterId == null) {
+            throw new IllegalArgumentException("Personagens do Draft são obrigatórios.");
+        }
+        Character player1Character = characterRepository.findById(player1CharacterId)
+                .orElseThrow(() -> new IllegalArgumentException("Personagem do jogador 1 não encontrado."));
+        Character player2Character = characterRepository.findById(player2CharacterId)
+                .orElseThrow(() -> new IllegalArgumentException("Personagem do jogador 2 não encontrado."));
+
+        return gameRepository.findByRoomIdAndStatus(room.getId(), GameStatus.IN_PROGRESS)
+                .map(existing -> attachCharactersIfMissing(existing, player1Character, player2Character))
+                .orElseGet(() -> {
+                    Game game = new Game(room, room.getPlayer1());
+                    game.setPlayer2(room.getPlayer2());
+                    game.setPlayer1Character(player1Character);
+                    game.setPlayer2Character(player2Character);
+                    return gameRepository.saveAndFlush(game);
+                });
+    }
+
+    private Game attachCharactersIfMissing(Game game, Character player1Character, Character player2Character) {
+        boolean missing = game.getPlayer1Character() == null || game.getPlayer2Character() == null;
+        if (!missing) {
+            return game;
+        }
+        if (game.getPlayer1Character() == null) {
+            game.setPlayer1Character(player1Character);
+        }
+        if (game.getPlayer2Character() == null) {
+            game.setPlayer2Character(player2Character);
+        }
+        return gameRepository.saveAndFlush(game);
+    }
 
     /**
      * Registra o resultado de um round em uma partida.
@@ -44,23 +90,39 @@ public class GameService {
         game.registerRoundResult(result);
 
         if (game.getStatus() == GameStatus.FINISHED) {
-            game.setRewardResult(
-                    grantRewards(game)
-            );
+            game.setRewardResult(grantRewards(game));
         }
 
         return gameRepository.save(game);
     }
 
+    /** Registers a round result once; delayed duplicate callbacks are ignored. */
+    @Transactional
+    public Game registerRoundResult(UUID gameId, int expectedRound, RoundResult result) {
+        return applyRoundResult(gameId, expectedRound, result).game();
+    }
+
+    @Transactional
+    public RoundUpdate applyRoundResult(UUID gameId, int expectedRound, RoundResult result) {
+        Game game = gameRepository.findByIdForUpdate(gameId)
+                .orElseThrow(() -> new GameNotFoundException(gameId));
+        if (game.getCurrentRound() != expectedRound || game.getStatus() == GameStatus.FINISHED) {
+            return new RoundUpdate(game, false);
+        }
+        game.registerRoundResult(result);
+        if (game.getStatus() == GameStatus.FINISHED) {
+            game.setRewardResult(grantRewards(game));
+        }
+        return new RoundUpdate(gameRepository.save(game), true);
+    }
+
     @Transactional
     public Game forfeit(UUID gameId, User loser) {
-        Game game = gameRepository.findById(gameId)
+        Game game = gameRepository.findByIdForUpdate(gameId)
                 .orElseThrow(() -> new GameNotFoundException(gameId));
         game.forfeit(loser);
         if (game.getStatus() == GameStatus.FINISHED) {
-            game.setRewardResult(
-                    grantRewards(game)
-            );
+            game.setRewardResult(grantRewards(game));
         }
 
         return gameRepository.save(game);
