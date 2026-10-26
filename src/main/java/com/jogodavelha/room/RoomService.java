@@ -25,9 +25,7 @@ public class RoomService {
     }
 
     public Room joinRoom(String code, UUID playerId) {
-        if (code == null || !code.matches("[0-9]{4}")) {
-            throw new IllegalArgumentException("O código deve conter quatro dígitos.");
-        }
+        validateCode(code);
         User player = findPlayer(playerId);
         allocator.lockMembership();
         Room room = rooms.findByCodeAndStatusIn(code, RoomCodeAllocator.ACTIVE).orElseThrow(
@@ -52,5 +50,33 @@ public class RoomService {
         }
         return users.findById(playerId)
                 .orElseThrow(() -> new IllegalArgumentException("Jogador não encontrado."));
+    }
+
+    public Room leaveRoom(String code, UUID playerId) {
+        validateCode(code); // mesma checagem de 4 dígitos do join
+        findPlayer(playerId);
+        allocator.lockMembership();
+        Room room = rooms.findByCodeAndStatusIn(code, RoomCodeAllocator.ACTIVE).orElseThrow(
+                () -> new RoomNotFoundException("Sala não encontrada ou encerrada.")
+        );
+
+        boolean isHost = room.getPlayer1().getId().equals(playerId);
+        boolean isGuest = room.getPlayer2() != null && room.getPlayer2().getId().equals(playerId);
+        if (!isHost && !isGuest) {
+            throw new IllegalArgumentException("Jogador não pertence à sala."); // vira 400
+        }
+        if (room.getStatus() == RoomStatus.IN_GAME) {
+            throw new RoomAlreadyStartedException("A partida já foi iniciada; a saída é tratada como W.O.");
+        }
+        room.close();
+        Room saved = rooms.saveAndFlush(room);
+        events.publishEvent(new RoomClosedEvent(saved.getCode(), saved.getId(), playerId, "HOST_LEFT"));
+        return saved;
+    }
+
+    private void validateCode(String code) {
+        if (code == null || !code.matches("[0-9]{4}")) {
+            throw new IllegalArgumentException("O código deve conter quatro dígitos.");
+        }
     }
 }
