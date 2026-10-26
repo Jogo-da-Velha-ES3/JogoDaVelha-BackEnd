@@ -21,9 +21,12 @@ public class RoomEventPublisher {
                         "PLAYER_JOINED",
                         new RoomJoinedPayload(
                                 event.roomCode(),
-                                event.guestId().toString(),
-                                event.guestUsername(),
-                                event.hostId().toString()
+                                event.guest().id().toString(),
+                                event.guest().username(),
+                                event.guest().avatar(),
+                                event.host().id().toString(),
+                                event.host().username(),
+                                event.host().avatar()
                         ),
                         Instant.now()
                 )
@@ -40,6 +43,9 @@ public class RoomEventPublisher {
             String roomCode,
             String guestId,
             String opponentName,
-            String hostId
+            String guestAvatar,
+            String hostId,
+            String hostUsername,
+            String hostAvatar
     ) {}
 }
