@@ -93,6 +93,25 @@ class StompJwtAuthenticationInterceptorTest {
     }
 
     @Test
+    void authenticatedSessionCanSubscribeToItsPrivateRoomQueue() {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        accessor.setDestination("/user/queue/room");
+        accessor.setUser(() -> USER_ID.toString());
+        accessor.setLeaveMutable(true);
+        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        assertSame(message, interceptor.preSend(message, channel()));
+    }
+
+    @Test
+    void privateRoomQueueStillRequiresAuthentication() {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        accessor.setDestination("/user/queue/room");
+        accessor.setLeaveMutable(true);
+        assertRejected(accessor);
+    }
+
+    @Test
     void missingMalformedInvalidExpiredAndWronglySignedTokensAreRejected() {
         assertRejected(connect(null));
         assertRejected(connect("Bearer"));

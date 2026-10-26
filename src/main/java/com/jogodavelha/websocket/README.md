@@ -87,7 +87,7 @@ Enviado quando o 2º jogador entra na sala, para o host exibir o "MATCH FEITO!".
 |----------------|---------------|---------------------------------------------------|
 | `type`         | string        | Sempre `PLAYER_JOINED`                            |
 | `payload`      | objeto        | Dados do jogador que entrou e da sala             |
-| `serverTime`   | string (ISO-8601) | Horário de publicação definido pelo servidor |
+| `serverTime`   | number (epoch millis) | Instante de publicação definido pelo servidor, em milissegundos desde Unix epoch |
 
 Campos de `payload`:
 
@@ -115,7 +115,7 @@ Exemplo:
     "hostId": "3f2b8c1e-0000-0000-0000-000000000001",
     "hostUsername": "host"
   },
-  "serverTime": "2026-10-25T12:00:00Z"
+  "serverTime": 1792929600000
 }
 ```
 
@@ -131,7 +131,15 @@ stompClient.subscribe('/topic/rooms/' + roomCode, function (message) {
 });
 ```
 
-> Atenção: o tópico é de broadcast e, por ora, sem restrição de inscrição. Qualquer cliente que souber o código da sala recebe o evento, inclusive o jogador que entrou; o cliente do host deve filtrar por `hostId`. A restrição por `Principal` depende da BE-040.
+> O tópico é broadcast entre participantes, mas cada inscrição exige sessão autenticada e participação ativa na sala correspondente, conferidas pelo interceptor STOMP usando o `Principal`. O cliente do host continua filtrando `PLAYER_JOINED` por `hostId`.
+
+#### `ROOM_SNAPSHOT`
+
+Publicado em `/topic/rooms/{code}` ao conectar, após a entrada do segundo jogador, nas atualizações do Draft e nas transições de round/partida. O evento usa `{type, payload, serverTime}` e `serverTime` é epoch millis. O payload segue o `RoomSnapshot` do frontend (`code`, `phase`, `players`, `mySlot`, `round`, `suddenDeath`, `board`, `turn`, `myDeck`, `outcome` e campos opcionais do Draft/resultado). No tópico compartilhado `mySlot` é `null`, `myDeck` é `[]` e `drawOptions` é `null`.
+
+Cada jogador também recebe o mesmo `ROOM_SNAPSHOT` individualizado em `/user/queue/room`, com seu `mySlot` e `myDeck`. Opções de sorteio não são mantidas pelo estado atual do backend e permanecem `null`.
+
+Para sincronizar sob demanda, envie `SEND /app/rooms/{code}/sync` sem corpo. O backend deriva a identidade do `Principal`, valida participação ativa e responde somente ao solicitante em `/user/queue/room`. Não há broadcast durante sync, preservando os dados privados do outro jogador.
 
 #### `ROOM_CLOSED`
 
@@ -141,7 +149,7 @@ Enviado quando a sala é fechada: o host saiu enquanto ela estava `WAITING` (`PO
 |--------------|-------------------|-----------------------------------------------|
 | `type`       | string            | Sempre `ROOM_CLOSED`                          |
 | `payload`    | objeto            | Dados do fechamento                           |
-| `serverTime` | string (ISO-8601) | Horário de publicação definido pelo servidor  |
+| `serverTime` | number (epoch millis) | Instante de publicação definido pelo servidor, em milissegundos desde Unix epoch |
 
 Campos de `payload`:
 
@@ -161,7 +169,7 @@ Exemplo:
     "closedBy": "3f2b8c1e-0000-0000-0000-000000000001",
     "reason": "HOST_LEFT"
   },
-  "serverTime": "2026-10-24T12:00:00Z"
+  "serverTime": 1792843200000
 }
 ```
 

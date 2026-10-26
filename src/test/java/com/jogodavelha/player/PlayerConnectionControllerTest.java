@@ -4,6 +4,7 @@ import com.jogodavelha.game.PlayerDisconnectionListener;
 import com.jogodavelha.game.PlayerSessionRegistry;
 import com.jogodavelha.game.service.PlayerService;
 import com.jogodavelha.websocket.PlayerConnectionController;
+import com.jogodavelha.websocket.RoomSnapshotService;
 import org.junit.jupiter.api.Test;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.security.access.AccessDeniedException;
@@ -13,14 +14,19 @@ import java.util.UUID;
 import java.security.Principal;
 
 import static org.mockito.Mockito.*;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 
 class PlayerConnectionControllerTest {
 
     private final PlayerService playerService = mock(PlayerService.class);
     private final PlayerSessionRegistry playerSessionRegistry = mock(PlayerSessionRegistry.class);
+    private final RoomSnapshotService snapshots = mock(RoomSnapshotService.class);
     private final PlayerDisconnectionListener listener = new PlayerDisconnectionListener(playerService, playerSessionRegistry);
     private final PlayerConnectionController controller = new PlayerConnectionController(playerService, playerSessionRegistry);
+
+    PlayerConnectionControllerTest() {
+        controller.setSnapshots(snapshots);
+    }
 
     @Test
     void connectUsesAuthenticatedPrincipalAndRegistersPresence() {
@@ -33,6 +39,7 @@ class PlayerConnectionControllerTest {
 
         verify(playerSessionRegistry).register("session-123", "0042", authenticatedId);
         verify(playerService).markConnected("0042", authenticatedId);
+        verify(snapshots).publish("0042");
         verify(playerService, never()).markConnected("0042", spoofedId);
     }
 
@@ -46,6 +53,23 @@ class PlayerConnectionControllerTest {
         assertThrows(AccessDeniedException.class, () -> controller.connect("0042", invalid, headers));
 
         verifyNoInteractions(playerSessionRegistry, playerService);
+    }
+
+    @Test
+    void syncUsesOnlyAuthenticatedPrincipalIdentity() {
+        UUID authenticatedId = UUID.randomUUID();
+
+        controller.sync("0042", () -> authenticatedId.toString());
+
+        verify(snapshots).sync("0042", authenticatedId);
+    }
+
+    @Test
+    void syncRejectsMissingOrInvalidPrincipal() {
+        assertThrows(AccessDeniedException.class, () -> controller.sync("0042", null));
+        assertThrows(AccessDeniedException.class, () -> controller.sync("0042", () -> "not-a-uuid"));
+
+        verifyNoInteractions(snapshots);
     }
 
     @Test

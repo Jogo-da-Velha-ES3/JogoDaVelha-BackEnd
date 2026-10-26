@@ -7,8 +7,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
-import java.time.Instant;
-
 @Component
 @RequiredArgsConstructor
 public class RoomEventPublisher {
@@ -29,7 +27,7 @@ public class RoomEventPublisher {
                                 event.host().username(),
                                 event.host().avatar()
                         ),
-                        Instant.now()
+                        System.currentTimeMillis()
                 )
         );
     }
@@ -45,7 +43,7 @@ public class RoomEventPublisher {
                                 event.closedBy() == null ? null : event.closedBy().toString(),
                                 event.reason()
                         ),
-                        Instant.now()
+                        System.currentTimeMillis()
                 )
         );
     }
@@ -53,7 +51,7 @@ public class RoomEventPublisher {
     public record EventEnvelope<T>(
             String type,
             T payload,
-            Instant serverTime
+            long serverTime
     ) {}
 
     public record RoomJoinedPayload(

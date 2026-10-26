@@ -1,0 +1,209 @@
+package com.jogodavelha.websocket;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jogodavelha.auth.User;
+import com.jogodavelha.character.CharacterRepository;
+import com.jogodavelha.game.GameRepository;
+import com.jogodavelha.game.Game;
+import com.jogodavelha.game.GameStatus;
+import com.jogodavelha.game.draft.DraftStateManager;
+import com.jogodavelha.game.logic.GamePhase;
+import com.jogodavelha.game.logic.GameState;
+import com.jogodavelha.game.logic.GameStateManager;
+import com.jogodavelha.game.service.PlayerService;
+import com.jogodavelha.room.Room;
+import com.jogodavelha.room.RoomPlayerService;
+import com.jogodavelha.room.RoomRepository;
+import com.jogodavelha.room.RoomStatus;
+import org.junit.jupiter.api.Test;
+import org.springframework.security.access.AccessDeniedException;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+class RoomSnapshotServiceTest {
+    private static final List<RoomStatus> ACTIVE = List.of(RoomStatus.WAITING, RoomStatus.IN_GAME);
+    private final RoomRepository rooms = mock(RoomRepository.class);
+    private final GameRepository games = mock(GameRepository.class);
+    private final DraftStateManager drafts = mock(DraftStateManager.class);
+    private final GameStateManager gameStates = mock(GameStateManager.class);
+    private final RoomPlayerService roomPlayers = spy(new RoomPlayerService());
+    private final PlayerService playerService = mock(PlayerService.class);
+    private final CharacterRepository characters = mock(CharacterRepository.class);
+    private final WebSocketService websocket = mock(WebSocketService.class);
+    private final RoomSnapshotService snapshots = new RoomSnapshotService(
+            rooms, games, drafts, gameStates, roomPlayers, playerService, characters, websocket);
+    private final ObjectMapper mapper = new ObjectMapper();
+
+    @Test
+    void snapshotMatchesFrontendShapeAndUsesSharedPlayerData() {
+        RoomFixture fixture = activeRoom(true);
+
+        var snapshot = snapshots.compose("0042", fixture.host().getId());
+
+        assertEquals("0042", snapshot.code());
+        assertEquals(RoomSnapshotService.RoomPhase.WAITING, snapshot.phase());
+        assertEquals(RoomSnapshotService.Slot.P1, snapshot.mySlot());
+        assertEquals(1, snapshot.players().size());
+        assertEquals(fixture.host().getId().toString(), snapshot.players().getFirst().userId());
+        assertEquals("host", snapshot.players().getFirst().nickname());
+        assertEquals(16, snapshot.board().size());
+        assertEquals(0, snapshot.board().getFirst().index());
+        assertNull(snapshot.turn());
+        assertTrue(snapshot.myDeck().isEmpty());
+        assertNull(snapshot.outcome());
+        assertTrue(snapshot.serverTime() > 0);
+        verify(roomPlayers).host(fixture.room());
+    }
+
+    @Test
+    void publicSnapshotContainsNoPrivatePlayerValuesAndPrivateQueueGetsPerPlayerSnapshot() throws Exception {
+        RoomFixture fixture = activeRoom(false);
+        UUID gameId = UUID.randomUUID();
+        Game game = new Game(fixture.room(), fixture.host());
+        game.setPlayer2(fixture.guest());
+        setId(game, gameId);
+        when(games.findByRoomIdAndStatus(fixture.room().getId(), GameStatus.IN_PROGRESS))
+                .thenReturn(Optional.of(game));
+        GameState state = GameState.builder().gameId(gameId).board(GameState.EMPTY_BOARD)
+                .player1Id(fixture.host().getId()).player2Id(fixture.guest().getId())
+                .roundNumber(1).build();
+        state.setInitialSkills(fixture.host().getId(), List.of("BOMBA", "ESCUDO"));
+        when(gameStates.find(gameId)).thenReturn(Optional.of(state));
+
+        snapshots.publish("0042");
+
+        var topicCaptor = org.mockito.ArgumentCaptor.forClass(Object.class);
+        verify(websocket).sendToTopic(eq("/topic/rooms/0042"), topicCaptor.capture());
+        JsonNode topicJson = mapper.valueToTree(topicCaptor.getValue());
+        assertEquals("ROOM_SNAPSHOT", topicJson.path("type").asText());
+        assertEquals(topicJson.path("serverTime").asLong(), topicJson.path("payload").path("serverTime").asLong());
+        assertTrue(topicJson.path("serverTime").isNumber());
+        assertTrue(topicJson.path("payload").path("mySlot").isNull());
+        assertTrue(topicJson.path("payload").path("myDeck").isEmpty());
+        assertTrue(topicJson.path("payload").path("drawOptions").isNull());
+        assertFalse(topicJson.toString().contains("BOMBA"));
+
+        var privateCaptor = org.mockito.ArgumentCaptor.forClass(Object.class);
+        verify(websocket).sendToUser(eq(fixture.host().getId().toString()), eq("/queue/room"), privateCaptor.capture());
+        JsonNode privateJson = mapper.valueToTree(privateCaptor.getValue());
+        assertEquals("ROOM_SNAPSHOT", privateJson.path("type").asText());
+        assertEquals("P1", privateJson.path("payload").path("mySlot").asText());
+        assertEquals("BOMBA", privateJson.path("payload").path("myDeck").get(0).path("ability").asText());
+        verify(websocket).sendToUser(eq(fixture.guest().getId().toString()), eq("/queue/room"), any());
+    }
+
+    @Test
+    void mapsLiveGameStateToFrontendBoardTurnPlayersAndPrivateDeck() throws Exception {
+        RoomFixture fixture = activeRoom(false);
+        UUID gameId = UUID.randomUUID();
+        Game game = new Game(fixture.room(), fixture.host());
+        game.setPlayer2(fixture.guest());
+        setId(game, gameId);
+        when(games.findByRoomIdAndStatus(fixture.room().getId(), GameStatus.IN_PROGRESS))
+                .thenReturn(Optional.of(game));
+        GameState state = GameState.builder()
+                .gameId(gameId)
+                .board("X---------------")
+                .player1Id(fixture.host().getId())
+                .player2Id(fixture.guest().getId())
+                .firstPlayerId(fixture.host().getId())
+                .currentTurnPlayerId(fixture.guest().getId())
+                .turnDurationMillis(10_000)
+                .turnDeadlineEpochMillis(50_000)
+                .roundNumber(2)
+                .phase(GamePhase.PLAYING)
+                .shieldedPositions(Map.of(1, new GameState.ShieldEffect(fixture.host().getId(), 2)))
+                .build();
+        state.setPlayer1ConsecutiveTimeouts(1);
+        state.setInitialSkills(fixture.host().getId(), List.of("BOMBA", "ESCUDO"));
+        state.setRoundSkillDeck(fixture.host().getId(), List.of("BOMBA", "ESCUDO", "TORNADO"));
+        state.recordSkillUse(fixture.host().getId(), "BOMBA");
+        when(gameStates.find(gameId)).thenReturn(Optional.of(state));
+
+        var snapshot = snapshots.compose("0042", fixture.host().getId());
+
+        assertEquals(RoomSnapshotService.RoomPhase.PLAYING, snapshot.phase());
+        assertEquals(RoomSnapshotService.Slot.P1, snapshot.players().get(0).slot());
+        assertEquals(1, snapshot.players().get(0).consecutiveTimeouts());
+        assertEquals(RoomSnapshotService.Slot.P1, snapshot.board().get(0).owner());
+        assertEquals("ESCUDO", snapshot.board().get(1).effects().getFirst().kind());
+        assertEquals(RoomSnapshotService.Slot.P2, snapshot.turn().player());
+        assertEquals(40_000, snapshot.turn().startedAt());
+        assertEquals(10, snapshot.turn().durationSeconds());
+        assertEquals(3, snapshot.myDeck().size());
+        assertTrue(snapshot.myDeck().stream().filter(deckSlot -> deckSlot.ability().equals("BOMBA"))
+                .findFirst().orElseThrow().usedThisRound());
+        assertFalse(snapshot.myDeck().stream().anyMatch(deckSlot -> deckSlot.source().equals("DRAWN")
+                && deckSlot.ability().equals("BOMBA")));
+    }
+
+    @Test
+    void syncPublishesOnlyAfterAuthenticatedParticipantIsValidated() {
+        RoomFixture fixture = activeRoom(true);
+
+        snapshots.sync("0042", fixture.host().getId());
+
+        var captor = org.mockito.ArgumentCaptor.forClass(Object.class);
+        verify(websocket, never()).sendToTopic(anyString(), any());
+        verify(websocket).sendToUser(eq(fixture.host().getId().toString()), eq("/queue/room"), captor.capture());
+        verify(websocket, never()).sendToUser(eq(fixture.guest().getId().toString()), anyString(), any());
+        var envelope = (RoomSnapshotService.SnapshotEnvelope) captor.getValue();
+        assertEquals("ROOM_SNAPSHOT", envelope.type());
+        assertEquals(RoomSnapshotService.Slot.P1, envelope.payload().mySlot());
+    }
+
+    @Test
+    void syncRejectsNonParticipantWithoutPublishing() {
+        RoomFixture fixture = activeRoom(true);
+
+        assertThrows(AccessDeniedException.class, () -> snapshots.sync("0042", UUID.randomUUID()));
+
+        verifyNoInteractions(websocket, games, drafts, gameStates, playerService);
+    }
+
+    @Test
+    void invalidOrMissingRoomIsRejectedWithoutPublishing() {
+        assertThrows(IllegalArgumentException.class, () -> snapshots.sync("bad", UUID.randomUUID()));
+        when(rooms.findByCodeAndStatusIn("0042", ACTIVE)).thenReturn(Optional.empty());
+        assertThrows(IllegalArgumentException.class, () -> snapshots.sync("0042", UUID.randomUUID()));
+        verifyNoInteractions(websocket, games, drafts, gameStates, playerService);
+    }
+
+    private RoomFixture activeRoom(boolean waiting) {
+        UUID roomId = UUID.randomUUID();
+        User host = user("host");
+        User guest = user("guest");
+        Room room = mock(Room.class);
+        when(room.getId()).thenReturn(roomId);
+        when(room.getCode()).thenReturn("0042");
+        when(room.getStatus()).thenReturn(waiting ? RoomStatus.WAITING : RoomStatus.IN_GAME);
+        when(room.getPlayer1()).thenReturn(host);
+        when(room.getPlayer2()).thenReturn(waiting ? null : guest);
+        when(rooms.findByCodeAndStatusIn("0042", ACTIVE)).thenReturn(Optional.of(room));
+        when(drafts.find(roomId)).thenReturn(Optional.empty());
+        when(playerService.isConnected("0042", host.getId())).thenReturn(true);
+        when(playerService.isConnected("0042", guest.getId())).thenReturn(false);
+        return new RoomFixture(room, host, guest);
+    }
+
+    private User user(String username) {
+        User user = new User(username, "private-password", username + "@example.com");
+        user.setId(UUID.randomUUID());
+        return user;
+    }
+
+    private void setId(Game game, UUID id) throws Exception {
+        var field = Game.class.getDeclaredField("id");
+        field.setAccessible(true);
+        field.set(game, id);
+    }
+
+    private record RoomFixture(Room room, User host, User guest) { }
+}
