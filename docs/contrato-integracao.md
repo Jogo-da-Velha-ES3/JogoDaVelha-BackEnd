@@ -447,7 +447,7 @@ Payload não definido adiante permanece **payload a definir**; nada abaixo está
 
 ### `PLAYER_JOINED` — `/topic/rooms/{code}`
 
-✅ Disponível na `dev` — BE-035.
+✅ Disponível na `dev` — BE-035; dados dos jogadores ampliados na BE-035.1.
 
 Quando é enviado: após o commit da entrada do 2º jogador (`POST /api/rooms/{code}/join`). Entradas rejeitadas não geram mensagem.
 Quem recebe: todos os inscritos no tópico (broadcast). O cliente do host deve filtrar por `hostId`.
@@ -460,13 +460,27 @@ Envelope: `{ "type", "payload", "serverTime" }`. `serverTime` é o instante ISO-
     "roomCode": "0042",
     "guestId": "123e4567-e89b-12d3-a456-426614174002",
     "opponentName": "bia",
-    "hostId": "123e4567-e89b-12d3-a456-426614174000"
+    "hostId": "123e4567-e89b-12d3-a456-426614174000",
+    "hostUsername": "ana"
   },
   "serverTime": "2026-10-23T12:00:00Z"
 }
 ```
+Campos do `payload`:
 
-Compatibilidade: o tópico não restringe a inscrição; qualquer cliente que souber o código da sala recebe o evento (a restrição por `Principal` fica para depois).
+| Campo          | Tipo             | Descrição                               |
+|----------------|------------------|-----------------------------------------|
+| `roomCode`     | string           | Código da sala.                         |
+| `guestId`      | string (UUID)    | ID de quem entrou.                      |
+| `opponentName` | string           | Username de quem entrou.                |
+| `hostId`       | string (UUID)    | ID do host.                             |
+| `hostUsername` | string           | Username do host.                       |
+| `guestAvatar`  | string, opcional | Avatar de perfil equipado do convidado. |
+| `hostAvatar`   | string, opcional | Avatar de perfil equipado do host.      |
+
+⚠️ `guestAvatar` e `hostAvatar`: o avatar é um cosmético do inventário e **não** é o personagem escolhido no Draft. O avatar equipado ainda não existe (o campo `avatar` do perfil está reservado, sempre `null`), então **hoje esses campos nunca são enviados**; valores `null` são omitidos da mensagem. Passarão a aparecer quando a loja/inventário o implementar, sem alteração de contrato. O formato do avatar (código, URL) está pendente.
+
+Compatibilidade: acréscimo de campos, sem quebra; `roomCode`, `guestId`, `opponentName` e `hostId` permanecem iguais. O tópico não restringe a inscrição; qualquer cliente que souber o código da sala recebe o evento (a restrição por `Principal` fica para depois).
 
 ### Propostas de destinos e eventos
 
@@ -590,6 +604,7 @@ Adicional do backlog não incluído na lista inicial do front:
 | URL pública de produção indisponível | Back/infra | BE-033/033.1 |
 | Formato de data geral além do timestamp ISO UTC de erro | Back + front | — |
 | Tópico `/topic/rooms/{code}` sem restrição de inscrição; restringir por Principal | Back | BE-035 |
+| `guestAvatar`/`hostAvatar` em `PLAYER_JOINED`: formato do avatar e fonte de dados dependem da loja/inventário | Back + front | BE-035.1 |
 
 ## 5. Como manter este contrato
 
@@ -645,3 +660,4 @@ Erros/compatibilidade:
 | 21/10/2026 | Documentado o inventário REST de personagens; atualizado o status BE-014.2 e esclarecida a disponibilidade REST de habilidades. | NOVO | BE-028, BE-014.2 |
 | 15/10/2026 | Criação do contrato com o estado atual da dev. CORS, erro único, prefixo `/api` e códigos de habilidade entram como mudanças já disponíveis; rotas REST que ganharam `/api` são breaking. | NOVO; BREAKING (prefixo REST) | BE-034, BE-044; PR docs/contrato-integracao |
 | 23/10/2026 | Evento `PLAYER_JOINED` disponível em `/topic/rooms/{code}` com envelope `{type, payload, serverTime}`. | NOVO | BE-035; PR feat/room-joined-event |
+| 25/10/2026 | `PLAYER_JOINED` ganha `hostUsername` e, quando houver avatar equipado, `guestAvatar`/`hostAvatar` (hoje omitidos). Acréscimo compatível. | ALTERADO | BE-035.1 |
