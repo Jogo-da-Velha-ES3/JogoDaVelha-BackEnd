@@ -24,7 +24,7 @@ class RoomServiceTest {
     private final GameRepository games = mock(GameRepository.class);
     private final RoomCodeAllocator allocator = spy(new RoomCodeAllocator(rooms, games, mock(JdbcTemplate.class)));
     private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
-    private final RoomService service = new RoomService(rooms, users, allocator, events);
+    private final RoomService service = new RoomService(rooms, users, allocator, events, new RoomPlayerService());
     private final User owner = player("owner");
     private final User guest = player("guest");
     private final Room room = new Room("0042", owner);
@@ -61,10 +61,12 @@ class RoomServiceTest {
         verify(events).publishEvent(captor.capture());
         PlayerJoinedRoomEvent event = captor.getValue();
         assertEquals("0042", event.roomCode());
-        assertEquals(guest.getId(), event.guestId());
-        assertEquals("guest", event.guestUsername());
-        assertEquals(owner.getId(), event.hostId());
-        assertEquals("owner", event.hostUsername());
+        assertEquals(guest.getId(), event.guest().id());
+        assertEquals("guest", event.guest().username());
+        assertNull(event.guest().avatar());
+        assertEquals(owner.getId(), event.host().id());
+        assertEquals("owner", event.host().username());
+        assertNull(event.host().avatar());
     }
 
     @ParameterizedTest
