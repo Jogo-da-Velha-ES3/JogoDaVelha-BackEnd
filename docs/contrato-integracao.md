@@ -646,8 +646,9 @@ Erros/compatibilidade:
 | 21/10/2026 | Documentado o inventário REST de personagens; atualizado o status BE-014.2 e esclarecida a disponibilidade REST de habilidades. | NOVO | BE-028, BE-014.2 |
 | 15/10/2026 | Criação do contrato com o estado atual da dev. CORS, erro único, prefixo `/api` e códigos de habilidade entram como mudanças já disponíveis; rotas REST que ganharam `/api` são breaking. | NOVO; BREAKING (prefixo REST) | BE-034, BE-044; PR docs/contrato-integracao |
 | 23/10/2026 | Evento `PLAYER_JOINED` disponível em `/topic/rooms/{code}` com envelope `{type, payload, serverTime}`. | NOVO | BE-035; PR feat/room-joined-event |
+| 25/10/2026 | BE-038: `DraftCompleted` do pacote `draft`, personagens persistidos, sala permanece `IN_GAME` no `MATCH_END` (revanche BE-039) e `coinsCredited` reflete o crédito real. | NOVO | BE-038 |
 
-### Implementação BE-038 (2026-10-21)
+### Implementação BE-038 (2026-10-25)
 
 A orquestração da partida publica no destino proposto pelo front `/topic/rooms/{code}`,
 com o envelope `{type, payload, serverTime}`. `PHASE_CHANGE` em `PLAYING` contém
@@ -655,12 +656,16 @@ com o envelope `{type, payload, serverTime}`. `PHASE_CHANGE` em `PLAYING` conté
 `suddenDeath` e `turnDeadline` (epoch millis). `ROUND_END` contém `gameId`, `round`,
 `result` (`PLAYER1_WIN`, `PLAYER2_WIN` ou `DRAW`) e `score`. `MATCH_END` contém
 `gameId`, `score`, `winnerId` (string vazia em empate), `forfeit` e `coinsCredited`
-(map de UUID do jogador para moedas creditadas). `serverTime` é epoch millis.
+(map de UUID do jogador para moedas efetivamente creditadas pelo processamento de
+recompensas). `serverTime` é epoch millis.
 
 O estado inicial é sorteado pelo `GameStateManager`; `ROUND_END` usa `TurnChangedEvent`
 e registra uma única vez o round indicado. Round 3 aplica 5 segundos por turno. A sala
-passa a `CLOSED` no encerramento. A integração aceita `DraftCompleted(roomId)` e a
-interface `RoundSkillDraft` aguarda o callback da janela de escolha antes de iniciar o
-timer. Esta branch ainda não contém o produtor BE-037 nem implementação BE-013.1.
-O destino `/topic/room/{code}` citado no backlog continua divergente; foi usado o
-plural `/topic/rooms/{code}` proposto nesta seção do contrato.
+permanece `IN_GAME` ao fim da partida para permitir a revanche (BE-039); o fechamento
+`CLOSED` fica a cargo dos fluxos de saída/recusa. A orquestração consome o evento
+interno `com.jogodavelha.game.draft.DraftCompleted` (jogadores, personagens e flag
+`automatic`) publicado pelo `DraftService`. Os personagens selecionados são persistidos
+em `games.player1_character_id` / `player2_character_id`. A interface `RoundSkillDraft`
+é obrigatória: a partida não inicia o turno sem o callback da janela de escolha de 8s
+(implementação BE-013.1). O destino `/topic/room/{code}` citado no backlog continua
+divergente; foi usado o plural `/topic/rooms/{code}` proposto nesta seção do contrato.

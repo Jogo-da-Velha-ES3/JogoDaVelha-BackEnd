@@ -18,7 +18,7 @@ import jakarta.persistence.LockModeType;
 @Repository
 public interface GameRepository extends JpaRepository<Game, UUID> {
 
-    Optional<Game> findByRoomId(UUID roomId);
+    Optional<Game> findByRoomIdAndStatus(UUID roomId, GameStatus status);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT g FROM Game g WHERE g.id = :id")
