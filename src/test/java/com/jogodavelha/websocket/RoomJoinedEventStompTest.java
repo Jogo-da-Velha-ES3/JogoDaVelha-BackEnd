@@ -7,6 +7,8 @@ import com.jogodavelha.game.PlayerSessionRegistry;
 import com.jogodavelha.game.service.PlayerService;
 import com.jogodavelha.room.PlayerJoinedRoomEvent;
 import com.jogodavelha.room.Room;
+import com.jogodavelha.room.RoomPlayerInfo;
+import com.jogodavelha.room.RoomClosedEvent;
 import com.jogodavelha.room.RoomRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -116,6 +118,9 @@ class RoomJoinedEventStompTest {
         assertEquals("guest-user", payload.get("opponentName"));
         assertEquals(GUEST_ID.toString(), payload.get("guestId"));
         assertEquals(HOST_ID.toString(), payload.get("hostId"));
+        assertEquals("host-user", payload.get("hostUsername"));
+        assertFalse(payload.containsKey("guestAvatar"));
+        assertFalse(payload.containsKey("hostAvatar"));
     }
 
     @Test
@@ -131,7 +136,11 @@ class RoomJoinedEventStompTest {
     }
 
     private PlayerJoinedRoomEvent event(String code) {
-        return new PlayerJoinedRoomEvent(code, UUID.randomUUID(), GUEST_ID, "guest-user", HOST_ID, "host-user");
+        return new PlayerJoinedRoomEvent(
+                code, UUID.randomUUID(),
+                new RoomPlayerInfo(GUEST_ID, "guest-user", null),
+                new RoomPlayerInfo(HOST_ID, "host-user", null)
+        );
     }
 
     @SuppressWarnings("unchecked")
@@ -158,5 +167,47 @@ class RoomJoinedEventStompTest {
         User user = new User("host-user", "hash", "host@example.com");
         user.setId(HOST_ID);
         return jwtService.generateToken(user);
+    }
+
+    @Test
+    void clientReceivesRoomClosedAfterCommit() throws Exception {
+        BlockingQueue<Map<String, Object>> received = subscribe("0044");
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                events.publishEvent(new RoomClosedEvent("0044", UUID.randomUUID(), HOST_ID, RoomClosedEvent.HOST_LEFT)));
+
+        Map<String, Object> message = received.poll(5, TimeUnit.SECONDS);
+        assertNotNull(message);
+        assertEquals("ROOM_CLOSED", message.get("type"));
+        Map<?, ?> payload = (Map<?, ?>) message.get("payload");
+        assertEquals("0044", payload.get("roomCode"));
+        assertEquals(HOST_ID.toString(), payload.get("closedBy"));
+        assertEquals("HOST_LEFT", payload.get("reason"));
+    }
+
+    @Test
+    void expiredRoomClosedOmitsClosedBy() throws Exception {
+        BlockingQueue<Map<String, Object>> received = subscribe("0045");
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                events.publishEvent(new RoomClosedEvent("0045", UUID.randomUUID(), null, RoomClosedEvent.EXPIRED)));
+
+        Map<String, Object> message = received.poll(5, TimeUnit.SECONDS);
+        assertNotNull(message);
+        Map<?, ?> payload = (Map<?, ?>) message.get("payload");
+        assertEquals("EXPIRED", payload.get("reason"));
+        assertFalse(payload.containsKey("closedBy"));
+    }
+
+    @Test
+    void noRoomClosedMessageWhenTransactionRollsBack() throws Exception {
+        BlockingQueue<Map<String, Object>> received = subscribe("0046");
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            events.publishEvent(new RoomClosedEvent("0046", UUID.randomUUID(), HOST_ID, RoomClosedEvent.HOST_LEFT));
+            status.setRollbackOnly();
+        });
+
+        assertNull(received.poll(1500, TimeUnit.MILLISECONDS));
     }
 }

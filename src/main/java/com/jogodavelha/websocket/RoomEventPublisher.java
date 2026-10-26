@@ -1,6 +1,7 @@
 package com.jogodavelha.websocket;
 
 import com.jogodavelha.room.PlayerJoinedRoomEvent;
+import com.jogodavelha.room.RoomClosedEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
@@ -21,9 +22,28 @@ public class RoomEventPublisher {
                         "PLAYER_JOINED",
                         new RoomJoinedPayload(
                                 event.roomCode(),
-                                event.guestId().toString(),
-                                event.guestUsername(),
-                                event.hostId().toString()
+                                event.guest().id().toString(),
+                                event.guest().username(),
+                                event.guest().avatar(),
+                                event.host().id().toString(),
+                                event.host().username(),
+                                event.host().avatar()
+                        ),
+                        Instant.now()
+                )
+        );
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onRoomClosed(RoomClosedEvent event) {
+        webSocketService.sendToTopic(
+                "/topic/rooms/" + event.roomCode(),
+                new EventEnvelope<>(
+                        "ROOM_CLOSED",
+                        new RoomClosedPayload(
+                                event.roomCode(),
+                                event.closedBy() == null ? null : event.closedBy().toString(),
+                                event.reason()
                         ),
                         Instant.now()
                 )
@@ -40,6 +60,16 @@ public class RoomEventPublisher {
             String roomCode,
             String guestId,
             String opponentName,
-            String hostId
+            String guestAvatar,
+            String hostId,
+            String hostUsername,
+            String hostAvatar
     ) {}
+
+    public record RoomClosedPayload(
+            String roomCode,
+            String closedBy,
+            String reason
+    ) {}
+
 }

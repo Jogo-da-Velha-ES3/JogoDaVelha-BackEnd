@@ -112,6 +112,7 @@ privado, não entrega por um broker real.
 | POST | `/api/auth/login` | Pública | 200 | ✅ BE-006 |
 | POST | `/api/rooms` | Bearer exigido | 201 | ✅ BE-009.1 | 
 | POST | `/api/rooms/{code}/join` | Bearer exigido | 200 | ✅ BE-009.1 |
+| POST | `/api/rooms/{code}/leave` | Bearer exigido | 204 | ✅ BE-036 |
 | GET | `/api/skills/inventory` | Bearer exigido | 200 | ✅ BE-041 |
 | GET | `/api/coins/balance` | Bearer exigido | 200 | ✅ BE-026 |
 | GET | `/api/characters/inventory` | Bearer exigido | 200 | ✅ BE-028 |
@@ -253,6 +254,20 @@ Erros:
 
 Não há anotações Bean Validation nos parâmetros.
 
+### `POST /api/rooms/{code}/leave`
+
+✅ Disponível na `dev` — BE-036.
+
+Bearer Token obrigatório. O usuário autenticado sai da sala; o host de sala `WAITING` fecha a sala.
+Sem corpo. Sucesso: 204, sem corpo.
+
+Erros:
+
+- 400 ROOM_BAD_REQUEST — código inválido ou jogador não pertence à sala.
+- 404 ROOM_NOT_FOUND — sala inexistente ou já encerrada.
+- 409 ROOM_ALREADY_STARTED — partida já iniciada (abandono em partida será tratado como W.O. em outra tarefa).
+- 401 UNAUTHORIZED — token ausente ou inválido.
+- 500 INTERNAL_ERROR — erro interno.
 
 ### `GET /api/skills/inventory`
 
@@ -484,7 +499,7 @@ pela montagem do deck de cada round. A validação conjunta geral da FE-17 segue
 
 ### `PLAYER_JOINED` — `/topic/rooms/{code}`
 
-✅ Disponível na `dev` — BE-035.
+✅ Disponível na `dev` — BE-035; dados dos jogadores ampliados na BE-035.1.
 
 Quando é enviado: após o commit da entrada do 2º jogador (`POST /api/rooms/{code}/join`). Entradas rejeitadas não geram mensagem.
 Quem recebe: todos os inscritos no tópico (broadcast). O cliente do host deve filtrar por `hostId`.
@@ -497,13 +512,35 @@ Envelope: `{ "type", "payload", "serverTime" }`. `serverTime` é o instante ISO-
     "roomCode": "0042",
     "guestId": "123e4567-e89b-12d3-a456-426614174002",
     "opponentName": "bia",
-    "hostId": "123e4567-e89b-12d3-a456-426614174000"
+    "hostId": "123e4567-e89b-12d3-a456-426614174000",
+    "hostUsername": "ana"
   },
   "serverTime": "2026-10-23T12:00:00Z"
 }
 ```
+Campos do `payload`:
 
-Compatibilidade: o tópico não restringe a inscrição; qualquer cliente que souber o código da sala recebe o evento (a restrição por `Principal` fica para depois).
+| Campo          | Tipo             | Descrição                               |
+|----------------|------------------|-----------------------------------------|
+| `roomCode`     | string           | Código da sala.                         |
+| `guestId`      | string (UUID)    | ID de quem entrou.                      |
+| `opponentName` | string           | Username de quem entrou.                |
+| `hostId`       | string (UUID)    | ID do host.                             |
+| `hostUsername` | string           | Username do host.                       |
+| `guestAvatar`  | string, opcional | Avatar de perfil equipado do convidado. |
+| `hostAvatar`   | string, opcional | Avatar de perfil equipado do host.      |
+
+⚠️ `guestAvatar` e `hostAvatar`: o avatar é um cosmético do inventário e **não** é o personagem escolhido no Draft. O avatar equipado ainda não existe (o campo `avatar` do perfil está reservado, sempre `null`), então **hoje esses campos nunca são enviados**; valores `null` são omitidos da mensagem. Passarão a aparecer quando a loja/inventário o implementar, sem alteração de contrato. O formato do avatar (código, URL) está pendente.
+
+Compatibilidade: acréscimo de campos, sem quebra; `roomCode`, `guestId`, `opponentName` e `hostId` permanecem iguais. O tópico não restringe a inscrição; qualquer cliente que souber o código da sala recebe o evento (a restrição por `Principal` fica para depois).
+
+### `ROOM_CLOSED` — `/topic/rooms/{code}`
+
+✅ Disponível na `dev` — BE-036.
+
+Quando é enviado: após o commit do fechamento da sala, por saída do host (`HOST_LEFT`) ou expiração de sala `WAITING` sem 2º jogador (`EXPIRED`).
+Quem recebe: todos os inscritos no tópico (broadcast).
+Envelope: `{ "type", "payload", "serverTime" }`.
 
 ### Propostas de destinos e eventos
 
@@ -555,6 +592,7 @@ Redis externo ou migrations.
 | Evento | Quando / destinatário | Campos previstos | Card / status |
 |---|---|---|---|
 | `ROOM_SNAPSHOT` | Estado completo ao conectar/reconectar; jogador da sala | payload a definir (BE-025 descreve snapshot com estado e prazo do turno) | BE-025, 27/10; 📝 |
+| `PLAYER_JOINED` | Entrada do segundo jogador; sala / host | Nome do adversário (BE-035) | BE-035, 18/10; 📝 |
 | `PHASE_CHANGE` | Mudança de fase do jogo; sala | payload a definir | BE-023/BE-024; 20/10 e 24/10; 📝 |
 | `TURN_START` | Começo de turno; sala | Prazo do turno como timestamp do servidor (BE-024); demais campos a definir | BE-020/BE-024; 15/10 e 24/10; 📝 |
 | `BOARD_UPDATE` | Após ação válida; ambos na sala | Prazo como timestamp do servidor, round, placar, flag de morte súbita, estado de cada casa (vazia/P1/P2/bloqueada/congelada/reforçada) e motivo de W.O. ao fim da partida | BE-024, 24/10; 📝 |
@@ -568,7 +606,7 @@ Envio de jogada solicitado pelo front em `/move`; destino final completo e paylo
 
 | Evento | Quando / destinatário | Campos previstos | Card / status |
 |---|---|---|---|
-| `DRAFT_UPDATE` | Início e mudanças do Draft; inscritos no tópico da sala | `deadline`, `characters` e `ready` por P1/P2; exemplo acima | BE-037; 🚧 implementado nesta branch, validação conjunta com front pendente |
+| `DRAFT_UPDATE` | Início e mudanças do Draft; inscritos no tópico da sala | `deadline`, `characters` e `ready` por P1/P2; exemplo acima |
 | `DRAW_OPTIONS` | Sorteio de três opções; somente dono | Três opções e janela de escolha de 8s (BE-013.1) | BE-013.1, 24/10; 📝 |
 | `DECK_UPDATE` | Atualização do deck; jogador dono | payload a definir; privado do jogador conforme pedido do front | BE-023/BE-024; 📝 |
 | `ABILITY_RESOLVED` | Resolução de habilidade; sala | `result`: `APPLIED`, `NO_VALID_TARGET` ou `BLOCKED_BY_FORCE_FIELD`; demais campos a definir | BE-023, 20/10; 📝 |
@@ -612,7 +650,7 @@ Adicional do backlog não incluído na lista inicial do front:
 
 | Evento | Quando / destinatário | Campos previstos | Card / status |
 |---|---|---|---|
-| `ROOM_CLOSED` | Sala encerrada/expirada; oponente | payload a definir | BE-036, 20/10; 📝 |
+| `ROOM_CLOSED` | Sala encerrada/expirada; oponente | payload a definir | BE-036, 20/10; ✅ |
 
 ## 4. Pendências e decisões em aberto
 
@@ -627,6 +665,9 @@ Adicional do backlog não incluído na lista inicial do front:
 | URL pública de produção indisponível | Back/infra | BE-033/033.1 |
 | Formato de data geral além do timestamp ISO UTC de erro | Back + front | — |
 | Tópico `/topic/rooms/{code}` sem restrição de inscrição; restringir por Principal | Back | BE-035 |
+| `guestAvatar`/`hostAvatar` em `PLAYER_JOINED`: formato do avatar e fonte de dados dependem da loja/inventário | Back + front | BE-035.1 |
+| Expiração de salas WAITING: TTL de 10 min (room.waiting.ttl-minutes) e varredura de 60 s; valores a confirmar com o time | Back | BE-036 |
+| Saída em sala IN_GAME (W.O.) fora do escopo da BE-036 | Back | BE-036 |
 
 ## 5. Como manter este contrato
 
@@ -677,9 +718,35 @@ Erros/compatibilidade:
 
 ## 6. Changelog
 
-| Data | Mudança | Tipo | Card/PR |
-|---|---|---|---|
-| 25/10/2026 | Seleção de duas habilidades iniciais por STOMP, confirmação no Draft e erros privados. | NOVO | BE-013 |
-| 21/10/2026 | Documentado o inventário REST de personagens; atualizado o status BE-014.2 e esclarecida a disponibilidade REST de habilidades. | NOVO | BE-028, BE-014.2 |
+| Data       | Mudança                                                                                                                                                                                   | Tipo                          | Card/PR                                     |
+|------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------|---------------------------------------------|
+| 21/10/2026 | Documentado o inventário REST de personagens; atualizado o status BE-014.2 e esclarecida a disponibilidade REST de habilidades.                                                           | NOVO                          | BE-028, BE-014.2                            |
 | 15/10/2026 | Criação do contrato com o estado atual da dev. CORS, erro único, prefixo `/api` e códigos de habilidade entram como mudanças já disponíveis; rotas REST que ganharam `/api` são breaking. | NOVO; BREAKING (prefixo REST) | BE-034, BE-044; PR docs/contrato-integracao |
 | 23/10/2026 | Evento `PLAYER_JOINED` disponível em `/topic/rooms/{code}` com envelope `{type, payload, serverTime}`. | NOVO | BE-035; PR feat/room-joined-event |
+| 25/10/2026 | `PLAYER_JOINED` ganha `hostUsername` e, quando houver avatar equipado, `guestAvatar`/`hostAvatar` (hoje omitidos). Acréscimo compatível. | ALTERADO | BE-035.1 |
+| 23/10/2026 | Evento `PLAYER_JOINED` disponível em `/topic/rooms/{code}` com envelope `{type, payload, serverTime}`.                                                                                    | NOVO                          | BE-035; PR feat/room-joined-event           |
+| 24/10/2026 | `POST /api/rooms/{code}/leave`, evento `ROOM_CLOSED` e expiração de salas `WAITING` abandonadas.                                                                                          | NOVO                          | BE-036; PR feat/room-leave-expiration       |
+| 25/10/2026 | BE-038: `DraftCompleted` do pacote `draft`, personagens persistidos, sala permanece `IN_GAME` no `MATCH_END` (revanche BE-039) e `coinsCredited` reflete o crédito real. | NOVO | BE-038 |
+| 25/10/2026 | Seleção de duas habilidades iniciais por STOMP, confirmação no Draft e erros privados. | NOVO | BE-013 |
+
+### Implementação BE-038 (2026-10-25)
+
+A orquestração da partida publica no destino proposto pelo front `/topic/rooms/{code}`,
+com o envelope `{type, payload, serverTime}`. `PHASE_CHANGE` em `PLAYING` contém
+`gameId`, `phase`, `round`, `score` (`player1`, `player2`), `firstPlayerId`, `board`,
+`suddenDeath` e `turnDeadline` (epoch millis). `ROUND_END` contém `gameId`, `round`,
+`result` (`PLAYER1_WIN`, `PLAYER2_WIN` ou `DRAW`) e `score`. `MATCH_END` contém
+`gameId`, `score`, `winnerId` (string vazia em empate), `forfeit` e `coinsCredited`
+(map de UUID do jogador para moedas efetivamente creditadas pelo processamento de
+recompensas). `serverTime` é epoch millis.
+
+O estado inicial é sorteado pelo `GameStateManager`; `ROUND_END` usa `TurnChangedEvent`
+e registra uma única vez o round indicado. Round 3 aplica 5 segundos por turno. A sala
+permanece `IN_GAME` ao fim da partida para permitir a revanche (BE-039); o fechamento
+`CLOSED` fica a cargo dos fluxos de saída/recusa. A orquestração consome o evento
+interno `com.jogodavelha.game.draft.DraftCompleted` (jogadores, personagens e flag
+`automatic`) publicado pelo `DraftService`. Os personagens selecionados são persistidos
+em `games.player1_character_id` / `player2_character_id`. A interface `RoundSkillDraft`
+é obrigatória: a partida não inicia o turno sem o callback da janela de escolha de 8s
+(implementação BE-013.1). O destino `/topic/room/{code}` citado no backlog continua
+divergente; foi usado o plural `/topic/rooms/{code}` proposto nesta seção do contrato.

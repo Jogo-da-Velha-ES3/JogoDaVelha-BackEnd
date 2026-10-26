@@ -91,12 +91,17 @@ Enviado quando o 2º jogador entra na sala, para o host exibir o "MATCH FEITO!".
 
 Campos de `payload`:
 
-| Campo          | Tipo          | Descrição                                         |
-|----------------|---------------|---------------------------------------------------|
-| `roomCode`     | string        | Código da sala                                    |
-| `guestId`      | string (UUID) | ID de quem entrou                                 |
-| `opponentName` | string        | Username de quem entrou (o adversário do host)    |
-| `hostId`       | string (UUID) | ID do host, para o cliente decidir se deve reagir |
+| Campo          | Tipo              | Descrição                                         |
+|----------------|-------------------|---------------------------------------------------|
+| `roomCode`     | string            | Código da sala                                    |
+| `guestId`      | string (UUID)     | ID de quem entrou                                 |
+| `opponentName` | string            | Username de quem entrou (o adversário do host)    |
+| `hostId`       | string (UUID)     | ID do host, para o cliente decidir se deve reagir |
+| `hostUsername` | string            | Username do host                                  |
+| `guestAvatar`  | string, opcional  | Avatar equipado do convidado (hoje não enviado)   |
+| `hostAvatar`   | string, opcional  | Avatar equipado do host (hoje não enviado)        |
+
+> O avatar é um cosmético do inventário e não é o personagem escolhido no ‘Draft’. O avatar equipado ainda não existe, então `guestAvatar` e `hostAvatar` não são enviados por enquanto (valores nulos são omitidos).
 
 Exemplo:
 
@@ -107,9 +112,10 @@ Exemplo:
     "roomCode": "0042",
     "guestId": "3f2b8c1e-0000-0000-0000-000000000002",
     "opponentName": "guest",
-    "hostId": "3f2b8c1e-0000-0000-0000-000000000001"
+    "hostId": "3f2b8c1e-0000-0000-0000-000000000001",
+    "hostUsername": "host"
   },
-  "serverTime": "2026-10-23T12:00:00Z"
+  "serverTime": "2026-10-25T12:00:00Z"
 }
 ```
 
@@ -127,6 +133,47 @@ stompClient.subscribe('/topic/rooms/' + roomCode, function (message) {
 
 > Atenção: o tópico é de broadcast e, por ora, sem restrição de inscrição. Qualquer cliente que souber o código da sala recebe o evento, inclusive o jogador que entrou; o cliente do host deve filtrar por `hostId`. A restrição por `Principal` depende da BE-040.
 
+#### `ROOM_CLOSED`
+
+Enviado quando a sala é fechada: o host saiu enquanto ela estava `WAITING` (`POST /rooms/{code}/leave`) ou ela expirou por inatividade. É publicado só depois do commit da transação: saídas rejeitadas (sala inexistente, jogador fora da sala, partida já iniciada) não geram mensagem.
+
+| Campo        | Tipo              | Descrição                                     |
+|--------------|-------------------|-----------------------------------------------|
+| `type`       | string            | Sempre `ROOM_CLOSED`                          |
+| `payload`    | objeto            | Dados do fechamento                           |
+| `serverTime` | string (ISO-8601) | Horário de publicação definido pelo servidor  |
+
+Campos de `payload`:
+
+| Campo      | Tipo          | Descrição                                                       |
+|------------|---------------|-----------------------------------------------------------------|
+| `roomCode` | string        | Código da sala                                                  |
+| `closedBy` | string (UUID) | ID de quem saiu. É `null` quando a sala expira                  |
+| `reason`   | string        | `HOST_LEFT` (saída voluntária) ou `EXPIRED` (expiração)         |
+
+Exemplo:
+
+```json
+{
+  "type": "ROOM_CLOSED",
+  "payload": {
+    "roomCode": "0042",
+    "closedBy": "3f2b8c1e-0000-0000-0000-000000000001",
+    "reason": "HOST_LEFT"
+  },
+  "serverTime": "2026-10-24T12:00:00Z"
+}
+```
+
+Tratamento no cliente:
+
+```javascript
+if (event.type === 'ROOM_CLOSED') {
+    const { roomCode, closedBy, reason } = event.payload;
+    // encerrar a tela da sala e voltar ao lobby;
+    // reason === 'EXPIRED' -> avisar que a sala expirou por inatividade
+}
+```
 ## Notas
 
 Este módulo atua como gateway de comunicação em tempo real e não persiste dados. Todo o estado persistente deve ser gerenciado pelos módulos service e logic.

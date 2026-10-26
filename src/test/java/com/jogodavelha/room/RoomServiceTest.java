@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -24,7 +25,7 @@ class RoomServiceTest {
     private final GameRepository games = mock(GameRepository.class);
     private final RoomCodeAllocator allocator = spy(new RoomCodeAllocator(rooms, games, mock(JdbcTemplate.class)));
     private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
-    private final RoomService service = new RoomService(rooms, users, allocator, events);
+    private final RoomService service = new RoomService(rooms, users, allocator, events, new RoomPlayerService());
     private final User owner = player("owner");
     private final User guest = player("guest");
     private final Room room = new Room("0042", owner);
@@ -61,10 +62,12 @@ class RoomServiceTest {
         verify(events).publishEvent(captor.capture());
         PlayerJoinedRoomEvent event = captor.getValue();
         assertEquals("0042", event.roomCode());
-        assertEquals(guest.getId(), event.guestId());
-        assertEquals("guest", event.guestUsername());
-        assertEquals(owner.getId(), event.hostId());
-        assertEquals("owner", event.hostUsername());
+        assertEquals(guest.getId(), event.guest().id());
+        assertEquals("guest", event.guest().username());
+        assertNull(event.guest().avatar());
+        assertEquals(owner.getId(), event.host().id());
+        assertEquals("owner", event.host().username());
+        assertNull(event.host().avatar());
     }
 
     @ParameterizedTest
@@ -191,5 +194,76 @@ class RoomServiceTest {
         User user = new User(name, "hash", name + "@example.test");
         user.setId(UUID.randomUUID());
         return user;
+    }
+
+    @Test
+    void hostLeavingWaitingRoomClosesItAndPublishesEvent() {
+        when(users.findById(owner.getId())).thenReturn(Optional.of(owner));
+        when(rooms.findByCodeAndStatusIn("0042", RoomCodeAllocator.ACTIVE)).thenReturn(Optional.of(room));
+        when(rooms.saveAndFlush(room)).thenReturn(room);
+
+        service.leaveRoom("0042", owner.getId());
+
+        assertEquals(RoomStatus.CLOSED, room.getStatus());
+        verify(rooms).saveAndFlush(room);
+        var captor = ArgumentCaptor.forClass(RoomClosedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertEquals("0042", captor.getValue().roomCode());
+        assertEquals(owner.getId(), captor.getValue().closedBy());
+        assertEquals(RoomClosedEvent.HOST_LEFT, captor.getValue().reason());
+    }
+
+    @Test
+    void playerCanCreateRoomAfterLeaving() {
+        when(users.findById(owner.getId())).thenReturn(Optional.of(owner));
+        when(rooms.findByCodeAndStatusIn("0042", RoomCodeAllocator.ACTIVE)).thenReturn(Optional.of(room));
+        when(rooms.saveAndFlush(any(Room.class))).thenAnswer(call -> call.getArgument(0));
+
+        service.leaveRoom("0042", owner.getId());
+
+        // sala fechada não conta como ativa: nenhuma verificação de membership bloqueia
+        when(rooms.existsByStatusInAndPlayer1IdOrStatusInAndPlayer2Id(any(), any(), any(), any())).thenReturn(false);
+        assertDoesNotThrow(() -> service.createRoom(owner.getId()));
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"42", "12345", "abcd", " 0042"})
+    void leaveRejectsInvalidCodeBeforeAccessingDatabase(String code) {
+        assertThrows(IllegalArgumentException.class, () -> service.leaveRoom(code, owner.getId()));
+        verifyNoInteractions(users, rooms, allocator, events);
+    }
+
+    @Test
+    void leaveRejectsMissingRoom() {
+        when(users.findById(owner.getId())).thenReturn(Optional.of(owner));
+        assertThrows(RoomNotFoundException.class, () -> service.leaveRoom("0042", owner.getId()));
+        verify(rooms, never()).saveAndFlush(any());
+        verify(events, never()).publishEvent(any(Object.class));
+    }
+
+    @Test
+    void leaveRejectsPlayerWhoDoesNotBelongToRoom() {
+        when(users.findById(guest.getId())).thenReturn(Optional.of(guest));
+        when(rooms.findByCodeAndStatusIn("0042", RoomCodeAllocator.ACTIVE)).thenReturn(Optional.of(room));
+
+        assertThrows(IllegalArgumentException.class, () -> service.leaveRoom("0042", guest.getId()));
+
+        assertEquals(RoomStatus.WAITING, room.getStatus());
+        verify(rooms, never()).saveAndFlush(any());
+        verify(events, never()).publishEvent(any(Object.class));
+    }
+
+    @Test
+    void leaveRejectsRoomInGame() {
+        room.join(guest); // move para IN_GAME
+        when(users.findById(owner.getId())).thenReturn(Optional.of(owner));
+        when(rooms.findByCodeAndStatusIn("0042", RoomCodeAllocator.ACTIVE)).thenReturn(Optional.of(room));
+
+        assertThrows(RoomAlreadyStartedException.class, () -> service.leaveRoom("0042", owner.getId()));
+
+        assertEquals(RoomStatus.IN_GAME, room.getStatus());
+        verify(rooms, never()).saveAndFlush(any());
+        verify(events, never()).publishEvent(any(Object.class));
     }
 }

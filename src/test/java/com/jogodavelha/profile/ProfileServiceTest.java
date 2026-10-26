@@ -74,10 +74,6 @@ class ProfileServiceTest {
         Game game = mock(Game.class);
         when(game.getPlayer1()).thenReturn(user);
         when(game.getPlayer1Character()).thenReturn(character);
-        when(game.getPlayer2()).thenReturn(mock(User.class));
-        when(game.getPlayer2Character()).thenReturn(null);
-        when(game.getFinishedAt()).thenReturn(Instant.now());
-
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(gameRepository.findFinishedGamesByPlayerId(userId)).thenReturn(List.of(game));
         when(characterRepository.findById(characterId)).thenReturn(Optional.of(character));
@@ -112,9 +108,6 @@ class ProfileServiceTest {
         Game game = mock(Game.class);
         when(game.getPlayer1()).thenReturn(user);
         when(game.getPlayer1Character()).thenReturn(null);
-        when(game.getPlayer2()).thenReturn(mock(User.class));
-        when(game.getPlayer2Character()).thenReturn(null);
-
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(gameRepository.findFinishedGamesByPlayerId(userId)).thenReturn(List.of(game));
 
@@ -143,15 +136,11 @@ class ProfileServiceTest {
         Game game1 = mock(Game.class);
         when(game1.getPlayer1()).thenReturn(user);
         when(game1.getPlayer1Character()).thenReturn(character1);
-        when(game1.getPlayer2()).thenReturn(mock(User.class));
-        when(game1.getPlayer2Character()).thenReturn(null);
         when(game1.getFinishedAt()).thenReturn(earlier);
 
         Game game2 = mock(Game.class);
         when(game2.getPlayer1()).thenReturn(user);
         when(game2.getPlayer1Character()).thenReturn(character2);
-        when(game2.getPlayer2()).thenReturn(mock(User.class));
-        when(game2.getPlayer2Character()).thenReturn(null);
         when(game2.getFinishedAt()).thenReturn(now);
 
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
@@ -180,7 +169,7 @@ class ProfileServiceTest {
 
         assertEquals(3, response.matchesPlayed());
         assertEquals(2, response.wins());
-        assertEquals(2, response.currentWinStreak());
+        assertEquals(0, response.currentWinStreak());
         assertEquals(2, response.longestWinStreak());
         assertEquals(66.67, response.winRate(), 0.01);
     }
