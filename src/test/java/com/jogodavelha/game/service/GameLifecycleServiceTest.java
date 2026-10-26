@@ -22,6 +22,7 @@ import com.jogodavelha.room.Room;
 import com.jogodavelha.room.RoomRepository;
 import com.jogodavelha.room.RoomStatus;
 import com.jogodavelha.websocket.WebSocketService;
+import com.jogodavelha.websocket.RoomSnapshotService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -55,6 +56,7 @@ class GameLifecycleServiceTest {
     @Mock private TurnService turns;
     @Mock private WebSocketService websocket;
     @Mock private ObjectProvider<RoundSkillDraft> skillDraft;
+    @Mock private RoomSnapshotService snapshots;
     @Mock private RoundSkillDraft roundSkillDraft;
 
     private GameLifecycleService lifecycle;
@@ -68,7 +70,7 @@ class GameLifecycleServiceTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        lifecycle = new GameLifecycleService(games, gameRepository, rooms, states, turns, websocket, skillDraft);
+        lifecycle = new GameLifecycleService(games, gameRepository, rooms, states, turns, websocket, skillDraft, snapshots);
         player1 = new User("p1", "pass", "p1@test.com");
         player1.setId(UUID.randomUUID());
         player2 = new User("p2", "pass", "p2@test.com");

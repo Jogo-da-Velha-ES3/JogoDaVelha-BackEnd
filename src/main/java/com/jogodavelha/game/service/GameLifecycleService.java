@@ -20,6 +20,7 @@ import com.jogodavelha.room.Room;
 import com.jogodavelha.room.RoomRepository;
 import com.jogodavelha.room.RoomStatus;
 import com.jogodavelha.websocket.WebSocketService;
+import com.jogodavelha.websocket.RoomSnapshotService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.event.EventListener;
@@ -45,6 +46,7 @@ public class GameLifecycleService implements RoundLifecycle {
     private final TurnService turns;
     private final WebSocketService websocket;
     private final ObjectProvider<RoundSkillDraft> skillDraft;
+    private final RoomSnapshotService snapshots;
 
     @EventListener
     public void onDraftCompleted(DraftCompleted event) {
@@ -90,6 +92,7 @@ public class GameLifecycleService implements RoundLifecycle {
             beginRound(game, state);
         } else if (state.getPhase() == GamePhase.PLAYING) {
             turns.schedule(game.getId(), state.getTurnDeadlineEpochMillis());
+            snapshots.publish(room.getCode());
         }
     }
 
@@ -208,6 +211,7 @@ public class GameLifecycleService implements RoundLifecycle {
             return;
         }
         websocket.sendToTopic(topic(game.getRoom()), MatchLifecycleEvent.roundStart(state, game.getScore()));
+        snapshots.publish(game.getRoom().getCode());
         turns.schedule(gameId, state.getTurnDeadlineEpochMillis());
     }
 
@@ -228,6 +232,7 @@ public class GameLifecycleService implements RoundLifecycle {
                     "coinsCredited", creditedCoins(game))));
         }
         states.delete(game.getId());
+        snapshots.publish(game.getRoom().getCode());
     }
 
     private Map<String, Integer> creditedCoins(Game game) {

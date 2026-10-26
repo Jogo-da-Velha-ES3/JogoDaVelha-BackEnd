@@ -9,6 +9,7 @@
 ### 2. Atualização do contrato
 
 - Toda PR que criar, modificar ou remover um endpoint REST, destino STOMP, evento, DTO ou comportamento observável pelo frontend deve atualizar o contrato de integração na mesma PR.
+- Sempre que uma nova implementação alterar ou disponibilizar estado de sala, Draft, partida ou revanche, atualizar/publicar `ROOM_SNAPSHOT` quando pertinente, para que clientes que sincronizam a sala recebam o estado atual. A composição deve continuar centralizada e refletir as fontes reais de estado.
 - Registrar o estado real da implementação, exemplos de requisição e resposta, erros relevantes e eventuais divergências.
 - Não documentar funcionalidades planejadas como se já estivessem implementadas.
 

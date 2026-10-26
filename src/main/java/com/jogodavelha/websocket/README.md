@@ -131,7 +131,13 @@ stompClient.subscribe('/topic/rooms/' + roomCode, function (message) {
 });
 ```
 
-> Atenção: o tópico é de broadcast e, por ora, sem restrição de inscrição. Qualquer cliente que souber o código da sala recebe o evento, inclusive o jogador que entrou; o cliente do host deve filtrar por `hostId`. A restrição por `Principal` depende da BE-040.
+> O tópico é broadcast entre participantes, mas cada inscrição exige sessão autenticada e participação ativa na sala correspondente, conferidas pelo interceptor STOMP usando o `Principal`. O cliente do host continua filtrando `PLAYER_JOINED` por `hostId`.
+
+#### `ROOM_SNAPSHOT`
+
+Publicado em `/topic/rooms/{code}` ao conectar, após a entrada do segundo jogador, nas atualizações do Draft e nas transições de round/partida. O evento usa o envelope `{type, payload, serverTime}`. O payload tem blocos `room` (jogadores e status), `draft` (etapa e progresso público), `match` (placar e estado Redis ativo) e `rematch` (omitido enquanto a revanche não for implementada). Blocos inexistentes e campos nulos são omitidos. Consulte o contrato de integração para campos e exemplo completos.
+
+Para sincronizar sob demanda, envie `SEND /app/rooms/{code}/sync` sem corpo. O backend deriva a identidade do `Principal`, valida participação ativa e publica o mesmo `ROOM_SNAPSHOT` no tópico da sala; o evento pode ser recebido por todos os participantes inscritos.
 
 #### `ROOM_CLOSED`
 
