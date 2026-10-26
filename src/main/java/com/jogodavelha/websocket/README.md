@@ -91,12 +91,17 @@ Enviado quando o 2º jogador entra na sala, para o host exibir o "MATCH FEITO!".
 
 Campos de `payload`:
 
-| Campo          | Tipo          | Descrição                                         |
-|----------------|---------------|---------------------------------------------------|
-| `roomCode`     | string        | Código da sala                                    |
-| `guestId`      | string (UUID) | ID de quem entrou                                 |
-| `opponentName` | string        | Username de quem entrou (o adversário do host)    |
-| `hostId`       | string (UUID) | ID do host, para o cliente decidir se deve reagir |
+| Campo          | Tipo              | Descrição                                         |
+|----------------|-------------------|---------------------------------------------------|
+| `roomCode`     | string            | Código da sala                                    |
+| `guestId`      | string (UUID)     | ID de quem entrou                                 |
+| `opponentName` | string            | Username de quem entrou (o adversário do host)    |
+| `hostId`       | string (UUID)     | ID do host, para o cliente decidir se deve reagir |
+| `hostUsername` | string            | Username do host                                  |
+| `guestAvatar`  | string, opcional  | Avatar equipado do convidado (hoje não enviado)   |
+| `hostAvatar`   | string, opcional  | Avatar equipado do host (hoje não enviado)        |
+
+> O avatar é um cosmético do inventário e não é o personagem escolhido no ‘Draft’. O avatar equipado ainda não existe, então `guestAvatar` e `hostAvatar` não são enviados por enquanto (valores nulos são omitidos).
 
 Exemplo:
 
@@ -107,9 +112,10 @@ Exemplo:
     "roomCode": "0042",
     "guestId": "3f2b8c1e-0000-0000-0000-000000000002",
     "opponentName": "guest",
-    "hostId": "3f2b8c1e-0000-0000-0000-000000000001"
+    "hostId": "3f2b8c1e-0000-0000-0000-000000000001",
+    "hostUsername": "host"
   },
-  "serverTime": "2026-10-23T12:00:00Z"
+  "serverTime": "2026-10-25T12:00:00Z"
 }
 ```
 

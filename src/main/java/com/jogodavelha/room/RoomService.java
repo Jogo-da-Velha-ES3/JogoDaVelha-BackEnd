@@ -18,6 +18,7 @@ public class RoomService {
     private final UserRepository users;
     private final RoomCodeAllocator allocator;
     private final ApplicationEventPublisher events;
+    private final RoomPlayerService roomPlayers;
 
     public Room createRoom(UUID playerId) {
         return allocator.reserve(findPlayer(playerId));
@@ -27,9 +28,9 @@ public class RoomService {
         validateCode(code);
         User player = findPlayer(playerId);
         allocator.lockMembership();
-        Room room = rooms.findByCodeAndStatusIn(code, RoomCodeAllocator.ACTIVE)
-                .orElseThrow(() ->
-                        new RoomNotFoundException("Sala não encontrada ou encerrada."));
+        Room room = rooms.findByCodeAndStatusIn(code, RoomCodeAllocator.ACTIVE).orElseThrow(
+                () -> new RoomNotFoundException("Sala não encontrada ou encerrada.")
+        );
 
         allocator.requireAvailablePlayer(player);
         room.join(player);
@@ -37,8 +38,8 @@ public class RoomService {
         Room saved = rooms.saveAndFlush(room);
         events.publishEvent(new PlayerJoinedRoomEvent(
                 saved.getCode(), saved.getId(),
-                player.getId(), player.getUsername(),
-                saved.getPlayer1().getId(), saved.getPlayer1().getUsername())
+                roomPlayers.info(player),
+                roomPlayers.host(saved))
         );
         return saved;
     }
