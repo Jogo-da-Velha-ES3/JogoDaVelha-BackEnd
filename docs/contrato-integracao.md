@@ -534,7 +534,7 @@ Campos do `payload`:
 
 Compatibilidade: acréscimo de campos, sem quebra; `roomCode`, `guestId`, `opponentName` e `hostId` permanecem iguais. A inscrição no tópico exige identidade STOMP autenticada e participação ativa na sala, validadas pelo `Principal` no interceptor de entrada.
 
-### `ROOM_SNAPSHOT` — `/topic/rooms/{code}`
+### `ROOM_SNAPSHOT` — projeção pública e snapshot individual
 
 ✅ Implementado na BE-035.2, com payload compatível com `RoomSnapshot` em `src/types/game.ts` e envelope `ServerEnvelope` em `src/types/events.ts` do frontend. Publica ao conectar, após a entrada do segundo jogador, nas alterações do Draft e nas transições de round/partida. O evento complementa os demais eventos existentes.
 
@@ -551,7 +551,12 @@ O payload segue esta estrutura (nomes e formatos iguais aos tipos do frontend):
 - `serverTime`: epoch millis também presente dentro do payload, como exigido pelo tipo `RoomSnapshot`.
 - `draft` é opcional e contém `{deadline, ready:{P1,P2}}`; `drawOptions`, `coins` e `rematch` são opcionais. Campos sem fonte atual confiável são omitidos. O backend não persiste opções do sorteio e revanche ainda não está implementada.
 
-O envelope externo também contém `serverTime` como número inteiro de milissegundos desde Unix epoch. O valor do envelope e do payload é o mesmo. No tópico `/topic/rooms/{code}`, `mySlot` é `null`, `myDeck` é `[]` e `drawOptions` é `null`; nenhum valor individual de slot, deck ou opções privadas é publicado. Cada participante recebe em `/user/queue/room` um `ROOM_SNAPSHOT` individualizado com seu `mySlot` e `myDeck`; `drawOptions` segue nulo porque o backend não mantém esse estado. A inscrição nessa fila privada exige sessão autenticada no `CONNECT`; o cliente já a assina e aplica o snapshot pelo mesmo handler de eventos.
+O envelope externo também contém `serverTime` como número inteiro de milissegundos desde Unix epoch. O valor do envelope e do payload é o mesmo. Existem duas entregas com semânticas distintas:
+
+- **Projeção pública:** publicada em `/topic/rooms/{code}` para os participantes inscritos. `mySlot` é `null`, `myDeck` é `[]` e `drawOptions` é `null`; não contém valores individuais. O frontend pode usar os campos compartilhados para atualizar a sala, mas **não deve aplicar esta mensagem como estado individual do jogador nem substituir `mySlot`, `myDeck` ou outros dados locais privados**.
+- **Snapshot individual:** enviado a cada participante em `/user/queue/room`, com o `mySlot` e `myDeck` daquele destinatário; `drawOptions` segue nulo porque o backend não mantém esse estado. Este é o único destino cujo `ROOM_SNAPSHOT` deve atualizar o estado individual do jogador no frontend. A fila exige sessão autenticada no `CONNECT`.
+
+Embora ambos usem `type: "ROOM_SNAPSHOT"` e compartilhem o formato base `RoomSnapshot`, são projeções diferentes: o cliente deve distinguir pelo destino STOMP de origem. Não encaminhe a mensagem do tópico público ao reducer/handler que substitui o snapshot individual; trate-a apenas como atualização dos dados compartilhados.
 
 Exemplo resumido de snapshot público em sala `WAITING` (os campos privados usam `null`/lista vazia):
 
@@ -595,7 +600,7 @@ Exemplo resumido de snapshot público em sala `WAITING` (os campos privados usam
 
 A conexão e a inscrição em `/topic/rooms/{code}` exigem JWT no `CONNECT` e participação ativa validada pelo `Principal`; o handler de conexão também deriva o jogador do `Principal`.
 
-Sincronização sob demanda: envie `SEND /app/rooms/{code}/sync` sem corpo. A identidade do solicitante vem do `Principal` autenticado pelo JWT. O backend valida sala ativa e participação e responde somente ao solicitante em `/user/queue/room`, com um `ROOM_SNAPSHOT` individualizado. O sync não publica no tópico compartilhado, para não substituir o `mySlot`/`myDeck` do outro jogador. Não aceite nem envie `playerId` no payload. Códigos inválidos ou sala inexistente/encerrada seguem o handler STOMP existente como `BAD_REQUEST` (400); usuário autenticado que não pertence à sala recebe `FORBIDDEN` (403) em `/user/queue/errors`.
+Sincronização sob demanda: envie `SEND /app/rooms/{code}/sync` sem corpo. A identidade do solicitante vem do `Principal` autenticado pelo JWT. O backend valida sala ativa e participação e responde somente ao solicitante em `/user/queue/room`, com um `ROOM_SNAPSHOT` individualizado. O sync não publica no tópico compartilhado. Não aceite nem envie `playerId` no payload. Códigos inválidos ou sala inexistente/encerrada seguem o handler STOMP existente como `BAD_REQUEST` (400); usuário autenticado que não pertence à sala recebe `FORBIDDEN` (403) em `/user/queue/errors`.
 
 ```text
 SEND /app/rooms/0042/sync
