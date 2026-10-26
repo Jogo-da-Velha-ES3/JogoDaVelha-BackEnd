@@ -8,6 +8,7 @@ import com.jogodavelha.character.Character;
 import com.jogodavelha.character.CharacterRepository;
 import com.jogodavelha.character.CharacterSymbol;
 import com.jogodavelha.config.*;
+import com.jogodavelha.error.WebSocketExceptionHandler;
 import com.jogodavelha.room.Room;
 import com.jogodavelha.room.RoomRepository;
 import com.jogodavelha.websocket.WebSocketService;
@@ -31,6 +32,7 @@ import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.broker.SimpleBrokerMessageHandler;
+import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.messaging.simp.stomp.*;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.scheduling.TaskScheduler;
@@ -39,6 +41,7 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.messaging.WebSocketStompClient;
 
 import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
 import java.time.*;
 import java.util.*;
 import java.util.concurrent.*;
@@ -59,6 +62,9 @@ class DraftWebSocketIntegrationTest {
     private static final String TOPIC = "/topic/rooms/0042";
     @LocalServerPort int port;
     @Autowired DraftService drafts;
+    @Autowired DraftStateManager draftStates;
+    @Autowired RoomRepository rooms;
+    @Autowired SimpUserRegistry userRegistry;
     @Autowired @org.springframework.beans.factory.annotation.Qualifier("jwtService") JwtService jwt;
     @Autowired MutableClock clock;
     @Autowired org.springframework.context.ApplicationContext applicationContext;
@@ -69,13 +75,15 @@ class DraftWebSocketIntegrationTest {
     private final List<StompSession> sessions = new ArrayList<>();
     private final List<String> connectionErrors = new ArrayList<>();
     private final List<String> transportErrors = new ArrayList<>();
+    private final UUID selectionRoomId = UUID.randomUUID();
 
     @Configuration
     @EnableAutoConfiguration(exclude = {DataSourceAutoConfiguration.class, HibernateJpaAutoConfiguration.class,
             DataRedisAutoConfiguration.class, DataRedisRepositoriesAutoConfiguration.class})
     @EnableConfigurationProperties({JwtProperties.class, CorsProperties.class})
     @Import({WebSocketConfig.class, SecurityConfig.class, StompJwtAuthenticationInterceptor.class,
-            DraftService.class, DraftStateManager.class, DraftEventPublisher.class})
+            DraftService.class, DraftStateManager.class, DraftEventPublisher.class,
+            DraftAbilitiesController.class, DraftAbilitiesService.class, WebSocketExceptionHandler.class})
     static class TestApplication {
         @Bean ObjectMapper objectMapper() { return new ObjectMapper(); }
         @Bean @Primary MutableClock testClock() { return new MutableClock(); }
@@ -154,6 +162,14 @@ class DraftWebSocketIntegrationTest {
         assertNotNull(simpMessagingTemplate, "SimpMessagingTemplate não foi injetado - infraestrutura WebSocket não está configurada");
         // Resetar o spy do WebSocketService
         reset(webSocketService);
+        reset(rooms);
+        Room room = mock(Room.class);
+        when(room.getId()).thenReturn(selectionRoomId);
+        when(rooms.findActiveMembership(eq("0042"), anyList(), any(UUID.class)))
+                .thenAnswer(invocation -> {
+                    UUID player = invocation.getArgument(2);
+                    return player.equals(P1) || player.equals(P2) ? Optional.of(room) : Optional.empty();
+                });
     }
 
     @AfterEach void stopClients() {
@@ -233,6 +249,117 @@ class DraftWebSocketIntegrationTest {
         assertNull(first.poll(200, TimeUnit.MILLISECONDS));
         assertNull(second.poll(200, TimeUnit.MILLISECONDS));
         assertEquals(1, completions.received.size());
+    }
+
+    @Test
+    void stompSelectionPersistsSkillsFromPrincipalAndNotifiesBothPlayers() throws Exception {
+        var first = subscribe(P1);
+        var second = subscribe(P2);
+        awaitSubscriptions();
+        drafts.start(selectionRoomId, "0042", P1, P2);
+        drafts.updatePlayer(selectionRoomId, P1, player -> player.withCharacter(X));
+        drafts.updatePlayer(selectionRoomId, P2, player -> player.withCharacter(O));
+        for (int index = 0; index < 3; index++) {
+            receive(first);
+            receive(second);
+        }
+
+        sendAbilities(sessions.get(0), "{\"abilities\":[\"BOMBA\",\"ESCUDO\"],\"playerId\":\"" + P2 + "\"}");
+        var progress = receive(first);
+        assertEquals(progress, receive(second));
+        assertTrue(progress.path("payload").path("ready").path("P1").asBoolean());
+        assertFalse(progress.path("payload").path("ready").path("P2").asBoolean());
+        var stored = draftStates.find(selectionRoomId).orElseThrow();
+        assertEquals(List.of("BOMBA", "ESCUDO"), stored.player1().initialSkills());
+        assertTrue(stored.player2().initialSkills().isEmpty());
+        assertFalse(progress.toString().contains("BOMBA"));
+
+        sendAbilities(sessions.get(1), "{\"abilities\":[\"AMPULHETA\",\"ESCUDO\"]}");
+        var completed = receive(first);
+        assertEquals(completed, receive(second));
+        assertTrue(completed.path("payload").path("ready").path("P2").asBoolean());
+        assertTrue(draftStates.find(selectionRoomId).orElseThrow().completed());
+        assertEquals(1, completions.received.size());
+    }
+
+    @Test
+    void invalidSelectionsReturnPrivateErrorsWithoutChangingDraft() throws Exception {
+        var first = subscribe(P1);
+        var second = subscribe(P2);
+        awaitSubscriptions();
+        var errors = subscribeErrors(sessions.get(0), P1);
+        var opponentErrors = subscribeErrors(sessions.get(1), P2);
+        drafts.start(selectionRoomId, "0042", P1, P2);
+        receive(first);
+        receive(second);
+        assertSelectionError(errors, "{\"abilities\":[\"BOMBA\",\"ESCUDO\"]}", "BAD_REQUEST");
+
+        drafts.updatePlayer(selectionRoomId, P1, player -> player.withCharacter(X));
+        receive(first);
+        receive(second);
+        for (String json : List.of("{\"abilities\":[\"BOMBA\"]}",
+                "{\"abilities\":[\"BOMBA\",\"BOMBA\"]}", "{\"abilities\":null}",
+                "{\"abilities\":[\"BOMBA\",\"SILENCIO\"]}")) {
+            assertSelectionError(errors, json, "BAD_REQUEST");
+        }
+        clock.now.set(draftStates.find(selectionRoomId).orElseThrow().deadlineEpochMillis());
+        assertSelectionError(errors, "{\"abilities\":[\"BOMBA\",\"ESCUDO\"]}", "CONFLICT");
+        when(rooms.findActiveMembership(eq("0042"), anyList(), eq(P1))).thenReturn(Optional.empty());
+        assertSelectionError(errors, "{\"abilities\":[\"BOMBA\",\"ESCUDO\"]}", "FORBIDDEN");
+        assertNull(first.poll(200, TimeUnit.MILLISECONDS));
+        assertNull(second.poll(200, TimeUnit.MILLISECONDS));
+        assertNull(opponentErrors.poll(200, TimeUnit.MILLISECONDS));
+    }
+
+    @Test
+    void selectionBeforeDraftStartsReturnsPrivateConflict() throws Exception {
+        var publicEvents = subscribe(P1);
+        var errors = subscribeErrors(sessions.get(0), P1);
+
+        sendAbilities(sessions.get(0), "{\"abilities\":[\"BOMBA\",\"ESCUDO\"]}");
+
+        assertEquals("CONFLICT", receive(errors).path("code").asText());
+        assertTrue(draftStates.find(selectionRoomId).isEmpty());
+        assertNull(publicEvents.poll(200, TimeUnit.MILLISECONDS));
+    }
+
+    private void assertSelectionError(BlockingQueue<JsonNode> errors, String json, String code) throws Exception {
+        DraftState before = draftStates.find(selectionRoomId).orElseThrow();
+        sendAbilities(sessions.get(0), json);
+        JsonNode error = receive(errors);
+        assertEquals(code, error.path("code").asText());
+        assertEquals("/app/rooms/0042/draft/abilities", error.path("path").asText());
+        assertEquals(before, draftStates.find(selectionRoomId).orElseThrow());
+    }
+
+    private void sendAbilities(StompSession session, String json) {
+        var headers = new StompHeaders();
+        headers.setDestination("/app/rooms/0042/draft/abilities");
+        headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+        session.send(headers, json.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private BlockingQueue<JsonNode> subscribeErrors(StompSession session, UUID playerId) {
+        BlockingQueue<JsonNode> received = new LinkedBlockingQueue<>();
+        session.subscribe("/user/queue/errors", new StompFrameHandler() {
+            public Type getPayloadType(StompHeaders headers) { return byte[].class; }
+            public void handleFrame(StompHeaders headers, Object payload) {
+                try { received.add(new ObjectMapper().readTree((byte[]) payload)); }
+                catch (Exception exception) { throw new AssertionError(exception); }
+            }
+        });
+        await().atMost(Duration.ofSeconds(5)).until(() -> {
+            var user = userRegistry.getUser(playerId.toString());
+            if (user == null) return false;
+            return user.getSessions().stream().anyMatch(serverSession -> {
+                var message = MessageBuilder.withPayload(new byte[0])
+                        .setHeader(SimpMessageHeaderAccessor.MESSAGE_TYPE_HEADER, org.springframework.messaging.simp.SimpMessageType.MESSAGE)
+                        .setHeader(SimpMessageHeaderAccessor.DESTINATION_HEADER, "/queue/errors-user" + serverSession.getId()).build();
+                return !applicationContext.getBean(SimpleBrokerMessageHandler.class)
+                        .getSubscriptionRegistry().findSubscriptions(message).isEmpty();
+            });
+        });
+        return received;
     }
 
     private BlockingQueue<JsonNode> subscribe(UUID playerId) throws Exception {
