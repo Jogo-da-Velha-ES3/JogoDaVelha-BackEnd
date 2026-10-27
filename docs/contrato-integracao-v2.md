@@ -89,11 +89,12 @@ A versão anterior (`docs/contrato-integracao.md`) foi preservada integralmente 
   "status": 400,
   "timestamp": "2026-10-26T10:30:00Z",
   "path": "/api/auth/register",
-  "fields": { "email": "E-mail inválido" }
+  "fields": { "email": "E-mail inválido" },
+  "error": "Bad Request"
 }
 ```
 
-O campo `fields` é incluído apenas para erros de validação de campos (`VALIDATION_ERROR`). O campo `error` é omitido quando nulo e incluído nos erros STOMP genéricos quando preenchido.
+O campo `fields` é incluído apenas para erros de validação de campos (`VALIDATION_ERROR`), sendo nulo nos demais casos. O campo `error` contém a frase HTTP (ex: "Bad Request") e está sempre presente, mesmo quando nulo.
 
 ### 2.5 Formato de Erros STOMP
 
@@ -106,15 +107,16 @@ Erros STOMP são enviados como `ApiError` para `/user/queue/errors`:
   "status": 400,
   "timestamp": "2026-10-26T10:30:00Z",
   "path": "/app/game/{gameId}/move",
+  "fields": null,
   "error": "Bad Request"
 }
 ```
 
-Para erros de habilidade, o campo `code` usa valores específicos do domínio (ex: `SKILL_INVALID_TARGET`). Para erros genéricos, usa `HttpStatus.name()` (ex: `BAD_REQUEST`, `CONFLICT`, `INTERNAL_SERVER_ERROR`).
+Para erros de habilidade, o campo `code` usa valores específicos do domínio (ex: `SKILL_INVALID_TARGET`). Para erros genéricos, usa `HttpStatus.name()` (ex: `BAD_REQUEST`, `CONFLICT`, `INTERNAL_SERVER_ERROR`). Os campos `fields` e `error` estão sempre presentes, mesmo quando nulos.
 
 ### 2.6 Campos Opcionais, Nulos e Ausentes
 
-- **DTOs principais:** Campos nulos são omitidos em `ApiError` (`@JsonInclude.Include.NON_NULL`); nos demais DTOs listados, são sempre incluídos (`@JsonInclude.Include.ALWAYS`)
+- **DTOs principais:** Campos nulos são sempre incluídos em `ApiError`; nos demais DTOs listados, são sempre incluídos (`@JsonInclude.Include.ALWAYS`)
   - `RoomDTO`, `SkillDTO`, `CharacterDTO`, `GameDTO`
   - `LoginResponse`, `RegisterResponse`, `BalanceResponse`
   - `ProfileResponse`, `ProfileStatsResponse`, `MatchHistoryResponse`
@@ -1313,8 +1315,8 @@ recebe o evento. Os snapshots privados continuam disponíveis para sincronizaç�
 **Regras e observações:**
 - Erros de habilidade usam código específico do domínio
 - Erros genéricos usam `HttpStatus.name()`
-- Campo `fields` não é preenchido em erros STOMP
-- Campo `error` (frase HTTP) pode estar presente em erros genéricos
+- Campo `fields` é sempre presente (nulo em erros STOMP)
+- Campo `error` (frase HTTP) é sempre presente
 
 ### 5.6 Envelopes e Timestamps
 
@@ -1723,7 +1725,7 @@ recebe o evento. Os snapshots privados continuam disponíveis para sincronizaç�
 - Campo obrigatório ausente
 - Campo fora do tamanho permitido
 - Formato inválido (e-mail, código de sala)
-- Pode incluir `fields` com detalhes
+- Inclui `fields` com detalhes de cada campo inválido
 
 **ROOM_BAD_REQUEST:**
 - Código de sala não é 4 dígitos
