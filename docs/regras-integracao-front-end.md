@@ -2,7 +2,7 @@
 
 ### 1. Cumprimento do contrato
 
-- Toda implementação que exponha ou altere endpoints REST, mensagens STOMP, destinos, eventos, DTOs ou formatos de resposta deve seguir o [Contrato de Integração com o Front-End](docs/contrato-integracao.md).
+- Toda implementação que exponha ou altere endpoints REST, mensagens STOMP, destinos, eventos, DTOs ou formatos de resposta deve seguir o [Contrato de Integração com o Front-End V2](docs/contrato-integracao-v2.md).
 - O contrato de integração é a referência compartilhada entre as equipes para os detalhes de comunicação. O código e os testes devem ser verificados para confirmar o comportamento efetivamente implementado.
 - Não alterar unilateralmente nomes de eventos, destinos, campos, códigos de erro, métodos HTTP, rotas ou estruturas de payload.
 
@@ -41,8 +41,8 @@
 
 ### 7. Padronização e Sincronização do Catálogo de Erros
 
-- **Padrão único de erros:** O catálogo de erros definido em `docs/contrato-integracao.md` e a seção **“Formato de Erro”** do `README.md` devem seguir o mesmo padrão e estrutura, mantendo consistência entre códigos, mensagens, formatos de resposta e demais informações documentadas.
+- **Padrão único de erros:** O catálogo de erros definido em `docs/contrato-integracao-v2.md` e a seção **“Formato de Erro”** do `README.md` devem seguir o mesmo padrão e estrutura, mantendo consistência entre códigos, mensagens, formatos de resposta e demais informações documentadas.
 - **Sincronização obrigatória:** Qualquer inclusão, alteração ou remoção de código de erro, mensagem, estrutura, campo ou comportamento relacionado a erros deve ser refletida **em ambos os documentos na mesma PR**.
 - **Erros REST/HTTP e STOMP:** As mesmas regras de padronização e sincronização se aplicam aos erros retornados pelos endpoints REST/HTTP e aos erros enviados por meio de mensagens STOMP. Os formatos específicos de cada mecanismo devem respeitar o contrato de integração acordado com o Front-End.
 - **Consistência com a implementação:** A documentação, o comportamento implementado e os testes devem estar alinhados. Não devem existir códigos, mensagens ou estruturas de erro implementados que contrariem o padrão documentado.
-- **Responsabilidade na PR:** A pessoa responsável pela alteração deve atualizar os dois documentos e os testes pertinentes. A revisão da PR deve verificar a consistência entre o `README.md`, o `docs/contrato-integracao.md` e a implementação antes da aprovação.
+- **Responsabilidade na PR:** A pessoa responsável pela alteração deve atualizar os dois documentos e os testes pertinentes. A revisão da PR deve verificar a consistência entre o `README.md`, o `docs/contrato-integracao-v2.md` e a implementação antes da aprovação.

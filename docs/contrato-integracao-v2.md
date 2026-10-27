@@ -1,4 +1,4 @@
-# Contrato de Integração Back-End × Front-End V2
+﻿# Contrato de Integração Back-End × Front-End V2
 
 **Versão:** 2.0
 **Data de elaboração:** 26/10/2026
@@ -432,7 +432,7 @@ Validações:
 {
   "id": "123e4567-e89b-12d3-a456-426614174001",
   "code": "0042",
-  "status": "WAITING",
+  "status": "IN_GAME",
   "player1Id": "123e4567-e89b-12d3-a456-426614174000",
   "player1Username": "ana",
   "player2Id": "123e4567-e89b-12d3-a456-426614174002",
@@ -882,14 +882,12 @@ Authorization: Bearer <jwt_token>
 **Body da requisição:**
 ```json
 {
-  "position": 0,
-  "playerId": "123e4567-e89b-12d3-a456-426614174000"
+  "position": 0
 }
 ```
 
 Validações:
 - `position`: obrigatório, inteiro entre 0 e 8
-- `playerId`: ignorado (identidade vem do Principal)
 
 **Processamento:**
 - Validação de autenticação
@@ -901,8 +899,7 @@ Validações:
 - Destino público final alinhado com front está pendente (BE-024)
 
 **Regras e observações:**
-- Identidade vem do `Principal`
-- Campo `playerId` no corpo é ignorado
+- A identidade do jogador vem do `Principal` autenticado e não faz parte do corpo
 - DTO interno: `MoveRequest` (linha 19 de `GameplayController.java`)
 
 ---
@@ -926,8 +923,7 @@ Validações:
 {
   "skillCode": "BOMBA",
   "targetPosition": 1,
-  "destinationPosition": 2,
-  "playerId": "123e4567-e89b-12d3-a456-426614174000"
+  "destinationPosition": 2
 }
 ```
 
@@ -935,7 +931,6 @@ Validações:
 - `skillCode`: obrigatório, não vazio
 - `targetPosition`: opcional (depende da habilidade)
 - `destinationPosition`: opcional (depende da habilidade)
-- `playerId`: ignorado (identidade vem do Principal)
 
 **Processamento:**
 - Validação de autenticação
@@ -947,8 +942,7 @@ Validações:
 - Atualizações publicadas via eventos internos
 
 **Regras e observações:**
-- Identidade vem do `Principal`
-- Campo `playerId` no corpo é ignorado
+- A identidade do jogador vem do `Principal` autenticado e não faz parte do corpo
 - DTO interno: `SkillRequest` (linha 20 de `GameplayController.java`)
 - Posições opcionais conforme habilidade (ex: Tornado precisa de destinationPosition)
 
@@ -1014,7 +1008,7 @@ Validações:
 
 **Regras e observações:**
 - Padrão de destino: `/topic/rooms/[0-9]{4}`
-- Snapshot público não inclui `myDeck` e outros campos privados
+- O snapshot público mantém todos os campos de `RoomSnapshot`; `mySlot` vem como `null` e `myDeck` como `[]` (ambos presentes no JSON)
 
 ---
 
@@ -1084,7 +1078,7 @@ Validações:
 ```json
 {
   "code": "0042",
-  "phase": "WAITING",
+  "phase": "IN_GAME",
   "players": [
     {
       "slot": "P1",
@@ -1109,7 +1103,7 @@ Validações:
       "connected": true
     }
   ],
-  "mySlot": "P1",
+  "mySlot": null,
   "round": 1,
   "suddenDeath": false,
   "board": [
@@ -1128,10 +1122,7 @@ Validações:
     "startedAt": 1729934600000,
     "durationSeconds": 30
   },
-  "myDeck": [
-    { "ability": "BOMBA", "source": "INITIAL", "usedThisRound": false },
-    { "ability": "ESCUDO", "source": "INITIAL", "usedThisRound": false }
-  ],
+  "myDeck": [],
   "outcome": null,
   "serverTime": 1729934600000,
   "draft": {
@@ -1156,8 +1147,19 @@ Validações:
 - Atualizar deck e habilidades com base em `myDeck`
 
 **Diferenças entre snapshot público e privado:**
-- Público: `mySlot` é null, `myDeck` é lista vazia
-- Privado: `mySlot` indica slot do usuário, `myDeck` contém deck completo
+- Todos os campos de `RoomSnapshot` são serializados, inclusive quando nulos (`@JsonInclude(ALWAYS)`). No snapshot público, `mySlot` é `null` e `myDeck` é `[]`; eles não são omitidos.
+- No snapshot privado, `mySlot` indica o slot do destinatário e `myDeck` contém o deck daquele jogador. Os demais campos também aparecem quando nulos.
+- Campos variáveis do snapshot privado:
+
+```json
+{
+  "mySlot": "P1",
+  "myDeck": [
+    { "ability": "BOMBA", "source": "INITIAL", "usedThisRound": false },
+    { "ability": "ESCUDO", "source": "INITIAL", "usedThisRound": false }
+  ]
+}
+```
 
 **Regras e observações:**
 - Implementado em `RoomSnapshotService` (linha 50-109)
@@ -1853,16 +1855,17 @@ Durante a auditoria, as seguintes verificações foram executadas:
 ### 10.5 Compatibilidade com Front-End
 
 - Todos os contratos REST documentados estão implementados
-- Todos os destinos STOMP documentados estão implementados
+- Todos os destinos de entrada (SEND) e assinatura (SUBSCRIBE) documentados estão implementados
+- Os destinos de saída existem, mas os eventos de gameplay publicados ainda não têm contrato público final alinhado (BE-024)
 - DTOs documentados correspondem exatamente ao código
 - Enums documentados correspondem exatamente ao código
 - Erros documentados correspondem aos handlers implementados
 
-**Incompatibilidades identificadas:** Nenhuma
+**Incompatibilidades identificadas:**
+- O contrato público final dos eventos de atualização de gameplay ainda está pendente (BE-024); a compatibilidade integral dos eventos de saída segue em aberto.
 
 **Bloqueadores de integração:**
-- Destino público de atualizações de gameplay pendente (BE-024)
-- Isso pode impactar sincronização de jogadas em tempo real
+- Destino e formato públicos finais para eventos de atualização de gameplay pendentes (BE-024), o que pode impactar sincronização de jogadas em tempo real.
 
 ---
 
