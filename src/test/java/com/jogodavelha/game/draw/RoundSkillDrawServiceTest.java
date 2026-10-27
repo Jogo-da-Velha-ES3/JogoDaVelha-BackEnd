@@ -21,6 +21,9 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.scheduling.TaskScheduler;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.security.access.AccessDeniedException;
 
 import java.security.SecureRandom;
@@ -45,7 +48,8 @@ class RoundSkillDrawServiceTest {
     private final TaskScheduler scheduler = mock(TaskScheduler.class);
     private final WebSocketService websocket = mock(WebSocketService.class);
     private final RoomSnapshotService snapshots = mock(RoomSnapshotService.class);
-    private final Runnable completed = mock(Runnable.class);
+    private final ApplicationEventPublisher completed = mock(ApplicationEventPublisher.class);
+    private Clock clock;
     private final AtomicLong now = new AtomicLong(1_000);
     private final AtomicBoolean failNextCas = new AtomicBoolean();
     private Runnable onConflict = () -> { };
@@ -59,6 +63,13 @@ class RoundSkillDrawServiceTest {
         var values = mock(ValueOperations.class);
         when(redis.opsForValue()).thenReturn(values);
         when(values.get(anyString())).thenAnswer(call -> stored.get(call.getArgument(0)));
+        when(redis.scan(any(ScanOptions.class))).thenAnswer(ignored -> {
+            var iterator = List.copyOf(stored.keySet()).iterator();
+            var cursor = mock(Cursor.class);
+            when(cursor.hasNext()).thenAnswer(call -> iterator.hasNext());
+            when(cursor.next()).thenAnswer(call -> iterator.next());
+            return cursor;
+        });
         when(values.setIfAbsent(anyString(), anyString(), anyLong(), any()))
                 .thenAnswer(call -> stored.putIfAbsent(call.getArgument(0), call.getArgument(1)) == null);
         when(redis.execute(any(RedisScript.class), anyList(), anyString(), anyString(), anyString()))
@@ -82,7 +93,7 @@ class RoundSkillDrawServiceTest {
             state.setInitialSkills(p2, List.of("CONGELAR", "SILENCIO"));
             return state;
         });
-        Clock clock = mock(Clock.class);
+        clock = mock(Clock.class);
         when(clock.millis()).thenAnswer(ignored -> now.get());
         var game = mock(Game.class);
         var room = mock(Room.class);
@@ -97,7 +108,11 @@ class RoundSkillDrawServiceTest {
         when(scheduler.schedule(any(Runnable.class), any(Instant.class))).thenReturn(mock(ScheduledFuture.class));
         when(skills.findAll()).thenReturn(List.of("BOMBA", "ESCUDO", "CONGELAR", "SILENCIO", "TORNADO", "AMPULHETA")
                 .stream().map(code -> new Skill(code, code, SkillCategory.OFFENSE, code, false, true, 50)).toList());
-        draws = new RoundSkillDrawService(states, skills, rooms, games, clock, scheduler, websocket, snapshots, new Random(7));
+        doAnswer(call -> {
+            states.update(gameId, state -> { state.setPhase(GamePhase.PLAYING); return state; });
+            return null;
+        }).when(completed).publishEvent(isA(RoundDrawCompleted.class));
+        draws = new RoundSkillDrawService(states, skills, rooms, games, clock, scheduler, websocket, snapshots, completed, new Random(7));
     }
 
     @Test
@@ -130,9 +145,9 @@ class RoundSkillDrawServiceTest {
         assertThrows(IllegalStateException.class, () -> draws.pick("0042", p1, first));
         draws.pick("0042", p2, second);
         assertEquals(Set.of("CONGELAR", "SILENCIO", second), state().getRoundSkillDecks().get(p2));
-        verify(completed).run();
+        verify(completed).publishEvent(new RoundDrawCompleted(gameId, 1));
         draws.expire(gameId, 1, 9_000);
-        verify(completed, times(1)).run();
+        verify(completed, times(1)).publishEvent(new RoundDrawCompleted(gameId, 1));
     }
 
     @Test
@@ -149,7 +164,7 @@ class RoundSkillDrawServiceTest {
         assertEquals(3, state.getRoundSkillDecks().get(p2).size());
         assertEquals(0, state.getConsecutiveTimeouts(p1));
         assertEquals(0, state.getConsecutiveTimeouts(p2));
-        verify(completed).run();
+        verify(completed).publishEvent(new RoundDrawCompleted(gameId, 1));
     }
 
     @Test
@@ -199,8 +214,7 @@ class RoundSkillDrawServiceTest {
             state.setPhase(GamePhase.DRAFT);
             return state;
         });
-        Runnable nextRound = mock(Runnable.class);
-        draws.beginRound(gameId, 2, p1, p2, nextRound);
+        draws.beginRound(gameId, 2, p1, p2);
         draws.expire(gameId, 1, 9_000);
         assertTrue(state().getRoundSkillDecks().isEmpty());
         assertFalse(state().hasUsedSkill(p1, "BOMBA"));
@@ -209,7 +223,7 @@ class RoundSkillDrawServiceTest {
         draws.expire(gameId, 2, 17_000);
         assertEquals(3, state().getRoundSkillDecks().get(p1).size());
         assertTrue(state().hasSkillInRoundDeck(p1, "BOMBA"));
-        verify(nextRound).run();
+        verify(completed).publishEvent(new RoundDrawCompleted(gameId, 2));
     }
 
     @Test
@@ -221,7 +235,7 @@ class RoundSkillDrawServiceTest {
         var selected = state().getRoundDraw();
         draws.expire(gameId, 1, 9_000);
         assertEquals(selected, state().getRoundDraw());
-        verify(completed, times(1)).run();
+        verify(completed, times(1)).publishEvent(new RoundDrawCompleted(gameId, 1));
     }
 
     @Test
@@ -239,7 +253,7 @@ class RoundSkillDrawServiceTest {
         when(random.nextInt(anyInt())).thenReturn(0);
         Clock clock = mock(Clock.class);
         when(clock.millis()).thenAnswer(ignored -> now.get());
-        draws = new RoundSkillDrawService(states, skills, rooms, games, clock, scheduler, websocket, snapshots, random);
+        draws = new RoundSkillDrawService(states, skills, rooms, games, clock, scheduler, websocket, snapshots, completed, random);
         start();
         assertEquals(List.of("AMPULHETA", "CONGELAR", "SILENCIO"), state().getRoundDraw().players().get(p1).options());
         assertEquals(List.of("AMPULHETA", "BOMBA", "ESCUDO"), state().getRoundDraw().players().get(p2).options());
@@ -269,10 +283,107 @@ class RoundSkillDrawServiceTest {
         draws.pick("0042", p1, first);
         assertEquals(first, state().getRoundDraw().players().get(p1).selected());
         assertEquals(second, state().getRoundDraw().players().get(p2).selected());
-        verify(completed, times(1)).run();
+        verify(completed, times(1)).publishEvent(new RoundDrawCompleted(gameId, 1));
     }
 
-    private void start() { draws.beginRound(gameId, 1, p1, p2, completed); }
+    private void start() { draws.beginRound(gameId, 1, p1, p2); }
+
+    @Test
+    void restartRearmsTheOriginalDeadlineAndResolvesWithoutThePreviousServiceInstance() {
+        start();
+        var original = state().getRoundDraw();
+        now.set(4_000);
+        clearInvocations(scheduler, completed, skills);
+        draws = restartedService();
+
+        draws.resumePendingRounds();
+
+        var timer = org.mockito.ArgumentCaptor.forClass(Runnable.class);
+        verify(scheduler).schedule(timer.capture(), eq(Instant.ofEpochMilli(9_000)));
+        assertEquals(original, state().getRoundDraw());
+        verifyNoInteractions(skills, completed);
+        now.set(9_000);
+        timer.getValue().run();
+        assertEquals(GamePhase.PLAYING, state().getPhase());
+        assertEquals(3, state().getRoundSkillDecks().get(p1).size());
+        verify(completed).publishEvent(new RoundDrawCompleted(gameId, 1));
+    }
+
+    @Test
+    void restartAfterExpiryKeepsTheManualChoiceAndResolvesOnlyTheMissingOne() {
+        start();
+        String selected = option(p1);
+        draws.pick("0042", p1, selected);
+        clearInvocations(websocket);
+        now.set(10_000);
+
+        restartedService().resumePendingRounds();
+
+        assertEquals(selected, state().getRoundDraw().players().get(p1).selected());
+        assertTrue(state().getRoundDraw().completed());
+        assertEquals(GamePhase.PLAYING, state().getPhase());
+        verify(websocket, never()).sendToUser(eq(p1.toString()), anyString(), any());
+        verify(websocket).sendToUser(eq(p2.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
+        verify(completed).publishEvent(new RoundDrawCompleted(gameId, 1));
+    }
+
+    @Test
+    void restartReplaysCompletionIfTheProcessStoppedAfterSavingBothChoices() {
+        start();
+        states.update(gameId, state -> {
+            var draw = state.getRoundDraw();
+            for (UUID player : List.of(p1, p2)) {
+                String selected = draw.players().get(player).options().getFirst();
+                draw = draw.select(player, selected);
+                var deck = new HashSet<>(state.getInitialSkillsByPlayer().get(player));
+                deck.add(selected);
+                state.setRoundSkillDeck(player, deck);
+            }
+            state.setRoundDraw(draw);
+            return state;
+        });
+        clearInvocations(skills, scheduler, websocket);
+
+        restartedService().resumePendingRounds();
+
+        assertEquals(GamePhase.PLAYING, state().getPhase());
+        verify(completed).publishEvent(new RoundDrawCompleted(gameId, 1));
+        verifyNoInteractions(skills, scheduler, websocket);
+    }
+
+    @Test
+    void eachManualChoicePublishesOneDeckAndFirstChoicePublishesAnUpdatedSnapshot() {
+        start();
+        draws.pick("0042", p1, option(p1));
+        verify(snapshots, times(2)).publish("0042");
+        draws.pick("0042", p2, option(p2));
+
+        verify(websocket, times(1)).sendToUser(eq(p1.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
+        verify(websocket, times(1)).sendToUser(eq(p2.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
+    }
+
+    @Test
+    void onlyTheWinningTimeoutAttemptPublishesDecksWhenTwoExpirationsOverlap() {
+        start();
+        now.set(9_000);
+        failNextCas.set(true);
+        onConflict = () -> draws.expire(gameId, 1, 9_000);
+
+        draws.expire(gameId, 1, 9_000);
+
+        verify(websocket, times(1)).sendToUser(eq(p1.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
+        verify(websocket, times(1)).sendToUser(eq(p2.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
+        verify(completed, times(1)).publishEvent(new RoundDrawCompleted(gameId, 1));
+    }
+
+    private RoundSkillDrawService restartedService() {
+        return new RoundSkillDrawService(states, skills, rooms, games, clock, scheduler,
+                websocket, snapshots, completed, new Random(99));
+    }
+
+    private boolean isDeckUpdate(Object value) {
+        return value instanceof MatchLifecycleEvent event && event.type().equals("DECK_UPDATE");
+    }
     private GameState state() { return states.find(gameId).orElseThrow(); }
     private String option(UUID player) { return state().getRoundDraw().players().get(player).options().getFirst(); }
 }

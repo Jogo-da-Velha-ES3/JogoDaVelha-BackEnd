@@ -1120,13 +1120,20 @@ Confirmar bloqueia novas escolhas. Ao expirar, o servidor escolhe uma opção pa
 quem ainda não confirmou; isso não conta como turno nem como timeout do W.O.
 
 `DECK_UPDATE` envia ao dono `{deck:[{ability, source, usedThisRound}]}`. O deck
-contém as duas fixas e a escolhida. Somente após ambos terem deck, o callback de
-`RoundSkillDraft` libera o início do turno. Cada round refaz o sorteio e limpa o
+contém as duas fixas e a escolhida. Somente após ambos terem deck, o evento interno
+`RoundDrawCompleted` libera o início do turno. Cada round refaz o sorteio e limpa o
 consumo das habilidades, preservando as duas fixas e os contadores de timeout.
 
 O snapshot privado recupera as opções pendentes e o prazo original na reconexão;
 o tópico público não contém opções nem decks. A fase exposta ao front durante a
 escolha é `ROUND_DRAW`. Não há endpoint REST ou migration nesta tarefa.
+
+Ao iniciar a aplicação, os estados de partida são lidos com `SCAN` e os sorteios
+pendentes são retomados com o mesmo prazo. Se ele já venceu, a escolha automática
+é feita imediatamente. Uma conclusão salva antes de uma queda também é retomada,
+sem depender de callbacks da instância anterior. Cada escolha publica seu deck
+uma vez e atualiza o snapshot; o início do turno publica o snapshot da fase `PLAYING`.
+O contrato oficial deste fluxo está em [Contrato V2](docs/contrato-integracao-v2.md).
 
 Erros vão para `/user/queue/errors`: `BAD_REQUEST` (400) para código ou habilidade
 inválidos; `FORBIDDEN` (403) para quem não pertence à sala; `CONFLICT` (409) para

@@ -16,6 +16,7 @@ import com.jogodavelha.game.Score;
 import com.jogodavelha.game.TurnChangedEvent;
 import com.jogodavelha.game.draft.DraftCompleted;
 import com.jogodavelha.game.draw.RoundSkillDrawService;
+import com.jogodavelha.game.draw.RoundDrawCompleted;
 import com.jogodavelha.skill.Skill;
 import com.jogodavelha.skill.SkillCategory;
 import com.jogodavelha.skill.SkillRepository;
@@ -47,7 +48,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
@@ -101,10 +101,9 @@ class GameLifecycleServiceTest {
 
         lenient().when(skillDraft.getIfAvailable()).thenReturn(roundSkillDraft);
         lenient().doAnswer(invocation -> {
-            Runnable onComplete = invocation.getArgument(4);
-            onComplete.run();
+            lifecycle.onRoundDrawCompleted(new RoundDrawCompleted(invocation.getArgument(0), invocation.getArgument(1)));
             return null;
-        }).when(roundSkillDraft).beginRound(any(), anyInt(), any(), any(), any());
+        }).when(roundSkillDraft).beginRound(any(), anyInt(), any(), any());
 
         lenient().doAnswer(invocation -> {
             UUID gameId = invocation.getArgument(0);
@@ -127,6 +126,12 @@ class GameLifecycleServiceTest {
             return null;
         }).when(states).update(any(), any());
         lenient().doAnswer(invocation -> {
+            Function<GameState, GameStateManager.Update<Object>> mutator = invocation.getArgument(1);
+            var update = mutator.apply(redisState.get());
+            redisState.set(update.state());
+            return update.result();
+        }).when(states).updateWithResult(any(), any());
+        lenient().doAnswer(invocation -> {
             redisState.set(null);
             return null;
         }).when(states).delete(any());
@@ -143,7 +148,7 @@ class GameLifecycleServiceTest {
         verify(games).startGame(room, character1Id, character2Id);
         verify(states).create(eq(game.getId()), eq(player1.getId()), eq(player2.getId()),
                 eq(GameState.DEFAULT_TURN_DURATION_MILLIS));
-        verify(roundSkillDraft).beginRound(eq(game.getId()), eq(1), eq(player1.getId()), eq(player2.getId()), any());
+        verify(roundSkillDraft).beginRound(eq(game.getId()), eq(1), eq(player1.getId()), eq(player2.getId()));
         ArgumentCaptor<MatchLifecycleEvent> event = ArgumentCaptor.forClass(MatchLifecycleEvent.class);
         verify(websocket).sendToTopic(eq("/topic/rooms/4242"), event.capture());
         assertEquals("PHASE_CHANGE", event.getValue().type());
@@ -154,7 +159,7 @@ class GameLifecycleServiceTest {
     }
 
     @Test
-    void roundDrawDelaysTurnUntilBothDecksAreResolvedWithoutCountingTimeouts() {
+    void restartedDrawReleasesTurnThroughANewLifecycleInstanceAndKeepsTheNextRoundWorking() {
         var catalog = mock(SkillRepository.class);
         when(catalog.findAll()).thenReturn(List.of("BOMBA", "ESCUDO", "CONGELAR", "TORNADO", "SILENCIO", "AMPULHETA")
                 .stream().map(code -> new Skill(code, code, SkillCategory.OFFENSE, code, false, true, 0)).toList());
@@ -164,7 +169,8 @@ class GameLifecycleServiceTest {
         var scheduler = mock(TaskScheduler.class);
         when(scheduler.schedule(any(Runnable.class), any(Instant.class))).thenReturn(mock(ScheduledFuture.class));
         var draw = new RoundSkillDrawService(states, catalog, rooms, gameRepository, clock,
-                scheduler, websocket, snapshots, new Random(1));
+                scheduler, websocket, snapshots,
+                event -> lifecycle.onRoundDrawCompleted((RoundDrawCompleted) event), new Random(1));
         when(skillDraft.getIfAvailable()).thenReturn(draw);
         when(rooms.findById(room.getId())).thenReturn(Optional.of(room));
         when(games.startGame(room, character1Id, character2Id)).thenReturn(game);
@@ -174,8 +180,13 @@ class GameLifecycleServiceTest {
 
         assertEquals(GamePhase.DRAFT, redisState.get().getPhase());
         verify(turns, never()).schedule(any(), anyLong());
+        lifecycle = new GameLifecycleService(games, gameRepository, rooms, states, turns, websocket, skillDraft, snapshots);
+        var restarted = new RoundSkillDrawService(states, catalog, rooms, gameRepository, clock,
+                scheduler, websocket, snapshots,
+                event -> lifecycle.onRoundDrawCompleted((RoundDrawCompleted) event), new Random(99));
+        when(skillDraft.getIfAvailable()).thenReturn(restarted);
         now.set(9_000);
-        draw.expire(game.getId(), 1, 9_000);
+        restarted.resume(game.getId());
 
         assertEquals(GamePhase.PLAYING, redisState.get().getPhase());
         assertEquals(3, redisState.get().getRoundSkillDecks().get(player1.getId()).size());
@@ -183,7 +194,7 @@ class GameLifecycleServiceTest {
         assertEquals(0, redisState.get().getConsecutiveTimeouts(player1.getId()));
         assertEquals(0, redisState.get().getConsecutiveTimeouts(player2.getId()));
         verify(turns).schedule(eq(game.getId()), anyLong());
-        draw.expire(game.getId(), 1, 9_000);
+        restarted.expire(game.getId(), 1, 9_000);
         verify(turns, times(1)).schedule(eq(game.getId()), anyLong());
 
         when(games.applyRoundResult(game.getId(), 1, RoundResult.PLAYER1_WIN)).thenAnswer(ignored -> {
@@ -195,7 +206,7 @@ class GameLifecycleServiceTest {
         assertTrue(redisState.get().getRoundSkillDecks().isEmpty());
         verify(turns, times(1)).schedule(eq(game.getId()), anyLong());
         now.set(17_000);
-        draw.expire(game.getId(), 2, 17_000);
+        restarted.expire(game.getId(), 2, 17_000);
         assertEquals(GamePhase.PLAYING, redisState.get().getPhase());
         assertEquals(3, redisState.get().getRoundSkillDecks().get(player1.getId()).size());
         verify(turns, times(2)).schedule(eq(game.getId()), anyLong());
@@ -223,7 +234,7 @@ class GameLifecycleServiceTest {
         lifecycle.onDraftCompleted(draftEvent(false));
 
         verify(states, never()).create(any(), any(), any(), anyLong());
-        verify(roundSkillDraft, never()).beginRound(any(), anyInt(), any(), any(), any());
+        verify(roundSkillDraft, never()).beginRound(any(), anyInt(), any(), any());
     }
 
     @Test
@@ -251,23 +262,17 @@ class GameLifecycleServiceTest {
     }
 
     @Test
-    void skillDraftCallbackStartsTurnOnlyOnce() {
-        AtomicInteger callbacks = new AtomicInteger();
-        AtomicReference<Runnable> completion = new AtomicReference<>();
+    void repeatedDrawCompletedEventStartsTurnOnlyOnce() {
         when(rooms.findById(room.getId())).thenReturn(Optional.of(room));
         when(games.startGame(room, character1Id, character2Id)).thenReturn(game);
         when(gameRepository.findById(game.getId())).thenReturn(Optional.of(game));
-        doAnswer(invocation -> {
-            completion.set(invocation.getArgument(4));
-            return null;
-        }).when(roundSkillDraft).beginRound(any(), anyInt(), any(), any(), any());
+        doNothing().when(roundSkillDraft).beginRound(any(), anyInt(), any(), any());
 
         lifecycle.onDraftCompleted(draftEvent(false));
-        completion.get().run();
-        completion.get().run();
+        lifecycle.onRoundDrawCompleted(new RoundDrawCompleted(game.getId(), 1));
+        lifecycle.onRoundDrawCompleted(new RoundDrawCompleted(game.getId(), 1));
 
         verify(turns, times(1)).schedule(eq(game.getId()), anyLong());
-        assertEquals(0, callbacks.get());
     }
 
     @Test

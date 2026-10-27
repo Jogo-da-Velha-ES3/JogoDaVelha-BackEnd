@@ -16,6 +16,9 @@ import com.jogodavelha.websocket.RoomSnapshotService;
 import com.jogodavelha.websocket.WebSocketService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -41,21 +44,22 @@ public class RoundSkillDrawService implements RoundSkillDraft {
     private final TaskScheduler scheduler;
     private final WebSocketService websocket;
     private final RoomSnapshotService snapshots;
+    private final ApplicationEventPublisher events;
     private final RandomGenerator random;
-    private final Map<RoundKey, Runnable> completions = new ConcurrentHashMap<>();
     private final Map<RoundKey, ScheduledFuture<?>> timers = new ConcurrentHashMap<>();
 
     @Autowired
     public RoundSkillDrawService(GameStateManager states, SkillRepository skills, RoomRepository rooms,
                                 GameRepository games, Clock clock,
                                 @Qualifier("turnTaskScheduler") TaskScheduler scheduler,
-                                WebSocketService websocket, RoomSnapshotService snapshots) {
-        this(states, skills, rooms, games, clock, scheduler, websocket, snapshots, new SecureRandom());
+                                WebSocketService websocket, RoomSnapshotService snapshots, ApplicationEventPublisher events) {
+        this(states, skills, rooms, games, clock, scheduler, websocket, snapshots, events, new SecureRandom());
     }
 
     public RoundSkillDrawService(GameStateManager states, SkillRepository skills, RoomRepository rooms,
                                 GameRepository games, Clock clock, TaskScheduler scheduler,
-                                WebSocketService websocket, RoomSnapshotService snapshots, RandomGenerator random) {
+                                WebSocketService websocket, RoomSnapshotService snapshots,
+                                ApplicationEventPublisher events, RandomGenerator random) {
         this.states = states;
         this.skills = skills;
         this.rooms = rooms;
@@ -64,12 +68,13 @@ public class RoundSkillDrawService implements RoundSkillDraft {
         this.scheduler = scheduler;
         this.websocket = websocket;
         this.snapshots = snapshots;
+        this.events = events;
         this.random = random;
     }
 
     @Override
     @Transactional(readOnly = true)
-    public void beginRound(UUID gameId, int round, UUID player1, UUID player2, Runnable onComplete) {
+    public void beginRound(UUID gameId, int round, UUID player1, UUID player2) {
         GameState before = states.find(gameId).orElseThrow(() -> new GameStateNotFoundException(gameId));
         if (before.getRoundNumber() != round || before.getPhase() != GamePhase.DRAFT) return;
         if (!player1.equals(before.getPlayer1Id()) || !player2.equals(before.getPlayer2Id())) {
@@ -90,11 +95,9 @@ public class RoundSkillDrawService implements RoundSkillDraft {
                 return current;
             });
         }
-        completions.putIfAbsent(key, onComplete);
         GameState state = states.find(gameId).orElseThrow();
         RoundDrawState draw = state.getRoundDraw();
         if (draw == null || draw.round() != round || state.getPhase() != GamePhase.DRAFT) {
-            completions.remove(key);
             return;
         }
         if (draw.completed()) {
@@ -113,6 +116,21 @@ public class RoundSkillDrawService implements RoundSkillDraft {
             if (player.selected() == null) websocket.sendToUser(playerId.toString(), "/queue/room",
                     event("DRAW_OPTIONS", Map.of("options", player.options(), "deadline", draw.deadline())));
         });
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void resumePendingRounds() {
+        states.findAllGameIds().forEach(this::resume);
+    }
+
+    public void resume(UUID gameId) {
+        GameState state = states.find(gameId).orElse(null);
+        if (state == null || state.getPhase() != GamePhase.DRAFT || state.getRoundDraw() == null) return;
+        RoundDrawState draw = state.getRoundDraw();
+        RoundKey key = new RoundKey(gameId, draw.round());
+        if (draw.completed()) complete(key);
+        else if (clock.millis() >= draw.deadline()) expire(gameId, draw.round(), draw.deadline());
+        else schedule(key, draw.deadline());
     }
 
     @Transactional(readOnly = true)
@@ -139,8 +157,11 @@ public class RoundSkillDrawService implements RoundSkillDraft {
             setDeck(current, playerId, ability);
             return current;
         });
-        publishDeck(gameId, expected.round(), playerId);
-        complete(new RoundKey(gameId, expected.round()));
+        try {
+            publishDeck(gameId, expected.round(), playerId);
+        } finally {
+            if (!complete(new RoundKey(gameId, expected.round()))) snapshots.publish(code);
+        }
     }
 
     public void expire(UUID gameId, int round, long deadline) {
@@ -148,7 +169,6 @@ public class RoundSkillDrawService implements RoundSkillDraft {
         GameState state = states.find(gameId).orElse(null);
         if (!pending(state, round, deadline)) {
             cancel(key);
-            completions.remove(key);
             return;
         }
         if (clock.millis() < deadline) {
@@ -158,23 +178,29 @@ public class RoundSkillDrawService implements RoundSkillDraft {
         Map<UUID, String> automatic = new HashMap<>();
         state.getRoundDraw().players().forEach((player, draw) -> automatic.put(player,
                 draw.options().get(random.nextInt(draw.options().size()))));
+        Set<UUID> selected;
         try {
-            states.update(gameId, current -> {
-                if (!pending(current, round, deadline)) return current;
+            selected = states.updateWithResult(gameId, current -> {
+                Set<UUID> changed = new HashSet<>();
+                if (!pending(current, round, deadline)) return new GameStateManager.Update<>(current, changed);
                 for (var choice : automatic.entrySet()) {
                     if (current.getRoundDraw().players().get(choice.getKey()).selected() == null) {
                         current.setRoundDraw(current.getRoundDraw().select(choice.getKey(), choice.getValue()));
                         setDeck(current, choice.getKey(), choice.getValue());
+                        changed.add(choice.getKey());
                     }
                 }
-                return current;
+                return new GameStateManager.Update<>(current, Set.copyOf(changed));
             });
         } catch (GameStateNotFoundException ended) {
             cancel(key);
-            completions.remove(key);
             return;
         }
-        complete(key);
+        try {
+            selected.forEach(player -> publishDeck(gameId, round, player));
+        } finally {
+            complete(key);
+        }
     }
 
     private boolean pending(GameState state, int round, long deadline) {
@@ -208,19 +234,13 @@ public class RoundSkillDrawService implements RoundSkillDraft {
         });
     }
 
-    private void complete(RoundKey key) {
+    private boolean complete(RoundKey key) {
         GameState state = states.find(key.gameId()).orElse(null);
-        if (state == null || state.getRoundDraw() == null || state.getRoundDraw().round() != key.round()
-                || !state.getRoundDraw().completed()) return;
-        Runnable callback = completions.remove(key);
-        if (callback == null) return;
+        if (state == null || state.getPhase() != GamePhase.DRAFT || state.getRoundDraw() == null
+                || state.getRoundDraw().round() != key.round() || !state.getRoundDraw().completed()) return false;
         cancel(key);
-        try {
-            publishDeck(key.gameId(), key.round(), state.getPlayer1Id());
-            publishDeck(key.gameId(), key.round(), state.getPlayer2Id());
-        } finally {
-            callback.run();
-        }
+        events.publishEvent(new RoundDrawCompleted(key.gameId(), key.round()));
+        return true;
     }
 
     private MatchLifecycleEvent event(String type, Map<String, ?> payload) {

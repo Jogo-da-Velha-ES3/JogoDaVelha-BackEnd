@@ -8,6 +8,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.script.RedisScript;
 
 import java.security.SecureRandom;
@@ -74,6 +76,34 @@ class GameStateManagerTest {
         assertThrows(IllegalStateException.class, () -> manager.create(gameId, player1, player2, 10000));
         verify(values).setIfAbsent(eq(key), anyString(), eq(1800000L), eq(TimeUnit.MILLISECONDS));
         verify(values, never()).set(anyString(), any());
+    }
+
+    @Test
+    void recoveryListsGameIdsWithScanAndClosesTheCursor() {
+        var cursor = mock(Cursor.class);
+        when(redis.scan(any(ScanOptions.class))).thenReturn(cursor);
+        when(cursor.hasNext()).thenReturn(true, false);
+        when(cursor.next()).thenReturn(key);
+
+        assertEquals(List.of(gameId), manager.findAllGameIds());
+
+        verify(cursor).close();
+        verify(redis, never()).keys(anyString());
+    }
+
+    @Test
+    void returnsOnlyTheResultOfTheSuccessfulCasAttempt() throws Exception {
+        var state = GameState.builder().gameId(gameId).version(4).build();
+        String first = mapper.writeValueAsString(state);
+        state.setVersion(5);
+        when(values.get(key)).thenReturn(first, mapper.writeValueAsString(state));
+        when(redis.execute(any(RedisScript.class), anyList(), anyString(), anyString(), anyString()))
+                .thenReturn(false, true);
+
+        long versionSeen = manager.updateWithResult(gameId,
+                current -> new GameStateManager.Update<>(current, current.getVersion()));
+
+        assertEquals(5, versionSeen);
     }
 
     @Test

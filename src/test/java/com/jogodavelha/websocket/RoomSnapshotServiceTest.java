@@ -204,6 +204,8 @@ class RoomSnapshotServiceTest {
         when(games.findByRoomIdAndStatus(fixture.room().getId(), GameStatus.IN_PROGRESS)).thenReturn(Optional.of(game));
         GameState state = GameState.builder().gameId(gameId).board(GameState.EMPTY_BOARD)
                 .player1Id(p1).player2Id(p2).roundNumber(1).phase(GamePhase.DRAFT).build();
+        state.setInitialSkills(p1, List.of("BOMBA", "ESCUDO"));
+        state.setInitialSkills(p2, List.of("CONGELAR", "SILENCIO"));
         state.setRoundDraw(new RoundDrawState("0042", 1, 9_000, Map.of(
                 p1, new RoundDrawState.Player(List.of("TORNADO", "SILENCIO", "CONGELAR"), null),
                 p2, new RoundDrawState.Player(List.of("BOMBA", "ESCUDO", "AMPULHETA"), null))));
@@ -221,8 +223,32 @@ class RoomSnapshotServiceTest {
         assertNull(publicSnapshot.payload().drawOptions());
         assertTrue(publicSnapshot.payload().myDeck().isEmpty());
         state.setRoundDraw(state.getRoundDraw().select(p1, "TORNADO"));
+        state.setRoundSkillDeck(p1, List.of("BOMBA", "ESCUDO", "TORNADO"));
         assertNull(snapshots.compose("0042", p1).drawOptions());
         assertNotNull(snapshots.compose("0042", p2).drawOptions());
+        clearInvocations(websocket);
+
+        snapshots.publish("0042");
+
+        var privateCaptor = org.mockito.ArgumentCaptor.forClass(Object.class);
+        verify(websocket).sendToUser(eq(p1.toString()), eq("/queue/room"), privateCaptor.capture());
+        JsonNode ownJson = mapper.valueToTree(privateCaptor.getValue());
+        assertEquals("ROUND_DRAW", ownJson.path("payload").path("phase").asText());
+        assertTrue(ownJson.path("payload").has("drawOptions"));
+        assertTrue(ownJson.path("payload").path("drawOptions").isNull());
+        assertEquals(3, ownJson.path("payload").path("myDeck").size());
+        assertEquals("P1", ownJson.path("payload").path("mySlot").asText());
+        assertTrue(ownJson.path("payload").path("turn").isNull());
+        assertEquals(ownJson.path("serverTime"), ownJson.path("payload").path("serverTime"));
+        verify(websocket).sendToUser(eq(p2.toString()), eq("/queue/room"), privateCaptor.capture());
+        JsonNode opponentJson = mapper.valueToTree(privateCaptor.getValue());
+        assertEquals(9_000, opponentJson.path("payload").path("drawOptions").path("deadline").asLong());
+        assertEquals(3, opponentJson.path("payload").path("drawOptions").path("options").size());
+        verify(websocket).sendToTopic(anyString(), captor.capture());
+        JsonNode publicJson = mapper.valueToTree(captor.getValue());
+        assertTrue(publicJson.path("payload").path("drawOptions").isNull());
+        assertTrue(publicJson.path("payload").path("mySlot").isNull());
+        assertTrue(publicJson.path("payload").path("myDeck").isEmpty());
     }
 
     private User user(String username) {

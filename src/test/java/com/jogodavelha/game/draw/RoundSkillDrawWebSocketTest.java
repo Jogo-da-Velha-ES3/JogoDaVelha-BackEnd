@@ -30,6 +30,7 @@ import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.*;
 import org.springframework.messaging.simp.SimpMessageType;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -49,7 +50,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
 import static org.awaitility.Awaitility.await;
@@ -114,14 +114,14 @@ class RoundSkillDrawWebSocketTest {
             return states;
         }
         @Bean RoundSkillDrawService draws(GameStateManager states, RoomRepository rooms, GameRepository games,
-                                         Clock clock, SimpMessagingTemplate template) {
+                                         Clock clock, SimpMessagingTemplate template, ApplicationEventPublisher events) {
             var catalog = mock(SkillRepository.class);
             when(catalog.findAll()).thenReturn(List.of("BOMBA", "ESCUDO", "CONGELAR", "SILENCIO", "TORNADO", "AMPULHETA")
                     .stream().map(code -> new Skill(code, code, SkillCategory.OFFENSE, code, false, true, 50)).toList());
             var scheduler = mock(TaskScheduler.class);
             when(scheduler.schedule(any(Runnable.class), any(Instant.class))).thenReturn(mock(ScheduledFuture.class));
             return new RoundSkillDrawService(states, catalog, rooms, games, clock, scheduler,
-                    new WebSocketService(template), mock(RoomSnapshotService.class), new Random(1));
+                    new WebSocketService(template), mock(RoomSnapshotService.class), events, new Random(1));
         }
     }
 
@@ -136,9 +136,7 @@ class RoundSkillDrawWebSocketTest {
         var opponent = subscribe(second, "/user/queue/room", P2);
         var stranger = subscribe(outsider, "/user/queue/room", strangerId);
         var publicEvents = subscribe(first, "/topic/rooms/0042", P1);
-        var completions = new AtomicInteger();
-
-        draws.beginRound(GAME, 1, P1, P2, completions::incrementAndGet);
+        draws.beginRound(GAME, 1, P1, P2);
 
         var firstOptions = receive(own);
         var secondOptions = receive(opponent);
@@ -157,7 +155,7 @@ class RoundSkillDrawWebSocketTest {
         assertEquals(3, deck.path("payload").path("deck").size());
         assertEquals(ability, states.find(GAME).orElseThrow().getRoundDraw().players().get(P1).selected());
         assertNull(states.find(GAME).orElseThrow().getRoundDraw().players().get(P2).selected());
-        assertEquals(0, completions.get());
+        assertFalse(states.find(GAME).orElseThrow().getRoundDraw().completed());
         assertNull(opponent.poll(200, TimeUnit.MILLISECONDS));
         assertNull(stranger.poll(200, TimeUnit.MILLISECONDS));
         assertNull(publicEvents.poll(200, TimeUnit.MILLISECONDS));
