@@ -23,7 +23,10 @@ import org.springframework.http.HttpInputMessage;
 
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class GlobalExceptionHandlerTest {
     private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
@@ -87,8 +90,7 @@ class GlobalExceptionHandlerTest {
         ApiError validationBody = (ApiError) validationResponse.getBody();
         assertEquals("VALIDATION_ERROR", validationBody.code());
         assertEquals(Map.of("email", "E-mail inválido"), validationBody.fields());
-        assertNotNull(validationBody.error()); // error field is now always present
-
+        assertNull(validationBody.error());
         var malformedResponse =
                 handler.handleHttpMessageNotReadable(
                         new org.springframework.http.converter.HttpMessageNotReadableException(
@@ -105,7 +107,7 @@ class GlobalExceptionHandlerTest {
         assertEquals("INVALID_REQUEST_BODY", malformedBody.code());
         assertEquals(HttpStatus.BAD_REQUEST.value(), malformedBody.status());
         assertNull(malformedBody.fields()); // fields is null for non-validation errors
-        assertNotNull(malformedBody.error()); // error field is now always present
+        assertNull(malformedBody.error()); // error field is now always present
     }
 
     @Test

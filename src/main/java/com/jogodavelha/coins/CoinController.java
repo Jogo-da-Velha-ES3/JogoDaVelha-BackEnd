@@ -4,9 +4,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -15,6 +18,7 @@ import java.util.UUID;
 public class CoinController {
 
     private final CoinService coinService;
+    private final CoinPurchaseService coinPurchaseService;
 
     @GetMapping("/balance")
     public ResponseEntity<BalanceResponse> getBalance(
@@ -28,5 +32,38 @@ public class CoinController {
                         coinService.getBalance(userId)
                 )
         );
+    }
+
+    @GetMapping("/packages")
+    public ResponseEntity<List<CoinPackageResponse>> packages() {
+
+        List<CoinPackageResponse> response =
+                coinPurchaseService.getPackages()
+                        .stream()
+                        .map(pkg ->
+                                new CoinPackageResponse(
+                                        pkg.getId(),
+                                        pkg.getCoins()
+                                )
+                        )
+                        .toList();
+
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/packages/{packageId}/purchase")
+    public ResponseEntity<Void> purchase(
+            Authentication authentication,
+            @PathVariable UUID packageId
+    ) {
+
+        UUID userId = (UUID) authentication.getPrincipal();
+
+        coinPurchaseService.purchase(
+                userId,
+                packageId
+        );
+
+        return ResponseEntity.noContent().build();
     }
 }
