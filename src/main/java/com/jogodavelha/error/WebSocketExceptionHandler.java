@@ -17,38 +17,38 @@ public class WebSocketExceptionHandler {
     @SendToUser(destinations = "/queue/errors", broadcast = false)
     public ApiError handleSkillValidation(SkillValidationException ex,
             @Header(SimpMessageHeaderAccessor.DESTINATION_HEADER) String destination) {
-        return ApiError.of(ex.getCode().name(), ex.getMessage(), HttpStatus.BAD_REQUEST.value(), destination);
+        return ApiError.of(ex.getCode().name(), ex.getMessage(), HttpStatus.BAD_REQUEST.value(), destination, null, null);
     }
 
     @MessageExceptionHandler(MoveValidationException.class)
     @SendToUser(destinations = "/queue/errors", broadcast = false)
     public ApiError handleMoveValidation(MoveValidationException ex,
             @Header(SimpMessageHeaderAccessor.DESTINATION_HEADER) String destination) {
-        return ApiError.of(HttpStatus.BAD_REQUEST, ex.getMessage(), destination);
+        return ApiError.of(HttpStatus.BAD_REQUEST, ex.getMessage(), destination, null, null);
     }
 
     @MessageExceptionHandler({IllegalArgumentException.class})
     @SendToUser(destinations = "/queue/errors", broadcast = false)
     public ApiError handleBadRequest(IllegalArgumentException ex, @Header(SimpMessageHeaderAccessor.DESTINATION_HEADER) String destination) {
-        return ApiError.of(HttpStatus.BAD_REQUEST, ex.getMessage(), destination);
+        return ApiError.of(HttpStatus.BAD_REQUEST, ex.getMessage(), destination, null, null);
     }
 
     @MessageExceptionHandler(AccessDeniedException.class)
     @SendToUser(destinations = "/queue/errors", broadcast = false)
     public ApiError handleAccessDenied(AccessDeniedException ex,
             @Header(SimpMessageHeaderAccessor.DESTINATION_HEADER) String destination) {
-        return ApiError.of(HttpStatus.FORBIDDEN, "Jogador não autorizado para esta ação.", destination);
+        return ApiError.of(HttpStatus.FORBIDDEN, "Jogador não autorizado para esta ação.", destination, null, null);
     }
 
     @MessageExceptionHandler(IllegalStateException.class)
     @SendToUser(destinations = "/queue/errors", broadcast = false)
     public ApiError handleConflict(IllegalStateException ex, @Header(SimpMessageHeaderAccessor.DESTINATION_HEADER) String destination) {
-        return ApiError.of(HttpStatus.CONFLICT, ex.getMessage(), destination);
+        return ApiError.of(HttpStatus.CONFLICT, ex.getMessage(), destination, null, null);
     }
 
     @MessageExceptionHandler(Exception.class)
     @SendToUser(destinations = "/queue/errors", broadcast = false)
     public ApiError handleUnexpected(Exception ex, @Header(SimpMessageHeaderAccessor.DESTINATION_HEADER) String destination) {
-        return ApiError.of(HttpStatus.INTERNAL_SERVER_ERROR, "Erro interno do servidor", destination);
+        return ApiError.of(HttpStatus.INTERNAL_SERVER_ERROR, "Erro interno do servidor", destination, null, null);
     }
 }

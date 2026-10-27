@@ -23,6 +23,7 @@ import com.jogodavelha.room.RoomStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -36,6 +37,7 @@ import java.util.stream.IntStream;
 /** Composes the frontend RoomSnapshot and keeps player-specific fields off the shared room topic. */
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class RoomSnapshotService {
     private static final List<RoomStatus> ACTIVE_ROOM_STATUSES = List.of(RoomStatus.WAITING, RoomStatus.IN_GAME);
     private final RoomRepository rooms;
@@ -90,7 +92,8 @@ public class RoomSnapshotService {
     private RoomSnapshot snapshot(Room room, Slot mySlot, boolean includePrivate, State state, long serverTime) {
         MatchSnapshot match = match(room, state);
         List<PlayerState> playerStates = players(room, state, match);
-        DraftSnapshot draft = state.draftOptional().map(value -> new DraftSnapshot(value.deadlineEpochMillis(),
+        DraftSnapshot draft = state.draftOptional().filter(value -> state.game() == null)
+                .map(value -> new DraftSnapshot(value.deadlineEpochMillis(),
                 Map.of(Slot.P1, value.player1().ready(), Slot.P2, value.player2().ready()))).orElse(null);
         RoomPhase phase = phase(room, state);
         List<DeckSlot> deck = includePrivate && mySlot != null ? myDeck(state.gameStateOptional().orElse(null),
@@ -100,7 +103,10 @@ public class RoomSnapshotService {
         return new RoomSnapshot(room.getCode(), phase, playerStates,
                 includePrivate ? mySlot : null,
                 match.round(), match.suddenDeath(), board(state.gameStateOptional().orElse(null)), turn,
-                deck, match.outcome(), serverTime, draft, null, match.coins(), null);
+                deck, match.outcome(), serverTime, draft,
+                includePrivate && mySlot != null ? drawOptions(state.gameState(),
+                        mySlot == Slot.P1 ? room.getPlayer1().getId() : room.getPlayer2().getId()) : null,
+                match.coins(), null);
     }
 
     private void sendPrivate(Room room, UUID userId, Slot slot, State state, long serverTime) {
@@ -215,18 +221,25 @@ public class RoomSnapshotService {
 
     private RoomPhase phase(Room room, State state) {
         if (room.getStatus() == RoomStatus.WAITING) return RoomPhase.WAITING;
-        if (state.draft() != null) return RoomPhase.DRAFT;
         GameState gameState = state.gameStateOptional().orElse(null);
         if (gameState != null) {
             return switch (gameState.getPhase()) {
-                case DRAFT -> RoomPhase.DRAFT;
+                case DRAFT -> gameState.getRoundDraw() != null ? RoomPhase.ROUND_DRAW : RoomPhase.DRAFT;
                 case PLAYING -> RoomPhase.PLAYING;
                 case ROUND_FINISHED -> RoomPhase.ROUND_END;
                 case FINISHED -> RoomPhase.RESULT;
             };
         }
+        if (state.draft() != null && state.game() == null) return RoomPhase.DRAFT;
         return state.game() != null && state.game().getStatus() == GameStatus.FINISHED
                 ? RoomPhase.RESULT : RoomPhase.MATCHED;
+    }
+
+    private DrawOptions drawOptions(GameState state, UUID viewerId) {
+        if (state == null || state.getPhase() != GamePhase.DRAFT || state.getRoundDraw() == null) return null;
+        var player = state.getRoundDraw().players().get(viewerId);
+        return player == null || player.selected() != null ? null
+                : new DrawOptions(player.options(), state.getRoundDraw().deadline());
     }
 
     private Room activeRoom(String code) {

@@ -5,6 +5,9 @@
 **Fonte da verdade:** Implementação na branch `dev`
 **Documento anterior preservado:** `docs/contrato-integracao.md`
 
+**BE-013.1:** os trechos de sorteio por round abaixo estão implementados na PR #119,
+em revisão. As demais seções mantêm a referência da auditoria da `dev`.
+
 ---
 
 ## 1. Visão Geral
@@ -86,11 +89,12 @@ A versão anterior (`docs/contrato-integracao.md`) foi preservada integralmente 
   "status": 400,
   "timestamp": "2026-10-26T10:30:00Z",
   "path": "/api/auth/register",
-  "fields": { "email": "E-mail inválido" }
+  "fields": { "email": "E-mail inválido" },
+  "error": "Bad Request"
 }
 ```
 
-O campo `fields` é incluído apenas para erros de validação de campos (`VALIDATION_ERROR`). O campo `error` é omitido quando nulo e incluído nos erros STOMP genéricos quando preenchido.
+O campo `fields` é incluído apenas para erros de validação de campos (`VALIDATION_ERROR`), sendo nulo nos demais casos. O campo `error` contém a frase HTTP (ex: "Bad Request") e está sempre presente, mesmo quando nulo.
 
 ### 2.5 Formato de Erros STOMP
 
@@ -103,15 +107,16 @@ Erros STOMP são enviados como `ApiError` para `/user/queue/errors`:
   "status": 400,
   "timestamp": "2026-10-26T10:30:00Z",
   "path": "/app/game/{gameId}/move",
+  "fields": null,
   "error": "Bad Request"
 }
 ```
 
-Para erros de habilidade, o campo `code` usa valores específicos do domínio (ex: `SKILL_INVALID_TARGET`). Para erros genéricos, usa `HttpStatus.name()` (ex: `BAD_REQUEST`, `CONFLICT`, `INTERNAL_SERVER_ERROR`).
+Para erros de habilidade, o campo `code` usa valores específicos do domínio (ex: `SKILL_INVALID_TARGET`). Para erros genéricos, usa `HttpStatus.name()` (ex: `BAD_REQUEST`, `CONFLICT`, `INTERNAL_SERVER_ERROR`). Os campos `fields` e `error` estão sempre presentes, mesmo quando nulos.
 
 ### 2.6 Campos Opcionais, Nulos e Ausentes
 
-- **DTOs principais:** Campos nulos são omitidos em `ApiError` (`@JsonInclude.Include.NON_NULL`); nos demais DTOs listados, são sempre incluídos (`@JsonInclude.Include.ALWAYS`)
+- **DTOs principais:** Campos nulos são sempre incluídos em `ApiError`; nos demais DTOs listados, são sempre incluídos (`@JsonInclude.Include.ALWAYS`)
   - `RoomDTO`, `SkillDTO`, `CharacterDTO`, `GameDTO`
   - `LoginResponse`, `RegisterResponse`, `BalanceResponse`
   - `ProfileResponse`, `ProfileStatsResponse`, `MatchHistoryResponse`
@@ -988,6 +993,28 @@ Validações:
 - Habilidades devem pertencer ao inventário do usuário
 - Destino compatível com `DRAFT_ABILITIES` no frontend
 
+#### SEND /app/rooms/{code}/draw/pick — BE-013.1
+
+**Status:** Implementado na PR #119, em revisão.
+**Controller:** `RoundSkillDrawController.pick`.
+**Autenticação:** `Principal` do JWT validado no CONNECT. Campos extras de
+identidade, como `playerId`, são ignorados.
+
+Envie com `content-type: application/json`:
+
+```json
+{ "ability": "TORNADO" }
+```
+
+O código da sala tem quatro dígitos e o jogador precisa participar dela. A habilidade
+deve ser uma das três opções recebidas para aquele round. Só é aceita uma confirmação
+por jogador, antes do prazo de 8 segundos.
+
+Erros são privados, em `/user/queue/errors`: `BAD_REQUEST` (400) para código ou
+habilidade inválidos; `FORBIDDEN` (403) para não participante; `CONFLICT` (409)
+para sorteio ausente, encerrado, expirado ou escolha já confirmada. Não há novos
+códigos de erro. O mesmo mapeamento consta no README.
+
 ### 5.3 Destinos de Assinatura (SUBSCRIBE)
 
 #### SUBSCRIBE /topic/rooms/{code}
@@ -1139,6 +1166,8 @@ Validações:
 - Após persistência das mudanças (transação commitada)
 - Após confirmação de Draft
 - Após entrada de jogador
+- Na abertura do sorteio de cada round, após uma escolha enquanto o adversário
+  ainda escolhe, e na liberação do turno após os dois decks estarem definidos (BE-013.1).
 
 **Comportamento esperado do Front-End:**
 - Usar `ROOM_SNAPSHOT` como fonte única de verdade para estado da sala
@@ -1149,6 +1178,15 @@ Validações:
 **Diferenças entre snapshot público e privado:**
 - Todos os campos de `RoomSnapshot` são serializados, inclusive quando nulos (`@JsonInclude(ALWAYS)`). No snapshot público, `mySlot` é `null` e `myDeck` é `[]`; eles não são omitidos.
 - No snapshot privado, `mySlot` indica o slot do destinatário e `myDeck` contém o deck daquele jogador. Os demais campos também aparecem quando nulos.
+- Durante `ROUND_DRAW`, o snapshot privado contém `drawOptions:{options,deadline}`
+  apenas para quem ainda não confirmou. Após confirmar, `drawOptions` é `null`
+  e `myDeck` contém as duas habilidades fixas e a sorteada. O adversário continua
+  recebendo somente as próprias opções e seu prazo original.
+- No snapshot público, `drawOptions` é sempre `null`, `mySlot` é `null` e `myDeck`
+  é `[]`. A fase compartilhada pode ser `ROUND_DRAW`, mas as opções nunca são públicas.
+- Na fase `ROUND_DRAW`, `turn` é `null`: os 8 segundos de escolha não são um turno
+  e não alteram os contadores de timeout. O Draft inicial concluído não substitui
+  a fase da partida no snapshot.
 - Campos variáveis do snapshot privado:
 
 ```json
@@ -1217,6 +1255,42 @@ Validações:
 - Implementado em `DraftEventPublisher` (linha 17-60)
 - Evento também publica `ROOM_SNAPSHOT` via `RoomSnapshotEventPublisher`
 
+#### DRAW_OPTIONS e DECK_UPDATE — BE-013.1
+
+**Status:** Implementados na PR #119, em revisão.
+**Publicador:** `RoundSkillDrawService`.
+**Destino:** somente `/user/queue/room`, usando o UUID autenticado do destinatário.
+Nunca são publicados em `/topic/rooms/{code}`.
+
+```json
+{
+  "type": "DRAW_OPTIONS",
+  "payload": { "options": ["TORNADO", "CONGELAR", "SILENCIO"], "deadline": 1793102408000 },
+  "serverTime": 1793102400000
+}
+```
+
+São três códigos distintos do catálogo completo, podendo incluir habilidades não
+compradas e excluindo as duas fixas. `deadline` e `serverTime` são epoch millis.
+
+```json
+{
+  "type": "DECK_UPDATE",
+  "payload": {
+    "deck": [
+      { "ability": "BOMBA", "source": "INITIAL", "usedThisRound": false },
+      { "ability": "ESCUDO", "source": "INITIAL", "usedThisRound": false },
+      { "ability": "TORNADO", "source": "DRAWN", "usedThisRound": false }
+    ]
+  },
+  "serverTime": 1793102401000
+}
+```
+
+Cada escolha salva publica um `DECK_UPDATE` ao dono. A segunda escolha não reenvia
+os decks já publicados. Na expiração, somente quem recebeu uma escolha automática
+recebe o evento. Os snapshots privados continuam disponíveis para sincronização.
+
 ### 5.5 Mensagens de Erro STOMP
 
 **Destino:** `/user/queue/errors`
@@ -1241,8 +1315,8 @@ Validações:
 **Regras e observações:**
 - Erros de habilidade usam código específico do domínio
 - Erros genéricos usam `HttpStatus.name()`
-- Campo `fields` não é preenchido em erros STOMP
-- Campo `error` (frase HTTP) pode estar presente em erros genéricos
+- Campo `fields` é sempre presente (nulo em erros STOMP)
+- Campo `error` (frase HTTP) é sempre presente
 
 ### 5.6 Envelopes e Timestamps
 
@@ -1359,8 +1433,12 @@ Validações:
 
 ### 6.6 Início e Andamento da Partida
 
-1. Ambos jogadores confirmam Draft
-2. Back-End inicia partida e muda fase para PLAYING
+1. Ambos jogadores confirmam o Draft inicial. A BE-013.1 abre `ROUND_DRAW`, com
+   três opções privadas para cada jogador e prazo de 8 segundos. Quem não escolhe
+   recebe uma escolha automática entre suas opções. O tempo não conta para W.O.
+2. Depois de salvar os dois decks (duas fixas e uma sorteada), o evento interno
+   `RoundDrawCompleted` libera a fase `PLAYING` e o timer do turno. Isso se repete
+   a cada round, limpando consumo e efeitos sem zerar os contadores de timeout.
 3. Back-End publica `ROOM_SNAPSHOT` com tabuleiro vazio e turno do primeiro jogador
 4. Jogador da vez envia `SEND /app/game/{gameId}/move` com posição
 5. Back-End valida jogada via `MoveActionService`
@@ -1422,6 +1500,13 @@ Validações:
 **Observações:**
 - Jogador pode continuar jogando mesmo se desconectado (timeout de partida separado)
 - Reconexão via `sync` restaura estado completo
+- Durante o sorteio do round, o snapshot privado restaura as opções pendentes e
+  o prazo original, sem abrir uma nova janela de 8 segundos.
+- Após reiniciar o backend, `RoundSkillDrawService` usa `SCAN` para localizar
+  estados de partida no Redis. Sorteios pendentes são reagendados pelo prazo salvo;
+  os vencidos são resolvidos imediatamente. Se ambas as escolhas já estavam salvas
+  mas o turno não havia começado, o evento de conclusão é reemitido para liberar
+  o turno. Não depende de callback ou timer da instância anterior.
 
 ### 6.10 Tratamento e Recuperação de Erros
 
@@ -1640,7 +1725,7 @@ Validações:
 - Campo obrigatório ausente
 - Campo fora do tamanho permitido
 - Formato inválido (e-mail, código de sala)
-- Pode incluir `fields` com detalhes
+- Inclui `fields` com detalhes de cada campo inválido
 
 **ROOM_BAD_REQUEST:**
 - Código de sala não é 4 dígitos

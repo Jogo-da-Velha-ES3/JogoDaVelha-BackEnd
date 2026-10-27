@@ -13,6 +13,7 @@ import com.jogodavelha.game.RoundSkillDraft;
 import com.jogodavelha.game.RoundUpdate;
 import com.jogodavelha.game.TurnChangedEvent;
 import com.jogodavelha.game.draft.DraftCompleted;
+import com.jogodavelha.game.draw.RoundDrawCompleted;
 import com.jogodavelha.game.logic.GamePhase;
 import com.jogodavelha.game.logic.GameState;
 import com.jogodavelha.game.logic.GameStateManager;
@@ -26,6 +27,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.event.EventListener;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -126,6 +128,7 @@ public class GameLifecycleService implements RoundLifecycle {
         long now = System.currentTimeMillis();
         states.update(gameId, current -> {
             current.startRound(game.getCurrentRound(), duration, now);
+            current.setPhase(GamePhase.DRAFT);
             return current;
         });
         GameState state = states.find(gameId).orElseThrow();
@@ -177,7 +180,13 @@ public class GameLifecycleService implements RoundLifecycle {
                     "RoundSkillDraft é obrigatório: o sorteio de habilidades do round não está disponível.");
         }
         draw.beginRound(game.getId(), state.getRoundNumber(), game.getPlayer1().getId(),
-                game.getPlayer2().getId(), () -> startTurnAfterDraft(game.getId(), round));
+                game.getPlayer2().getId());
+    }
+
+    @EventListener
+    @Transactional(readOnly = true)
+    public void onRoundDrawCompleted(RoundDrawCompleted event) {
+        startTurnAfterDraft(event.gameId(), event.round());
     }
 
     private void startTurnAfterDraft(UUID gameId, int expectedRound) {

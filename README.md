@@ -1105,7 +1105,39 @@ para código da sala ou seleção inválidos; `FORBIDDEN` (403) para quem não p
 da sala; `CONFLICT` (409) para Draft ausente, encerrado, expirado ou escolhas já
 confirmadas. A fila privada exige uma sessão autenticada e não depende da inscrição
 no tópico público da sala. Não há novo endpoint REST, código de erro ou migration.
-O sorteio da terceira habilidade e o deck de cada round ficam na BE-013.1.
+O sorteio da terceira habilidade e o deck de cada round são tratados pela BE-013.1.
+
+## Sorteio por round (BE-013.1)
+
+Antes de cada round, `RoundSkillDrawService` usa o catálogo completo para sortear
+três habilidades distintas por jogador, excluindo as duas fixas. As opções ficam
+no `GameState` do Redis e chegam somente ao dono em `/user/queue/room`, no evento
+`DRAW_OPTIONS`, com `{options, deadline}`. O prazo é de 8 segundos.
+
+Envie `SEND /app/rooms/{code}/draw/pick` com `{"ability":"TORNADO"}`. A identidade
+vem do JWT do CONNECT, e a habilidade precisa estar entre as opções do jogador.
+Confirmar bloqueia novas escolhas. Ao expirar, o servidor escolhe uma opção para
+quem ainda não confirmou; isso não conta como turno nem como timeout do W.O.
+
+`DECK_UPDATE` envia ao dono `{deck:[{ability, source, usedThisRound}]}`. O deck
+contém as duas fixas e a escolhida. Somente após ambos terem deck, o evento interno
+`RoundDrawCompleted` libera o início do turno. Cada round refaz o sorteio e limpa o
+consumo das habilidades, preservando as duas fixas e os contadores de timeout.
+
+O snapshot privado recupera as opções pendentes e o prazo original na reconexão;
+o tópico público não contém opções nem decks. A fase exposta ao front durante a
+escolha é `ROUND_DRAW`. Não há endpoint REST ou migration nesta tarefa.
+
+Ao iniciar a aplicação, os estados de partida são lidos com `SCAN` e os sorteios
+pendentes são retomados com o mesmo prazo. Se ele já venceu, a escolha automática
+é feita imediatamente. Uma conclusão salva antes de uma queda também é retomada,
+sem depender de callbacks da instância anterior. Cada escolha publica seu deck
+uma vez e atualiza o snapshot; o início do turno publica o snapshot da fase `PLAYING`.
+O contrato oficial deste fluxo está em [Contrato V2](docs/contrato-integracao-v2.md).
+
+Erros vão para `/user/queue/errors`: `BAD_REQUEST` (400) para código ou habilidade
+inválidos; `FORBIDDEN` (403) para quem não pertence à sala; `CONFLICT` (409) para
+sorteio ausente, encerrado, expirado ou escolha já confirmada.
 
 ## 🧪 Testes
 
