@@ -15,7 +15,15 @@ class CoinControllerTest {
     void returnsUserBalance() {
 
         CoinService coinService = mock(CoinService.class);
-        CoinController controller = new CoinController(coinService);
+
+        CoinPurchaseService coinPurchaseService =
+                mock(CoinPurchaseService.class);
+
+        CoinController controller =
+                new CoinController(
+                        coinService,
+                        coinPurchaseService
+                );
 
         UUID userId = UUID.randomUUID();
 
