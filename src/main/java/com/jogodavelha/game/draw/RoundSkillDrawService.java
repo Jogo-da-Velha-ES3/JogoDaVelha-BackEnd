@@ -22,7 +22,6 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.time.Clock;
@@ -73,7 +72,6 @@ public class RoundSkillDrawService implements RoundSkillDraft {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public void beginRound(UUID gameId, int round, UUID player1, UUID player2) {
         GameState before = states.find(gameId).orElseThrow(() -> new GameStateNotFoundException(gameId));
         if (before.getRoundNumber() != round || before.getPhase() != GamePhase.DRAFT) return;
@@ -91,7 +89,11 @@ public class RoundSkillDrawService implements RoundSkillDraft {
             // O sorteio ocorre uma vez, antes do callback que o Redis pode repetir.
             states.update(gameId, current -> {
                 if (current.getRoundNumber() == round && current.getPhase() == GamePhase.DRAFT
-                        && current.getRoundDraw() == null) current.setRoundDraw(draw);
+                        && current.getRoundDraw() == null) {
+                    current.setRoundDraw(draw);
+                    draw.players().forEach((playerId, player) ->
+                            current.recordOfferedDrawSkills(playerId, player.options()));
+                }
                 return current;
             });
         }
@@ -133,7 +135,6 @@ public class RoundSkillDrawService implements RoundSkillDraft {
         else schedule(key, draw.deadline());
     }
 
-    @Transactional(readOnly = true)
     public void pick(String code, UUID playerId, String ability) {
         if (playerId == null) throw new AccessDeniedException("Autenticação STOMP obrigatória.");
         if (code == null || !code.matches("[0-9]{4}")) {
@@ -157,6 +158,7 @@ public class RoundSkillDrawService implements RoundSkillDraft {
                     || clock.millis() >= draw.deadline()) throw new IllegalStateException("Prazo do sorteio encerrado.");
             current.setRoundDraw(draw.select(playerId, ability));
             applyDeck(current, playerId, expected.round(), ability, replaced);
+            current.recordChosenDrawSkill(playerId, ability);
             return current;
         });
         try {
@@ -194,6 +196,7 @@ public class RoundSkillDrawService implements RoundSkillDraft {
                     if (current.getRoundDraw().players().get(choice.getKey()).selected() == null) {
                         current.setRoundDraw(current.getRoundDraw().select(choice.getKey(), choice.getValue()));
                         applyDeck(current, choice.getKey(), round, choice.getValue(), replacements.get(choice.getKey()));
+                        current.recordChosenDrawSkill(choice.getKey(), choice.getValue());
                         changed.add(choice.getKey());
                     }
                 }
@@ -220,7 +223,10 @@ public class RoundSkillDrawService implements RoundSkillDraft {
         if (current.size() != (state.getRoundNumber() == 1 ? 2 : 3)) {
             throw new IllegalStateException("O deck atual do jogador possui tamanho inválido.");
         }
-        List<String> available = new ArrayList<>(catalog.stream().filter(code -> !current.contains(code)).toList());
+        Set<String> excluded = new HashSet<>(current);
+        excluded.addAll(state.getOfferedDrawSkills(playerId));
+        excluded.addAll(state.getChosenDrawSkills(playerId));
+        List<String> available = new ArrayList<>(catalog.stream().filter(code -> !excluded.contains(code)).toList());
         if (available.size() < 3) throw new IllegalStateException("Catálogo insuficiente para sortear três opções.");
         for (int i = 0; i < 3; i++) Collections.swap(available, i, i + random.nextInt(available.size() - i));
         return List.copyOf(available.subList(0, 3));

@@ -145,6 +145,22 @@ class GameStateTest {
     }
 
     @Test
+    void serializesOfferedAndChosenDrawHistoriesIndependentlyPerPlayer() throws JsonProcessingException {
+        GameState state = completeState(true);
+        state.setInitialSkills(player1Id, List.of("BOMBA", "ESCUDO"));
+        state.setInitialSkills(player2Id, List.of("CONGELAR", "SILENCIO"));
+        state.recordOfferedDrawSkills(player1Id, List.of("TORNADO", "BURACO_NEGRO"));
+        state.recordChosenDrawSkill(player1Id, "TORNADO");
+
+        GameState restored = objectMapper.readValue(objectMapper.writeValueAsString(state), GameState.class);
+
+        assertEquals(java.util.Set.of("TORNADO", "BURACO_NEGRO"), restored.getOfferedDrawSkills(player1Id));
+        assertEquals(java.util.Set.of("BOMBA", "ESCUDO", "TORNADO"), restored.getChosenDrawSkills(player1Id));
+        assertTrue(restored.getOfferedDrawSkills(player2Id).isEmpty());
+        assertEquals(java.util.Set.of("CONGELAR", "SILENCIO"), restored.getChosenDrawSkills(player2Id));
+    }
+
+    @Test
     void serializesSkillUseMarkers() throws JsonProcessingException {
         GameState state = completeState(true);
         state.recordSkillUse(player1Id, "BURACO_NEGRO");

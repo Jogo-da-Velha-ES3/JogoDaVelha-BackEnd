@@ -106,7 +106,8 @@ class RoundSkillDrawServiceTest {
         when(rooms.findActiveMembership(eq("0042"), anyList(), eq(p1))).thenReturn(Optional.of(room));
         when(rooms.findActiveMembership(eq("0042"), anyList(), eq(p2))).thenReturn(Optional.of(room));
         when(scheduler.schedule(any(Runnable.class), any(Instant.class))).thenReturn(mock(ScheduledFuture.class));
-        when(skills.findAll()).thenReturn(List.of("BOMBA", "ESCUDO", "CONGELAR", "SILENCIO", "TORNADO", "AMPULHETA")
+        when(skills.findAll()).thenReturn(List.of("BOMBA", "ESCUDO", "CONGELAR", "SILENCIO", "TORNADO", "AMPULHETA",
+                        "BURACO_NEGRO", "CAMPO_DE_FORCA", "TROCA_RAPIDA", "REFORCO")
                 .stream().map(code -> new Skill(code, code, SkillCategory.OFFENSE, code, false, true, 50)).toList());
         doAnswer(call -> {
             states.update(gameId, state -> { state.setPhase(GamePhase.PLAYING); return state; });
@@ -261,6 +262,36 @@ class RoundSkillDrawServiceTest {
     }
 
     @Test
+    void laterOptionsExcludePreviouslyOfferedAndDiscardedChoicesOnlyForTheirOwner() {
+        states.update(gameId, state -> {
+            state.setInitialSkills(p1, List.of("BOMBA", "ESCUDO"));
+            state.setInitialSkills(p2, List.of("CONGELAR", "SILENCIO"));
+            state.setRoundSkillDeck(p1, List.of("BOMBA", "ESCUDO", "AMPULHETA"));
+            state.setRoundSkillDeck(p2, List.of("CONGELAR", "SILENCIO", "AMPULHETA"));
+            state.recordOfferedDrawSkills(p1, List.of("BURACO_NEGRO", "REFORCO"));
+            state.recordChosenDrawSkill(p1, "TORNADO"); // escolhido anteriormente, agora fora do deck
+            state.startRound(2, 10_000, 1_000);
+            state.setPhase(GamePhase.DRAFT);
+            return state;
+        });
+        var deterministic = mock(java.util.random.RandomGenerator.class);
+        when(deterministic.nextInt(anyInt())).thenReturn(0);
+        draws = new RoundSkillDrawService(states, skills, rooms, games, clock, scheduler,
+                websocket, snapshots, completed, deterministic);
+
+        draws.beginRound(gameId, 2, p1, p2);
+
+        var p1Options = state().getRoundDraw().players().get(p1).options();
+        var p2Options = state().getRoundDraw().players().get(p2).options();
+        assertTrue(Collections.disjoint(p1Options, Set.of("BURACO_NEGRO", "REFORCO", "TORNADO")));
+        assertTrue(p2Options.contains("BURACO_NEGRO"));
+        assertTrue(state().getOfferedDrawSkills(p1).containsAll(p1Options));
+        assertTrue(state().getOfferedDrawSkills(p2).containsAll(p2Options));
+        assertFalse(state().getOfferedDrawSkills(p2).contains("REFORCO"));
+        assertTrue(state().getChosenDrawSkills(p1).containsAll(List.of("BOMBA", "ESCUDO", "TORNADO")));
+    }
+
+    @Test
     void duplicateTimeoutAndRedisRetryDoNotRunCompletionTwice() {
         start();
         failNextCas.set(true);
@@ -283,6 +314,8 @@ class RoundSkillDrawServiceTest {
 
     @Test
     void injectedGeneratorMakesOptionsAndAutomaticChoiceDeterministic() {
+        when(skills.findAll()).thenReturn(List.of("BOMBA", "ESCUDO", "CONGELAR", "SILENCIO", "TORNADO", "AMPULHETA")
+                .stream().map(code -> new Skill(code, code, SkillCategory.OFFENSE, code, false, true, 50)).toList());
         var random = mock(java.util.random.RandomGenerator.class);
         when(random.nextInt(anyInt())).thenReturn(0);
         Clock clock = mock(Clock.class);
@@ -291,10 +324,14 @@ class RoundSkillDrawServiceTest {
         start();
         assertEquals(List.of("AMPULHETA", "CONGELAR", "SILENCIO"), state().getRoundDraw().players().get(p1).options());
         assertEquals(List.of("AMPULHETA", "BOMBA", "ESCUDO"), state().getRoundDraw().players().get(p2).options());
+        assertEquals(Set.copyOf(state().getRoundDraw().players().get(p1).options()), state().getOfferedDrawSkills(p1));
+        assertEquals(Set.copyOf(state().getRoundDraw().players().get(p2).options()), state().getOfferedDrawSkills(p2));
         now.set(9_000);
         draws.expire(gameId, 1, 9_000);
         assertEquals("AMPULHETA", state().getRoundDraw().players().get(p1).selected());
         assertEquals("AMPULHETA", state().getRoundDraw().players().get(p2).selected());
+        assertTrue(state().getChosenDrawSkills(p1).contains("AMPULHETA"));
+        assertTrue(state().getChosenDrawSkills(p2).contains("AMPULHETA"));
     }
 
     @Test
@@ -405,6 +442,33 @@ class RoundSkillDrawServiceTest {
 
         draws.expire(gameId, 1, 9_000);
 
+        verify(websocket, times(1)).sendToUser(eq(p1.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
+        verify(websocket, times(1)).sendToUser(eq(p2.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
+        verify(completed, times(1)).publishEvent(new RoundDrawCompleted(gameId, 1));
+    }
+
+    @Test
+    void timeoutRacingAnInFlightManualPickCommitsOnlyTheAutomaticDeckChange() {
+        start();
+        String manualRequest = option(p1);
+        now.set(8_999);
+        failNextCas.set(true);
+        // The manual request passes its deadline check, then the timeout commits before its CAS retry.
+        onConflict = () -> {
+            now.set(9_000);
+            draws.expire(gameId, 1, 9_000);
+        };
+
+        assertThrows(IllegalStateException.class, () -> draws.pick("0042", p1, manualRequest));
+
+        var state = state();
+        String selected = state.getRoundDraw().players().get(p1).selected();
+        assertTrue(state.getRoundDraw().players().get(p1).options().contains(selected));
+        assertEquals(Set.of("BOMBA", "ESCUDO", selected), state.getRoundSkillDecks().get(p1));
+        assertEquals(3, state.getRoundSkillDecks().get(p1).size());
+        assertEquals(3, state.getRoundSkillDecks().get(p2).size());
+        assertEquals(0, state.getConsecutiveTimeouts(p1));
+        assertEquals(0, state.getConsecutiveTimeouts(p2));
         verify(websocket, times(1)).sendToUser(eq(p1.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
         verify(websocket, times(1)).sendToUser(eq(p2.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
         verify(completed, times(1)).publishEvent(new RoundDrawCompleted(gameId, 1));

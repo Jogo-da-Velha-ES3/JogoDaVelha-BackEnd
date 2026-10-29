@@ -161,7 +161,8 @@ class GameLifecycleServiceTest {
     @Test
     void restartedDrawReleasesTurnThroughANewLifecycleInstanceAndKeepsTheNextRoundWorking() {
         var catalog = mock(SkillRepository.class);
-        when(catalog.findAll()).thenReturn(List.of("BOMBA", "ESCUDO", "CONGELAR", "TORNADO", "SILENCIO", "AMPULHETA")
+        when(catalog.findAll()).thenReturn(List.of("BOMBA", "ESCUDO", "CONGELAR", "TORNADO", "SILENCIO", "AMPULHETA",
+                        "BURACO_NEGRO", "CAMPO_DE_FORCA", "TROCA_RAPIDA", "REFORCO")
                 .stream().map(code -> new Skill(code, code, SkillCategory.OFFENSE, code, false, true, 0)).toList());
         var clock = mock(Clock.class);
         var now = new java.util.concurrent.atomic.AtomicLong(1_000);

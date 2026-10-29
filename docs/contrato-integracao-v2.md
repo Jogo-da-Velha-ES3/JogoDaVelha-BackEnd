@@ -5,8 +5,6 @@
 **Fonte da verdade:** Implementação na branch `dev`
 **Documento anterior preservado:** `docs/contrato-integracao.md`
 
-**BE-013.1:** os trechos de sorteio por round abaixo estão implementados na PR #119,
-em revisão. As demais seções mantêm a referência da auditoria da `dev`.
 
 ---
 
