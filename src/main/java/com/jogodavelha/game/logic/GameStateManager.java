@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
@@ -16,6 +17,8 @@ import java.util.Collections;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
@@ -149,6 +152,11 @@ public class GameStateManager {
      * @throws ConcurrentStateModificationException se houver conflito de concorrência após todas as tentativas
      */
     public void update(UUID gameId, Function<GameState, GameState> mutator) {
+        updateWithResult(gameId, current -> new Update<>(mutator.apply(current), null));
+    }
+
+    /** Retorna somente o resultado da tentativa que foi gravada pelo CAS. */
+    public <T> T updateWithResult(UUID gameId, Function<GameState, Update<T>> mutator) {
         String key = buildKey(gameId);
         
         for (int attempt = 0; attempt < maxRetries; attempt++) {
@@ -161,7 +169,8 @@ public class GameStateManager {
             GameState current = currentOpt.get();
             long expectedVersion = current.getVersion();
             
-            GameState modified = mutator.apply(current);
+            Update<T> update = mutator.apply(current);
+            GameState modified = update.state();
             modified.setVersion(expectedVersion + 1);
             
             String json = serialize(modified);
@@ -177,13 +186,23 @@ public class GameStateManager {
             
             if (Boolean.TRUE.equals(success)) {
                 log.debug("Estado atualizado com sucesso para partida {} (versão {})", gameId, modified.getVersion());
-                return;
+                return update.result();
             }
             
             log.debug("Conflito de versão ao atualizar partida {} (tentativa {}/{})", gameId, attempt + 1, maxRetries);
         }
         
         throw new ConcurrentStateModificationException(gameId, maxRetries);
+    }
+
+    public record Update<T>(GameState state, T result) { }
+
+    public List<UUID> findAllGameIds() {
+        List<UUID> ids = new ArrayList<>();
+        try (var keys = redisTemplate.scan(ScanOptions.scanOptions().match(KEY_PREFIX + "*").count(100).build())) {
+            while (keys.hasNext()) ids.add(UUID.fromString(keys.next().substring(KEY_PREFIX.length())));
+        }
+        return ids;
     }
 
     /**

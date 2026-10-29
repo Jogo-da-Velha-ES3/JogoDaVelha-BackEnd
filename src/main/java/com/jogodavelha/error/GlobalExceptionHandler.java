@@ -116,7 +116,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         Map<String, String> fields = new LinkedHashMap<>();
         ex.getBindingResult().getFieldErrors()
                 .forEach(error -> fields.putIfAbsent(error.getField(), error.getDefaultMessage()));
-        ApiError response = ApiError.of("VALIDATION_ERROR", "Dados inválidos", status.value(), path(request), fields);
+        String error = HttpStatus.resolve(status.value()) != null ? HttpStatus.resolve(status.value()).getReasonPhrase() : null;
+        ApiError response = ApiError.of("VALIDATION_ERROR", "Dados inválidos", status.value(), path(request), fields, error);
         return ResponseEntity.status(status).headers(headers).body(response);
     }
 
@@ -126,8 +127,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             HttpHeaders headers,
             HttpStatusCode status,
             WebRequest request) {
+        String error = HttpStatus.resolve(status.value()) != null ? HttpStatus.resolve(status.value()).getReasonPhrase() : null;
         ApiError response = ApiError.of("INVALID_REQUEST_BODY", "Corpo da requisição inválido",
-                status.value(), path(request));
+                status.value(), path(request), null, error);
         return ResponseEntity.status(status).headers(headers).body(response);
     }
 
@@ -181,13 +183,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             code = "INTERNAL_ERROR";
             message = "Erro interno do servidor";
         }
+        String error = HttpStatus.resolve(status.value()) != null ? HttpStatus.resolve(status.value()).getReasonPhrase() : null;
         return ResponseEntity.status(status).headers(headers)
-                .body(ApiError.of(code, message, status.value(), path(request)));
+                .body(ApiError.of(code, message, status.value(), path(request), null, error));
     }
 
     private ResponseEntity<ApiError> build(String code, String message, HttpStatus status, HttpServletRequest request) {
         return ResponseEntity.status(status)
-                .body(ApiError.of(code, message, status.value(), request.getRequestURI()));
+                .body(ApiError.of(code, message, status.value(), request.getRequestURI(), null, status.getReasonPhrase()));
     }
 
     private static String path(WebRequest request) {

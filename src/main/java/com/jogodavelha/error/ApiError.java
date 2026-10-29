@@ -6,7 +6,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.Map;
 
-@JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(name = "ApiError", description = "Formato único de erro da API")
 public record ApiError(
         @Schema(example = "VALIDATION_ERROR") String code,
@@ -26,9 +25,18 @@ public record ApiError(
         return new ApiError(code, message, status, Instant.now().toString(), path, fields, null);
     }
 
+    public static ApiError of(String code, String message, int status, String path, Map<String, String> fields, String error) {
+        return new ApiError(code, message, status, Instant.now().toString(), path, fields, error);
+    }
+
     /** Compatibility factory for the STOMP handler already using this shared payload. */
     public static ApiError of(org.springframework.http.HttpStatus status, String message, String path) {
         return new ApiError(status.name(), message, status.value(), Instant.now().toString(), path, null,
                 status.getReasonPhrase());
+    }
+
+    /** Compatibility factory for the STOMP handler already using this shared payload. */
+    public static ApiError of(org.springframework.http.HttpStatus status, String message, String path, Map<String, String> fields, String error) {
+        return new ApiError(status.name(), message, status.value(), Instant.now().toString(), path, fields, error);
     }
 }
