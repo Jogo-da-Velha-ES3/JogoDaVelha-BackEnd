@@ -138,6 +138,12 @@ cp .env.example .env
 - `JWT_EXPIRATION` — Tempo de expiração do token JWT em milissegundos (recomendado: 2592000000 = 30 dias para manter o usuário autenticado entre acessos)
 - `SERVER_PORT` — Porta da aplicação (padrão: 8080)
 - `CORS_ALLOWED_ORIGINS` — Origens CORS separadas por vírgula; aceita padrões com `*`. Padrão local: `http://localhost:5173`. Para o front, inclua `https://jogodavelha-frontend.vercel.app`, `https://jogodavelha-frontend-dev.vercel.app` e `https://*.vercel.app`.
+- `FRONTEND_RESET_PASSWORD_URL` — URL da tela de redefinição no front; o link do e-mail usa `?token=....`
+- `MAIL_HOST` — SMTP de envio, a configurar por ambiente
+- `MAIL_PORT` — SMTP de envio, a configurar por ambiente
+- `MAIL_USERNAME` — SMTP de envio, a configurar por ambiente
+- `MAIL_PASSWORD` — SMTP de envio, a configurar por ambiente
+- `PASSWORD_RESET_TTL_MINUTES` — (opcional, padrão 30)
 
 **⚠️ NOVAS VARIÁVEIS (adicionar ao .env existente):**
 - `GAME_STATE_TTL` — TTL em milissegundos para estado da partida (padrão: 1800000 = 30 minutos)
@@ -169,7 +175,7 @@ Copy-Item .env.example .env
 docker compose up --build
 ```
 
-O comando inicia três serviços:
+O comando inicia quatro serviços:
 
 - `api`: compila e executa a aplicação Spring Boot usando o profile `dev`.
 - `postgres`: executa o PostgreSQL 16 e armazena os dados no volume Docker `postgres-data`.
@@ -355,6 +361,12 @@ Isso deixa a ideia bem mais clara: character é um domínio e dentro dela ficam 
 - `JWT_EXPIRATION` — Tempo de expiração do token JWT em milissegundos (ex: 86400000 = 24 horas, 2592000000 = 30 dias)
 - `SERVER_PORT` — Porta da aplicação (padrão: 8080)
 - `SPRING_PROFILES_ACTIVE` — Profile ativo (padrão: dev)
+- `FRONTEND_RESET_PASSWORD_URL` — URL da tela de redefinição no front; o link do e-mail usa `?token=....`
+- `MAIL_HOST` — SMTP de envio
+- `MAIL_PORT` — SMTP de envio
+- `MAIL_USERNAME` — SMTP de envio
+- `MAIL_PASSWORD` — SMTP de envio
+- `PASSWORD_RESET_TTL_MINUTES` — (opcional, padrão 30)
 
 **⚠️ NOVAS VARIÁVEIS (BE-017):**
 - `GAME_STATE_TTL` — TTL em milissegundos para estado da partida (padrão: 1800000)
@@ -572,6 +584,15 @@ O módulo `auth/` implementa autenticação via login com geração de tokens JW
 **Migrations:**
 - `V1__create_users.sql`: Criação inicial da tabela users
 - `V10__add_case_insensitive_username_index.sql`: Adiciona índice único case-insensitive em username
+- `V21__create_password_reset_tokens.sql`: Criação da tabela password_reset_tokens
+
+### Recuperação de senha
+
+- `POST /api/auth/forgot-password` recebe `{email}` e sempre responde 200 com mensagem genérica, exista ou não o e-mail.
+- Se o e-mail existir, é gerado um token de uso único (32 bytes aleatórios), guardado apenas como hash SHA-256, com expiração (`PASSWORD_RESET_TTL_MINUTES`). O link enviado segue `{FRONTEND_RESET_PASSWORD_URL}?token={token}`.
+- `POST /api/auth/reset-password` recebe `{token, newPassword, confirmPassword}`; a senha segue a regra do cadastro (6 a 72 caracteres), é gravada com BCrypt e todos os tokens do usuário são invalidados.
+- O envio do e-mail é assíncrono e ocorre após o commit; token e senha nunca são logados.
+- Não há rate limit em `forgot-password`.
 
 ## 🎮 Estado da Partida em Redis
 
@@ -1258,21 +1279,23 @@ Todos os erros REST retornam `code` e `message`, além do status HTTP, timestamp
 
 Códigos REST disponíveis:
 
-| Código | HTTP | Uso |
-| --- | ---: | --- |
-| `USERNAME_ALREADY_EXISTS` | 409 | Username já cadastrado |
-| `EMAIL_ALREADY_EXISTS` | 409 | E-mail já cadastrado |
-| `INVALID_CREDENTIALS` | 401 | Credenciais de login inválidas |
-| `VALIDATION_ERROR` | 400 | Validação de campos |
-| `INVALID_REQUEST_BODY` | 400 | JSON ausente ou ilegível |
-| `NOT_FOUND` | 404 | Rota ou recurso não encontrado |
-| `METHOD_NOT_ALLOWED` | 405 | Método HTTP não permitido |
-| `BAD_REQUEST` | 400 | Parâmetro HTTP inválido ou ausente |
-| `ROOM_BAD_REQUEST` | 400 | Erro temporário de sala; será tipado na BE-009.1 |
-| `ROOM_CONFLICT` | 409 | Conflito temporário de sala; será tipado na BE-009.1 |
-| `UNAUTHORIZED` | 401 | Autenticação ausente ou token inválido |
-| `FORBIDDEN` | 403 | Usuário sem autorização para o recurso |
-| `INTERNAL_ERROR` | 500 | Erro inesperado do servidor |
+| Código                    | HTTP | Uso                                                          |
+|---------------------------|-----:|--------------------------------------------------------------|
+| `USERNAME_ALREADY_EXISTS` |  409 | Username já cadastrado                                       |
+| `EMAIL_ALREADY_EXISTS`    |  409 | E-mail já cadastrado                                         |
+| `INVALID_CREDENTIALS`     |  401 | Credenciais de login inválidas                               |
+| `VALIDATION_ERROR`        |  400 | Validação de campos                                          |
+| `INVALID_REQUEST_BODY`    |  400 | JSON ausente ou ilegível                                     |
+| `NOT_FOUND`               |  404 | Rota ou recurso não encontrado                               |
+| `METHOD_NOT_ALLOWED`      |  405 | Método HTTP não permitido                                    |
+| `BAD_REQUEST`             |  400 | Parâmetro HTTP inválido ou ausente                           |
+| `ROOM_BAD_REQUEST`        |  400 | Erro temporário de sala; será tipado na BE-009.1             |
+| `ROOM_CONFLICT`           |  409 | Conflito temporário de sala; será tipado na BE-009.1         |
+| `UNAUTHORIZED`            |  401 | Autenticação ausente ou token inválido                       |
+| `FORBIDDEN`               |  403 | Usuário sem autorização para o recurso                       |
+| `INTERNAL_ERROR`          |  500 | Erro inesperado do servidor                                  |
+| `INVALID_RESET_TOKEN`     |  400 | Token de recuperação de senha inválido, expirado ou já usado |
+| `PASSWORD_MISMATCH`       |  400 | `newPassword` e `confirmPassword` diferentes                 |
 
 `fields` aparece somente em `VALIDATION_ERROR` originado de validação de corpo. O schema `ApiError` também é reutilizado nas mensagens de erro STOMP.
 
