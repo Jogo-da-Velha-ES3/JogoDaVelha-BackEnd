@@ -148,13 +148,15 @@ public class RoundSkillDrawService implements RoundSkillDraft {
         GameState before = states.find(gameId).orElseThrow(() -> new IllegalStateException("Sorteio indisponível."));
         RoundDrawState expected = before.getRoundDraw();
         if (expected == null) throw new IllegalStateException("Não há sorteio ativo nesta sala.");
+        Set<String> deckBefore = currentDeck(before, playerId);
+        String replaced = replacement(before, playerId, expected.round(), deckBefore);
         states.update(gameId, current -> {
             RoundDrawState draw = current.getRoundDraw();
             // Reconfere o prazo em cada tentativa, como o Draft inicial.
             if (current.getPhase() != GamePhase.DRAFT || draw == null || draw.round() != expected.round()
                     || clock.millis() >= draw.deadline()) throw new IllegalStateException("Prazo do sorteio encerrado.");
             current.setRoundDraw(draw.select(playerId, ability));
-            setDeck(current, playerId, ability);
+            applyDeck(current, playerId, expected.round(), ability, replaced);
             return current;
         });
         try {
@@ -176,8 +178,13 @@ public class RoundSkillDrawService implements RoundSkillDraft {
             return;
         }
         Map<UUID, String> automatic = new HashMap<>();
-        state.getRoundDraw().players().forEach((player, draw) -> automatic.put(player,
-                draw.options().get(random.nextInt(draw.options().size()))));
+        Map<UUID, String> replacements = new HashMap<>();
+        state.getRoundDraw().players().forEach((player, draw) -> {
+            if (draw.selected() == null) {
+                automatic.put(player, draw.options().get(random.nextInt(draw.options().size())));
+                replacements.put(player, replacement(state, player, round, currentDeck(state, player)));
+            }
+        });
         Set<UUID> selected;
         try {
             selected = states.updateWithResult(gameId, current -> {
@@ -186,7 +193,7 @@ public class RoundSkillDrawService implements RoundSkillDraft {
                 for (var choice : automatic.entrySet()) {
                     if (current.getRoundDraw().players().get(choice.getKey()).selected() == null) {
                         current.setRoundDraw(current.getRoundDraw().select(choice.getKey(), choice.getValue()));
-                        setDeck(current, choice.getKey(), choice.getValue());
+                        applyDeck(current, choice.getKey(), round, choice.getValue(), replacements.get(choice.getKey()));
                         changed.add(choice.getKey());
                     }
                 }
@@ -209,17 +216,37 @@ public class RoundSkillDrawService implements RoundSkillDraft {
     }
 
     private List<String> options(GameState state, UUID playerId, List<String> catalog) {
-        Set<String> fixed = state.getInitialSkillsByPlayer().getOrDefault(playerId, Set.of());
-        if (fixed.size() != 2) throw new IllegalStateException("O jogador precisa das duas habilidades iniciais.");
-        List<String> available = new ArrayList<>(catalog.stream().filter(code -> !fixed.contains(code)).toList());
+        Set<String> current = currentDeck(state, playerId);
+        if (current.size() != (state.getRoundNumber() == 1 ? 2 : 3)) {
+            throw new IllegalStateException("O deck atual do jogador possui tamanho inválido.");
+        }
+        List<String> available = new ArrayList<>(catalog.stream().filter(code -> !current.contains(code)).toList());
         if (available.size() < 3) throw new IllegalStateException("Catálogo insuficiente para sortear três opções.");
         for (int i = 0; i < 3; i++) Collections.swap(available, i, i + random.nextInt(available.size() - i));
         return List.copyOf(available.subList(0, 3));
     }
 
-    private void setDeck(GameState state, UUID playerId, String selected) {
-        Set<String> deck = new HashSet<>(state.getInitialSkillsByPlayer().get(playerId));
-        deck.add(selected);
+    private Set<String> currentDeck(GameState state, UUID playerId) {
+        Set<String> current = state.getRoundSkillDecks().get(playerId);
+        if (current == null) current = state.getInitialSkillsByPlayer().get(playerId);
+        if (current == null) throw new IllegalStateException("Deck do jogador indisponível.");
+        return new HashSet<>(current);
+    }
+
+    private String replacement(GameState state, UUID playerId, int round, Set<String> deck) {
+        if (round == 1) return null;
+        if (deck.size() != 3) throw new IllegalStateException("O deck atual deve conter três habilidades.");
+        List<String> candidates = deck.stream().sorted().toList();
+        return candidates.get(random.nextInt(candidates.size()));
+    }
+
+    private void applyDeck(GameState state, UUID playerId, int round, String selected, String replaced) {
+        Set<String> deck = currentDeck(state, playerId);
+        if (round > 1) {
+            if (replaced == null || !deck.remove(replaced)) throw new IllegalStateException("Habilidade de substituição indisponível.");
+        }
+        if (!deck.add(selected)) throw new IllegalStateException("A habilidade sorteada já está no deck.");
+        if (deck.size() != 3) throw new IllegalStateException("O deck deve conter exatamente três habilidades.");
         state.setRoundSkillDeck(playerId, deck);
     }
 

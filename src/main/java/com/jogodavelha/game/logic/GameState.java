@@ -160,7 +160,7 @@ public class GameState {
         board = EMPTY_BOARD;
         clearEffects(); // Efeitos não atravessam rounds
         if (usedSkillsByPlayer != null) usedSkillsByPlayer.clear();
-        if (roundSkillDecks != null) roundSkillDecks.clear();
+        // O deck evolui entre rounds; apenas o consumo das habilidades reinicia.
         roundDraw = null;
         roundNumber = round;
         phase = GamePhase.PLAYING;

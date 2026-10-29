@@ -121,7 +121,7 @@ class GameStateTest {
     }
 
     @Test
-    void tracksRoundDeckByPlayerAndClearsItAtNewRound() {
+    void tracksRoundDeckByPlayerAndPreservesItAtNewRound() {
         GameState state = completeState(true);
         state.setRoundSkillDeck(player1Id, List.of("BOMBA", "SILENCIO", "TORNADO"));
 
@@ -130,7 +130,7 @@ class GameStateTest {
 
         state.startRound(2, 10_000, 1_000);
 
-        assertFalse(state.hasSkillInRoundDeck(player1Id, "SILENCIO"));
+        assertTrue(state.hasSkillInRoundDeck(player1Id, "SILENCIO"));
     }
 
     @Test

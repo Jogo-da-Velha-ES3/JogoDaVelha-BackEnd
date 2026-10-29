@@ -203,7 +203,8 @@ class GameLifecycleServiceTest {
         });
         lifecycle.finishRound(game.getId(), 1, RoundResult.PLAYER1_WIN);
         assertEquals(GamePhase.DRAFT, redisState.get().getPhase());
-        assertTrue(redisState.get().getRoundSkillDecks().isEmpty());
+        assertEquals(3, redisState.get().getRoundSkillDecks().get(player1.getId()).size());
+        assertEquals(3, redisState.get().getRoundSkillDecks().get(player2.getId()).size());
         verify(turns, times(1)).schedule(eq(game.getId()), anyLong());
         now.set(17_000);
         restarted.expire(game.getId(), 2, 17_000);

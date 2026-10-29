@@ -136,6 +136,16 @@ class RoundSkillDrawServiceTest {
     }
 
     @Test
+    void insufficientEligibleCatalogFailsBeforeSavingAnyDrawOrDeckChange() {
+        when(skills.findAll()).thenReturn(List.of("BOMBA", "ESCUDO", "CONGELAR", "SILENCIO")
+                .stream().map(code -> new Skill(code, code, SkillCategory.OFFENSE, code, false, true, 50)).toList());
+        assertThrows(IllegalStateException.class, this::start);
+        assertNull(state().getRoundDraw());
+        assertTrue(state().getRoundSkillDecks().isEmpty());
+        verifyNoInteractions(websocket, snapshots, completed);
+    }
+
+    @Test
     void keepsConfirmedChoicesAndCompletesOnlyWhenBothPlayersHaveADeck() {
         start();
         String first = option(p1), second = option(p2);
@@ -215,15 +225,39 @@ class RoundSkillDrawServiceTest {
             return state;
         });
         draws.beginRound(gameId, 2, p1, p2);
+        var previous = Set.copyOf(state().getRoundSkillDecks().get(p1));
+        assertEquals(3, previous.size());
+        assertTrue(Collections.disjoint(previous, state().getRoundDraw().players().get(p1).options()));
         draws.expire(gameId, 1, 9_000);
-        assertTrue(state().getRoundSkillDecks().isEmpty());
+        assertEquals(previous, state().getRoundSkillDecks().get(p1));
         assertFalse(state().hasUsedSkill(p1, "BOMBA"));
         assertEquals(1, state().getConsecutiveTimeouts(p1));
         now.set(17_000);
         draws.expire(gameId, 2, 17_000);
         assertEquals(3, state().getRoundSkillDecks().get(p1).size());
-        assertTrue(state().hasSkillInRoundDeck(p1, "BOMBA"));
+        assertEquals(2, state().getRoundSkillDecks().get(p1).stream().filter(previous::contains).count());
         verify(completed).publishEvent(new RoundDrawCompleted(gameId, 2));
+    }
+
+    @Test
+    void laterManualDrawReplacesOneOfAllCurrentSkillsAndLeavesOpponentDeckUntouched() {
+        start();
+        draws.pick("0042", p1, option(p1));
+        draws.pick("0042", p2, option(p2));
+        var p1Deck = Set.copyOf(state().getRoundSkillDecks().get(p1));
+        var p2Deck = Set.copyOf(state().getRoundSkillDecks().get(p2));
+        states.update(gameId, state -> { state.startRound(2, 10_000, 9_100); state.setPhase(GamePhase.DRAFT); return state; });
+        now.set(10_000);
+        draws.beginRound(gameId, 2, p1, p2);
+        var options = state().getRoundDraw().players().get(p1).options();
+        assertTrue(Collections.disjoint(p1Deck, options));
+        String add = options.getFirst();
+        draws.pick("0042", p1, add);
+        Set<String> updated = state().getRoundSkillDecks().get(p1);
+        assertEquals(3, updated.size());
+        assertTrue(updated.contains(add));
+        assertEquals(2, updated.stream().filter(p1Deck::contains).count());
+        assertEquals(p2Deck, state().getRoundSkillDecks().get(p2));
     }
 
     @Test
