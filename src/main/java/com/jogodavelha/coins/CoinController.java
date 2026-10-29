@@ -43,7 +43,8 @@ public class CoinController {
                         .map(pkg ->
                                 new CoinPackageResponse(
                                         pkg.getId(),
-                                        pkg.getCoins()
+                                        pkg.getCoins(),
+                                        pkg.getPriceInReais()
                                 )
                         )
                         .toList();

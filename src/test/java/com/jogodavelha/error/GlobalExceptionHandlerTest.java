@@ -88,7 +88,10 @@ class GlobalExceptionHandlerTest {
         ApiError validationBody = (ApiError) validationResponse.getBody();
         assertEquals("VALIDATION_ERROR", validationBody.code());
         assertEquals(Map.of("email", "E-mail inválido"), validationBody.fields());
-        assertNull(validationBody.error());
+        assertEquals(
+                "Bad Request",
+                validationBody.error()
+        );
         var malformedResponse =
                 handler.handleHttpMessageNotReadable(
                         new org.springframework.http.converter.HttpMessageNotReadableException(
@@ -105,7 +108,10 @@ class GlobalExceptionHandlerTest {
         assertEquals("INVALID_REQUEST_BODY", malformedBody.code());
         assertEquals(HttpStatus.BAD_REQUEST.value(), malformedBody.status());
         assertNull(malformedBody.fields()); // fields is null for non-validation errors
-        assertNull(malformedBody.error()); // error field is now always present
+        assertEquals(
+                "Bad Request",
+                malformedBody.error()
+        ); // error field is now always present
     }
 
     @Test
