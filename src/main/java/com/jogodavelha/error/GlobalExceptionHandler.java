@@ -1,8 +1,6 @@
 package com.jogodavelha.error;
 
-import com.jogodavelha.auth.EmailAlreadyExistsException;
-import com.jogodavelha.auth.InvalidCredentialsException;
-import com.jogodavelha.auth.UsernameAlreadyExistsException;
+import com.jogodavelha.auth.*;
 import com.jogodavelha.room.RoomAlreadyStartedException;
 import com.jogodavelha.room.RoomFullException;
 import com.jogodavelha.room.RoomNotFoundException;
@@ -45,6 +43,16 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(InvalidCredentialsException.class)
     public ResponseEntity<ApiError> handleInvalidCredentials(InvalidCredentialsException ex, HttpServletRequest request) {
         return build("INVALID_CREDENTIALS", ex.getMessage(), HttpStatus.UNAUTHORIZED, request);
+    }
+
+    @ExceptionHandler(InvalidResetTokenException.class)
+    public ResponseEntity<ApiError> handleInvalidResetToken(InvalidResetTokenException ex, HttpServletRequest request) {
+        return build("INVALID_RESET_TOKEN", ex.getMessage(), HttpStatus.BAD_REQUEST, request);
+    }
+
+    @ExceptionHandler(PasswordMismatchException.class)
+    public ResponseEntity<ApiError> handlePasswordMismatch(PasswordMismatchException ex, HttpServletRequest request) {
+        return build("PASSWORD_MISMATCH", ex.getMessage(), HttpStatus.BAD_REQUEST, request);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
