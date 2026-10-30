@@ -161,7 +161,8 @@ class GameLifecycleServiceTest {
     @Test
     void restartedDrawReleasesTurnThroughANewLifecycleInstanceAndKeepsTheNextRoundWorking() {
         var catalog = mock(SkillRepository.class);
-        when(catalog.findAll()).thenReturn(List.of("BOMBA", "ESCUDO", "CONGELAR", "TORNADO", "SILENCIO", "AMPULHETA")
+        when(catalog.findAll()).thenReturn(List.of("BOMBA", "ESCUDO", "CONGELAR", "TORNADO", "SILENCIO", "AMPULHETA",
+                        "BURACO_NEGRO", "CAMPO_DE_FORCA", "TROCA_RAPIDA", "REFORCO")
                 .stream().map(code -> new Skill(code, code, SkillCategory.OFFENSE, code, false, true, 0)).toList());
         var clock = mock(Clock.class);
         var now = new java.util.concurrent.atomic.AtomicLong(1_000);
@@ -203,7 +204,8 @@ class GameLifecycleServiceTest {
         });
         lifecycle.finishRound(game.getId(), 1, RoundResult.PLAYER1_WIN);
         assertEquals(GamePhase.DRAFT, redisState.get().getPhase());
-        assertTrue(redisState.get().getRoundSkillDecks().isEmpty());
+        assertEquals(3, redisState.get().getRoundSkillDecks().get(player1.getId()).size());
+        assertEquals(3, redisState.get().getRoundSkillDecks().get(player2.getId()).size());
         verify(turns, times(1)).schedule(eq(game.getId()), anyLong());
         now.set(17_000);
         restarted.expire(game.getId(), 2, 17_000);

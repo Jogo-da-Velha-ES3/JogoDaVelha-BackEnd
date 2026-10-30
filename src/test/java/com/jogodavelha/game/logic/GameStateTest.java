@@ -121,7 +121,7 @@ class GameStateTest {
     }
 
     @Test
-    void tracksRoundDeckByPlayerAndClearsItAtNewRound() {
+    void tracksRoundDeckByPlayerAndPreservesItAtNewRound() {
         GameState state = completeState(true);
         state.setRoundSkillDeck(player1Id, List.of("BOMBA", "SILENCIO", "TORNADO"));
 
@@ -130,7 +130,7 @@ class GameStateTest {
 
         state.startRound(2, 10_000, 1_000);
 
-        assertFalse(state.hasSkillInRoundDeck(player1Id, "SILENCIO"));
+        assertTrue(state.hasSkillInRoundDeck(player1Id, "SILENCIO"));
     }
 
     @Test
@@ -142,6 +142,19 @@ class GameStateTest {
 
         assertTrue(restored.hasSkillInRoundDeck(player1Id, "SILENCIO"));
         assertFalse(restored.hasSkillInRoundDeck(player2Id, "SILENCIO"));
+    }
+
+    @Test
+    void serializesChosenDrawHistoryIndependentlyPerPlayer() throws JsonProcessingException {
+        GameState state = completeState(true);
+        state.setInitialSkills(player1Id, List.of("BOMBA", "ESCUDO"));
+        state.setInitialSkills(player2Id, List.of("CONGELAR", "SILENCIO"));
+        state.recordChosenDrawSkill(player1Id, "TORNADO");
+
+        GameState restored = objectMapper.readValue(objectMapper.writeValueAsString(state), GameState.class);
+
+        assertEquals(java.util.Set.of("BOMBA", "ESCUDO", "TORNADO"), restored.getChosenDrawSkills(player1Id));
+        assertEquals(java.util.Set.of("CONGELAR", "SILENCIO"), restored.getChosenDrawSkills(player2Id));
     }
 
     @Test

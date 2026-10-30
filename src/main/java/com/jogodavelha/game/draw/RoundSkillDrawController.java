@@ -12,7 +12,7 @@ import java.util.UUID;
 @Controller
 public class RoundSkillDrawController {
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Request(String ability) { }
+    public record Request(String ability, String abilityToRemove) { }
 
     private final RoundSkillDrawService draws;
 
@@ -32,6 +32,6 @@ public class RoundSkillDrawController {
             throw new AccessDeniedException("Identidade STOMP inválida.", exception);
         }
         if (request == null) throw new IllegalArgumentException("Informe a habilidade sorteada.");
-        draws.pick(code, playerId, request.ability());
+        draws.pick(code, playerId, request.ability(), request.abilityToRemove());
     }
 }

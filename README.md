@@ -1110,14 +1110,20 @@ O sorteio da terceira habilidade e o deck de cada round são tratados pela BE-01
 ## Sorteio por round (BE-013.1)
 
 Antes de cada round, `RoundSkillDrawService` usa o catálogo completo para sortear
-três habilidades distintas por jogador, excluindo as duas fixas. As opções ficam
+três habilidades distintas por jogador, excluindo o deck atual e todas as
+habilidades já escolhidas por aquele jogador na partida (inclusive as iniciais e
+as depois substituídas). Opções oferecidas e não escolhidas podem voltar em rounds
+futuros. Esse histórico é individual por jogador. As opções ficam
 no `GameState` do Redis e chegam somente ao dono em `/user/queue/room`, no evento
 `DRAW_OPTIONS`, com `{options, deadline}`. O prazo é de 8 segundos.
 
-Envie `SEND /app/rooms/{code}/draw/pick` com `{"ability":"TORNADO"}`. A identidade
-vem do JWT do CONNECT, e a habilidade precisa estar entre as opções do jogador.
-Confirmar bloqueia novas escolhas. Ao expirar, o servidor escolhe uma opção para
-quem ainda não confirmou; isso não conta como turno nem como timeout do W.O.
+Envie `SEND /app/rooms/{code}/draw/pick` com `{"ability":"TORNADO"}` no primeiro
+round. A partir do segundo, envie também `abilityToRemove`, por exemplo
+`{"ability":"TORNADO","abilityToRemove":"ESCUDO"}`. A identidade vem do JWT do
+CONNECT; a habilidade adicionada precisa estar entre as opções e a removida no deck
+atual do jogador. Confirmar bloqueia novas escolhas. Ao expirar, o servidor escolhe
+automaticamente uma opção e uma habilidade a substituir; isso não conta como turno nem
+como timeout do W.O.
 
 `DECK_UPDATE` envia ao dono `{deck:[{ability, source, usedThisRound}]}`. O deck
 contém as duas fixas e a escolhida. Somente após ambos terem deck, o evento interno

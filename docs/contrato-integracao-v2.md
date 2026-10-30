@@ -5,8 +5,6 @@
 **Fonte da verdade:** Implementação na branch `dev`
 **Documento anterior preservado:** `docs/contrato-integracao.md`
 
-**BE-013.1:** os trechos de sorteio por round abaixo estão implementados na PR #119,
-em revisão. As demais seções mantêm a referência da auditoria da `dev`.
 
 ---
 
@@ -1045,12 +1043,16 @@ identidade, como `playerId`, são ignorados.
 Envie com `content-type: application/json`:
 
 ```json
-{ "ability": "TORNADO" }
+{ "ability": "TORNADO", "abilityToRemove": "ESCUDO" }
 ```
 
 O código da sala tem quatro dígitos e o jogador precisa participar dela. A habilidade
-deve ser uma das três opções recebidas para aquele round. Só é aceita uma confirmação
-por jogador, antes do prazo de 8 segundos.
+`ability` deve ser uma das três opções recebidas para aquele round. A partir do segundo
+round, `abilityToRemove` é obrigatório e deve pertencer ao deck atual do jogador; no
+primeiro round, omita esse campo. A escolha manual substitui exatamente a habilidade
+indicada e mantém o deck com três habilidades. Só é aceita uma confirmação por jogador,
+antes do prazo de 8 segundos. Se o prazo vencer, o backend escolhe automaticamente uma
+opção e uma habilidade do deck a substituir.
 
 Erros são privados, em `/user/queue/errors`: `BAD_REQUEST` (400) para código ou
 habilidade inválidos; `FORBIDDEN` (403) para não participante; `CONFLICT` (409)
@@ -1222,7 +1224,9 @@ códigos de erro. O mesmo mapeamento consta no README.
 - No snapshot privado, `mySlot` indica o slot do destinatário e `myDeck` contém o deck daquele jogador. Os demais campos também aparecem quando nulos.
 - Durante `ROUND_DRAW`, o snapshot privado contém `drawOptions:{options,deadline}`
   apenas para quem ainda não confirmou. Após confirmar, `drawOptions` é `null`
-  e `myDeck` contém as duas habilidades fixas e a sorteada. O adversário continua
+  e `myDeck` contém o deck atualizado do próprio jogador: no primeiro round são
+  as duas habilidades fixas e a sorteada; nos seguintes reflete a substituição.
+  O adversário continua
   recebendo somente as próprias opções e seu prazo original.
 - No snapshot público, `drawOptions` é sempre `null`, `mySlot` é `null` e `myDeck`
   é `[]`. A fase compartilhada pode ser `ROUND_DRAW`, mas as opções nunca são públicas.
@@ -1299,7 +1303,7 @@ códigos de erro. O mesmo mapeamento consta no README.
 
 #### DRAW_OPTIONS e DECK_UPDATE — BE-013.1
 
-**Status:** Implementados na PR #119, em revisão.
+**Status:** Implementados.
 **Publicador:** `RoundSkillDrawService`.
 **Destino:** somente `/user/queue/room`, usando o UUID autenticado do destinatário.
 Nunca são publicados em `/topic/rooms/{code}`.
@@ -1313,7 +1317,13 @@ Nunca são publicados em `/topic/rooms/{code}`.
 ```
 
 São três códigos distintos do catálogo completo, podendo incluir habilidades não
-compradas e excluindo as duas fixas. `deadline` e `serverTime` são epoch millis.
+compradas e excluindo todo o deck atual e todas as habilidades já escolhidas pelo
+próprio jogador na partida (as iniciais e as escolhidas em sorteios anteriores,
+mesmo se substituídas). Opções oferecidas e não escolhidas podem aparecer em sorteios
+futuros. O histórico é independente por jogador. No primeiro round, o deck tem as
+duas habilidades iniciais e a escolhida é adicionada. Nos rounds seguintes, uma das
+três habilidades atuais é removida aleatoriamente e a escolhida é adicionada.
+`deadline` e `serverTime` são epoch millis.
 
 ```json
 {
@@ -1329,7 +1339,8 @@ compradas e excluindo as duas fixas. `deadline` e `serverTime` são epoch millis
 }
 ```
 
-Cada escolha salva publica um `DECK_UPDATE` ao dono. A segunda escolha não reenvia
+Cada escolha salva publica um `DECK_UPDATE` ao dono com exatamente três habilidades.
+A segunda escolha não reenvia
 os decks já publicados. Na expiração, somente quem recebeu uma escolha automática
 recebe o evento. Os snapshots privados continuam disponíveis para sincronização.
 
