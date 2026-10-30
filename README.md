@@ -584,7 +584,7 @@ O módulo `auth/` implementa autenticação via login com geração de tokens JW
 **Migrations:**
 - `V1__create_users.sql`: Criação inicial da tabela users
 - `V10__add_case_insensitive_username_index.sql`: Adiciona índice único case-insensitive em username
-- `V21__create_password_reset_tokens.sql`: Criação da tabela password_reset_tokens
+- `V22__create_password_reset_tokens.sql`: Criação da tabela password_reset_tokens
 
 ### Recuperação de senha
 

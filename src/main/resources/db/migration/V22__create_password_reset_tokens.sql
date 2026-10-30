@@ -1,3 +1,5 @@
+-- V22: cria a tabela de tokens de reset de senha
+
 CREATE TABLE password_reset_tokens (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id    UUID NOT NULL REFERENCES users(id),
