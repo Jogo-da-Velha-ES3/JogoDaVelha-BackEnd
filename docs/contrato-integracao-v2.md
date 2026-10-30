@@ -336,6 +336,79 @@ Validações:
 
 ---
 
+#### POST /api/auth/forgot-password
+
+**Status:** ✅ Implementado (BE-006.1)
+**Controller:** `AuthController.forgotPassword`
+**Autenticação:** Pública
+
+**Objetivo:** Solicitar link de recuperação de senha por e-mail.
+
+**Body da requisição:**
+```json
+{ 
+  "email": "ana@example.com"
+}
+```
+
+
+Validações: `email` obrigatório, formato válido, até 254 caracteres.
+
+**Resposta de sucesso (200):** sempre a mesma, exista o e-mail ou não:
+```json
+{ 
+  "message": "Se o e-mail estiver cadastrado, você receberá um link para redefinir a senha."
+}
+```
+
+**Possíveis erros:**
+- 400 VALIDATION_ERROR
+- 400 INVALID_REQUEST_BODY
+- 500 INTERNAL_ERROR
+
+**Regras e observações:**
+- Resposta idêntica para e-mail cadastrado ou não (evita enumeração de usuários).
+- Token de uso único, guardado só como hash SHA-256, com expiração (`PASSWORD_RESET_TTL_MINUTES`, padrão 30).
+- Link do e-mail: `{FRONTEND_RESET_PASSWORD_URL}?token={token}`. Envio assíncrono, após o commit.
+- Um novo pedido invalida os anteriores. Sem rate limit.
+
+---
+
+#### POST /api/auth/reset-password
+
+**Status:** ✅ Implementado (BE-006.1)
+**Autenticação:** Pública
+
+**Body da requisição:**
+```json
+{ 
+  "token": "<token-do-link>", 
+  "newPassword": "novaSenha123", 
+  "confirmPassword": "novaSenha123"
+}
+```
+
+Validações: `token` obrigatório; `newPassword` 6-72 caracteres; `confirmPassword` obrigatório e igual a `newPassword`.
+
+**Resposta de sucesso (200):**
+```json
+{ 
+  "message": "Senha alterada com sucesso."
+}
+```
+
+**Possíveis erros:**
+- 400 INVALID_RESET_TOKEN: token inexistente, expirado ou já usado (um único código, para não revelar o estado)
+- 400 PASSWORD_MISMATCH: senhas diferentes
+- 400 VALIDATION_ERROR / INVALID_REQUEST_BODY
+- 500 INTERNAL_ERROR
+
+**Regras e observações:**
+- Senha gravada com BCrypt; todos os tokens do usuário são invalidados.
+- Depois do reset, o login funciona só com a nova senha.
+
+---
+
 ### 4.2 Saúde da API
 
 #### GET /api/health
@@ -1747,6 +1820,8 @@ recebe o evento. Os snapshots privados continuam disponíveis para sincronizaç�
 | `UNAUTHORIZED` | 401 | Rota protegida sem autenticação | `JwtAuthenticationEntryPoint` |
 | `FORBIDDEN` | 403 | Acesso negado a recurso protegido | `ApiAccessDeniedHandler` |
 | `INTERNAL_ERROR` | 500 | Exceção inesperada ou erro 5xx | `GlobalExceptionHandler.handleUnexpected` |
+| `INVALID_RESET_TOKEN` | 400 | Token de recuperação inválido, expirado ou já usado | `GlobalExceptionHandler.handleInvalidResetToken` |
+| `PASSWORD_MISMATCH` | 400 | `newPassword` e `confirmPassword` diferentes | `GlobalExceptionHandler.handlePasswordMismatch` |
 
 ### 8.3 Códigos de Erro STOMP
 
@@ -1822,6 +1897,12 @@ recebe o evento. Os snapshots privados continuam disponíveis para sincronizaç�
 - Habilidade não está no deck do round atual
 - Deck ainda não configurado (Draft incompleto)
 
+**INVALID_RESET_TOKEN:**
+- Token de recuperação inválido, expirado ou já usado
+
+**PASSWORD_MISMATCH:**
+- `newPassword` e `confirmPassword` diferentes
+
 ### 8.5 Comportamento Recomendado para Front-End
 
 **Erros REST:**
@@ -1871,6 +1952,8 @@ recebe o evento. Os snapshots privados continuam disponíveis para sincronizaç�
 - [ ] Implementar consulta de inventário de habilidades via `GET /api/skills/inventory`
 - [ ] Implementar consulta de inventário de personagens via `GET /api/characters/inventory`
 - [ ] Implementar health check via `GET /api/health`
+- [ ] Implementar forgot password via `POST /api/forgot-password`
+- [ ] Implementar reset password via `POST /api/reset-password`
 
 ### 9.3 Conexão STOMP
 
@@ -1980,7 +2063,6 @@ Durante a auditoria, as seguintes verificações foram executadas:
 - **Endpoint de gameplay broadcast:** Destino público final pendente de alinhamento com front (BE-024)
 - **Draft de personagens:** Fluxo de seleção de personagens não detalhado (pode estar em outra parte do código)
 - **Loja:** Endpoints de compra não implementados (BE-029 planejado)
-- **Recuperação de senha:** Não implementado (BE-006.1 planejado)
 
 ### 10.4 Pontos Pendentes de Confirmação
 

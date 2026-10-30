@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Map;
+
 /**
  * Controller responsável por endpoints de autenticação.
  * Gerencia login, cadastro e operações relacionadas à autenticação de usuários.
@@ -28,6 +30,7 @@ public class AuthController {
     // Exemplo: login, registro, refresh token, etc.
 
     private final AuthService authService;
+    private final PasswordResetService passwordResetService;
 
     @Operation(summary = "Cadastrar usuário", description = "Criar um novo usuário")
     @ApiResponse(responseCode = "201", description = "Usuário criado com sucesso")
@@ -51,4 +54,27 @@ public class AuthController {
         return ResponseEntity.ok(LoginResponse.from(authService.login(request)));
     }
 
+    @Operation(summary = "Solicitar recuperação de senha",
+            description = "Sempre responde 200, exista ou não o e-mail.")
+    @ApiResponse(responseCode = "200", description = "Solicitação recebida")
+    @ApiResponse(responseCode = "400", description = "Dados inválidos")
+    @PostMapping("/forgot-password")
+    public ResponseEntity<Map<String, String>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        passwordResetService.requestReset(request.email());
+        return ResponseEntity.ok(
+                Map.of(
+                    "message",
+                    "Se o e-mail estiver cadastrado, você receberá um link para redefinir a senha."
+                )
+        );
+    }
+
+    @Operation(summary = "Redefinir senha")
+    @ApiResponse(responseCode = "200", description = "Senha alterada")
+    @ApiResponse(responseCode = "400", description = "Token inválido/expirado, senhas diferentes ou dados inválidos")
+    @PostMapping("/reset-password")
+    public ResponseEntity<Map<String, String>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        passwordResetService.reset(request.token(), request.newPassword(), request.confirmPassword());
+        return ResponseEntity.ok(Map.of("message", "Senha alterada com sucesso."));
+    }
 }
