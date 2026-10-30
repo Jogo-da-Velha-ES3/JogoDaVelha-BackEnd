@@ -317,6 +317,7 @@ class GameLifecycleServiceTest {
         assertEquals(new Score(2, 0), matchEnd.payload().get("score"));
         assertEquals(player1.getId().toString(), matchEnd.payload().get("winnerId"));
         assertEquals(false, matchEnd.payload().get("forfeit"));
+        assertEquals(GameEndReason.NORMAL.name(), matchEnd.payload().get("reason"));
         @SuppressWarnings("unchecked")
         Map<String, Integer> coins = (Map<String, Integer>) matchEnd.payload().get("coinsCredited");
         assertEquals(GameService.COINS_WIN, coins.get(player1.getId().toString()));
@@ -399,6 +400,7 @@ class GameLifecycleServiceTest {
         MatchLifecycleEvent matchEnd = events.getValue();
         assertEquals("MATCH_END", matchEnd.type());
         assertEquals(true, matchEnd.payload().get("forfeit"));
+        assertEquals(GameEndReason.FORFEIT_TIMEOUT.name(), matchEnd.payload().get("reason"));
         assertEquals(player2.getId().toString(), matchEnd.payload().get("winnerId"));
         @SuppressWarnings("unchecked")
         Map<String, Integer> coins = (Map<String, Integer>) matchEnd.payload().get("coinsCredited");
@@ -406,6 +408,7 @@ class GameLifecycleServiceTest {
         assertFalse(coins.containsKey(player1.getId().toString()));
         assertEquals(GameEndReason.FORFEIT_TIMEOUT, game.getEndReason());
         assertEquals(RoomStatus.IN_GAME, room.getStatus());
+        verify(snapshots, never()).publish("4242");
     }
 
     @Test
@@ -422,6 +425,7 @@ class GameLifecycleServiceTest {
         verify(websocket, times(1)).sendToTopic(eq("/topic/rooms/4242"),
                 argThat(event -> event instanceof MatchLifecycleEvent m && "MATCH_END".equals(m.type())));
         verify(states, atLeastOnce()).delete(game.getId());
+        verify(snapshots, never()).publish("4242");
     }
 
     private DraftCompleted draftEvent(boolean automatic) {

@@ -25,6 +25,7 @@ import com.jogodavelha.websocket.RoomSnapshotService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -137,6 +138,7 @@ public class GameLifecycleService implements RoundLifecycle {
 
     /** Adapter from the existing turn/gameplay event into the lifecycle boundary. */
     @EventListener
+    @Order(0)
     public void onTurnChanged(TurnChangedEvent event) {
         if (event.timedOutPlayerId() != null) {
             Game game = gameRepository.findById(event.gameId()).orElse(null);
@@ -238,10 +240,10 @@ public class GameLifecycleService implements RoundLifecycle {
                     "score", game.getScore(),
                     "winnerId", game.getWinner() == null ? "" : game.getWinner().getId().toString(),
                     "forfeit", game.getEndReason() == GameEndReason.FORFEIT_TIMEOUT,
+                    "reason", game.getEndReason().name(),
                     "coinsCredited", creditedCoins(game))));
         }
         states.delete(game.getId());
-        snapshots.publish(game.getRoom().getCode());
     }
 
     private Map<String, Integer> creditedCoins(Game game) {
