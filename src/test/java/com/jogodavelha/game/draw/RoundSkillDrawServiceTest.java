@@ -262,13 +262,12 @@ class RoundSkillDrawServiceTest {
     }
 
     @Test
-    void laterOptionsExcludePreviouslyOfferedAndDiscardedChoicesOnlyForTheirOwner() {
+    void laterOptionsCanRepeatUnchosenOffersButExcludeChosenSkillsOnlyForTheirOwner() {
         states.update(gameId, state -> {
             state.setInitialSkills(p1, List.of("BOMBA", "ESCUDO"));
             state.setInitialSkills(p2, List.of("CONGELAR", "SILENCIO"));
             state.setRoundSkillDeck(p1, List.of("BOMBA", "ESCUDO", "AMPULHETA"));
             state.setRoundSkillDeck(p2, List.of("CONGELAR", "SILENCIO", "AMPULHETA"));
-            state.recordOfferedDrawSkills(p1, List.of("BURACO_NEGRO", "REFORCO"));
             state.recordChosenDrawSkill(p1, "TORNADO"); // escolhido anteriormente, agora fora do deck
             state.startRound(2, 10_000, 1_000);
             state.setPhase(GamePhase.DRAFT);
@@ -283,12 +282,12 @@ class RoundSkillDrawServiceTest {
 
         var p1Options = state().getRoundDraw().players().get(p1).options();
         var p2Options = state().getRoundDraw().players().get(p2).options();
-        assertTrue(Collections.disjoint(p1Options, Set.of("BURACO_NEGRO", "REFORCO", "TORNADO")));
+        assertFalse(p1Options.contains("TORNADO"));
+        assertTrue(p1Options.contains("BURACO_NEGRO"));
+        assertFalse(state().getChosenDrawSkills(p1).contains("BURACO_NEGRO"));
         assertTrue(p2Options.contains("BURACO_NEGRO"));
-        assertTrue(state().getOfferedDrawSkills(p1).containsAll(p1Options));
-        assertTrue(state().getOfferedDrawSkills(p2).containsAll(p2Options));
-        assertFalse(state().getOfferedDrawSkills(p2).contains("REFORCO"));
         assertTrue(state().getChosenDrawSkills(p1).containsAll(List.of("BOMBA", "ESCUDO", "TORNADO")));
+        assertFalse(state().getChosenDrawSkills(p2).contains("TORNADO"));
     }
 
     @Test
@@ -324,8 +323,6 @@ class RoundSkillDrawServiceTest {
         start();
         assertEquals(List.of("AMPULHETA", "CONGELAR", "SILENCIO"), state().getRoundDraw().players().get(p1).options());
         assertEquals(List.of("AMPULHETA", "BOMBA", "ESCUDO"), state().getRoundDraw().players().get(p2).options());
-        assertEquals(Set.copyOf(state().getRoundDraw().players().get(p1).options()), state().getOfferedDrawSkills(p1));
-        assertEquals(Set.copyOf(state().getRoundDraw().players().get(p2).options()), state().getOfferedDrawSkills(p2));
         now.set(9_000);
         draws.expire(gameId, 1, 9_000);
         assertEquals("AMPULHETA", state().getRoundDraw().players().get(p1).selected());

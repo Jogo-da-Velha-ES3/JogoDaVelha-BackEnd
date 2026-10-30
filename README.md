@@ -1110,7 +1110,10 @@ O sorteio da terceira habilidade e o deck de cada round são tratados pela BE-01
 ## Sorteio por round (BE-013.1)
 
 Antes de cada round, `RoundSkillDrawService` usa o catálogo completo para sortear
-três habilidades distintas por jogador, excluindo as duas fixas. As opções ficam
+três habilidades distintas por jogador, excluindo o deck atual e todas as
+habilidades já escolhidas por aquele jogador na partida (inclusive as iniciais e
+as depois substituídas). Opções oferecidas e não escolhidas podem voltar em rounds
+futuros. Esse histórico é individual por jogador. As opções ficam
 no `GameState` do Redis e chegam somente ao dono em `/user/queue/room`, no evento
 `DRAW_OPTIONS`, com `{options, deadline}`. O prazo é de 8 segundos.
 

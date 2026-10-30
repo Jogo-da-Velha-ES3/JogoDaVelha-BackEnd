@@ -1313,10 +1313,13 @@ Nunca são publicados em `/topic/rooms/{code}`.
 ```
 
 São três códigos distintos do catálogo completo, podendo incluir habilidades não
-compradas e excluindo todo o deck atual do próprio jogador. No primeiro round, o
-deck tem as duas habilidades iniciais e a escolhida é adicionada. Nos rounds
-seguintes, uma das três habilidades atuais é removida aleatoriamente e a escolhida
-é adicionada. `deadline` e `serverTime` são epoch millis.
+compradas e excluindo todo o deck atual e todas as habilidades já escolhidas pelo
+próprio jogador na partida (as iniciais e as escolhidas em sorteios anteriores,
+mesmo se substituídas). Opções oferecidas e não escolhidas podem aparecer em sorteios
+futuros. O histórico é independente por jogador. No primeiro round, o deck tem as
+duas habilidades iniciais e a escolhida é adicionada. Nos rounds seguintes, uma das
+três habilidades atuais é removida aleatoriamente e a escolhida é adicionada.
+`deadline` e `serverTime` são epoch millis.
 
 ```json
 {

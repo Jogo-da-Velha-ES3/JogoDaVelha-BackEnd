@@ -69,9 +69,6 @@ public class GameState {
     /** Habilidades escolhidas no Draft inicial, preservadas durante toda a partida. */
     @Builder.Default
     private Map<UUID, Set<String>> initialSkillsByPlayer = new HashMap<>();
-    /** Habilidades já oferecidas em sorteios, mantidas separadamente para cada jogador. */
-    @Builder.Default
-    private Map<UUID, Set<String>> offeredDrawSkillsByPlayer = new HashMap<>();
     /** Habilidades já escolhidas pelo jogador, inclusive as que depois saíram do deck. */
     @Builder.Default
     private Map<UUID, Set<String>> chosenDrawSkillsByPlayer = new HashMap<>();
@@ -213,22 +210,9 @@ public class GameState {
         recordChosenDrawSkills(playerId, skillCodes);
     }
 
-    public Set<String> getOfferedDrawSkills(UUID playerId) {
-        return offeredDrawSkillsByPlayer == null ? Set.of()
-                : offeredDrawSkillsByPlayer.getOrDefault(playerId, Set.of());
-    }
-
     public Set<String> getChosenDrawSkills(UUID playerId) {
         return chosenDrawSkillsByPlayer == null ? Set.of()
                 : chosenDrawSkillsByPlayer.getOrDefault(playerId, Set.of());
-    }
-
-    public void recordOfferedDrawSkills(UUID playerId, Collection<String> skillCodes) {
-        if (playerId == null || skillCodes == null || skillCodes.stream().anyMatch(code -> code == null || code.isBlank())) {
-            throw new IllegalArgumentException("Informe jogador e habilidades oferecidas válidas.");
-        }
-        if (offeredDrawSkillsByPlayer == null) offeredDrawSkillsByPlayer = new HashMap<>();
-        offeredDrawSkillsByPlayer.computeIfAbsent(playerId, ignored -> new HashSet<>()).addAll(skillCodes);
     }
 
     public void recordChosenDrawSkill(UUID playerId, String skillCode) {

@@ -91,8 +91,6 @@ public class RoundSkillDrawService implements RoundSkillDraft {
                 if (current.getRoundNumber() == round && current.getPhase() == GamePhase.DRAFT
                         && current.getRoundDraw() == null) {
                     current.setRoundDraw(draw);
-                    draw.players().forEach((playerId, player) ->
-                            current.recordOfferedDrawSkills(playerId, player.options()));
                 }
                 return current;
             });
@@ -224,7 +222,6 @@ public class RoundSkillDrawService implements RoundSkillDraft {
             throw new IllegalStateException("O deck atual do jogador possui tamanho inválido.");
         }
         Set<String> excluded = new HashSet<>(current);
-        excluded.addAll(state.getOfferedDrawSkills(playerId));
         excluded.addAll(state.getChosenDrawSkills(playerId));
         List<String> available = new ArrayList<>(catalog.stream().filter(code -> !excluded.contains(code)).toList());
         if (available.size() < 3) throw new IllegalStateException("Catálogo insuficiente para sortear três opções.");
