@@ -226,14 +226,16 @@ public class GameLifecycleService implements RoundLifecycle {
 
     private void finishMatch(Game game) {
         turns.cancel(game.getId());
+        Room room = rooms.findById(game.getRoom().getId())
+                .orElseThrow(() -> new IllegalStateException("Sala da partida não encontrada."));
         // Keep room IN_GAME so BE-039 can reuse it for rematch; CLOSED is for leave/decline flows.
-        if (game.getRoom().getStatus() == RoomStatus.WAITING) {
-            game.getRoom().setStatus(RoomStatus.IN_GAME);
-            rooms.save(game.getRoom());
+        if (room.getStatus() == RoomStatus.WAITING) {
+            room.setStatus(RoomStatus.IN_GAME);
+            rooms.save(room);
         }
         boolean firstPublication = matchEndPublished.add(game.getId());
         if (firstPublication) {
-            websocket.sendToTopic(topic(game.getRoom()), MatchLifecycleEvent.of("MATCH_END", Map.of(
+            websocket.sendToTopic(topic(room), MatchLifecycleEvent.of("MATCH_END", Map.of(
                     "gameId", game.getId(),
                     "score", game.getScore(),
                     "winnerId", game.getWinner() == null ? "" : game.getWinner().getId().toString(),
@@ -241,7 +243,7 @@ public class GameLifecycleService implements RoundLifecycle {
                     "coinsCredited", creditedCoins(game))));
         }
         states.delete(game.getId());
-        snapshots.publish(game.getRoom().getCode());
+        snapshots.publish(room.getCode());
     }
 
     private Map<String, Integer> creditedCoins(Game game) {
@@ -253,7 +255,9 @@ public class GameLifecycleService implements RoundLifecycle {
             return Map.of();
         }
         if (game.getEndReason() == GameEndReason.FORFEIT_TIMEOUT) {
-            return Map.of(game.getWinner().getId().toString(), GameService.COINS_FORFEIT_WIN);
+            boolean firstWins = game.getWinner().getId().equals(game.getPlayer1().getId());
+            return coinsMap(game, new RewardResult(firstWins ? GameService.COINS_FORFEIT_WIN : 0,
+                    firstWins ? 0 : GameService.COINS_FORFEIT_WIN));
         }
         return switch (game.getOutcome()) {
             case DRAW -> Map.of(

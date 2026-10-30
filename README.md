@@ -1147,6 +1147,18 @@ sorteio ausente, encerrado, expirado ou escolha já confirmada.
 
 ## 🧪 Testes
 
+### W.O. por inatividade (BE-021)
+
+Três timeouts consecutivos do mesmo jogador encerram a partida inteira por W.O.,
+com `end_reason=FORFEIT_TIMEOUT`. O terceiro não passa a vez nem agenda outro turno.
+Uma jogada ou habilidade válida zera somente o contador de quem agiu. Trocar de
+round preserva os contadores, e auto-escolhas do Draft ou do sorteio não os aumentam.
+
+O vencedor recebe 30 coins e o perdedor 0, pelo fluxo existente de recompensas.
+`MATCH_END` indica `forfeit:true`; o snapshot final contém `outcome.kind:"WO"`,
+o vencedor e `coins:{P1:30,P2:0}` (ou os valores invertidos). Esses dados também
+ficam disponíveis ao sincronizar uma partida já encerrada.
+
 O `RoomService` da BE-008 cria salas com `createRoom(playerId)` e permite entrada
 com `joinRoom(code, playerId)`. Código inválido ou sala inexistente gera
 `IllegalArgumentException`; sala cheia, partida iniciada ou jogador ocupado gera
