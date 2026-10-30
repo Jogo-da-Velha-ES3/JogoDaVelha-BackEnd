@@ -133,7 +133,7 @@ public class RoundSkillDrawService implements RoundSkillDraft {
         else schedule(key, draw.deadline());
     }
 
-    public void pick(String code, UUID playerId, String ability) {
+    public void pick(String code, UUID playerId, String ability, String abilityToRemove) {
         if (playerId == null) throw new AccessDeniedException("Autenticação STOMP obrigatória.");
         if (code == null || !code.matches("[0-9]{4}")) {
             throw new IllegalArgumentException("O código deve conter quatro dígitos.");
@@ -147,15 +147,19 @@ public class RoundSkillDrawService implements RoundSkillDraft {
         GameState before = states.find(gameId).orElseThrow(() -> new IllegalStateException("Sorteio indisponível."));
         RoundDrawState expected = before.getRoundDraw();
         if (expected == null) throw new IllegalStateException("Não há sorteio ativo nesta sala.");
-        Set<String> deckBefore = currentDeck(before, playerId);
-        String replaced = replacement(before, playerId, expected.round(), deckBefore);
+        if (expected.round() > 1 && (abilityToRemove == null || abilityToRemove.isBlank())) {
+            throw new IllegalArgumentException("Escolha qual habilidade do deck deseja remover.");
+        }
+        if (expected.round() == 1 && abilityToRemove != null) {
+            throw new IllegalArgumentException("Não há habilidade para remover no primeiro round.");
+        }
         states.update(gameId, current -> {
             RoundDrawState draw = current.getRoundDraw();
             // Reconfere o prazo em cada tentativa, como o Draft inicial.
             if (current.getPhase() != GamePhase.DRAFT || draw == null || draw.round() != expected.round()
                     || clock.millis() >= draw.deadline()) throw new IllegalStateException("Prazo do sorteio encerrado.");
             current.setRoundDraw(draw.select(playerId, ability));
-            applyDeck(current, playerId, expected.round(), ability, replaced);
+            applyDeck(current, playerId, expected.round(), ability, abilityToRemove);
             current.recordChosenDrawSkill(playerId, ability);
             return current;
         });
@@ -246,7 +250,10 @@ public class RoundSkillDrawService implements RoundSkillDraft {
     private void applyDeck(GameState state, UUID playerId, int round, String selected, String replaced) {
         Set<String> deck = currentDeck(state, playerId);
         if (round > 1) {
-            if (replaced == null || !deck.remove(replaced)) throw new IllegalStateException("Habilidade de substituição indisponível.");
+            if (replaced == null || !deck.contains(replaced)) {
+                throw new IllegalArgumentException("Escolha uma habilidade que esteja no deck atual para remover.");
+            }
+            deck.remove(replaced);
         }
         if (!deck.add(selected)) throw new IllegalStateException("A habilidade sorteada já está no deck.");
         if (deck.size() != 3) throw new IllegalStateException("O deck deve conter exatamente três habilidades.");

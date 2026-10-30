@@ -16,15 +16,15 @@ class RoundSkillDrawControllerTest {
     @Test
     void usesAuthenticatedIdentityAndIgnoresPlayerIdInThePayload() throws Exception {
         UUID actor = UUID.randomUUID();
-        var request = new ObjectMapper().readValue("{\"ability\":\"TORNADO\",\"playerId\":\""
+        var request = new ObjectMapper().readValue("{\"ability\":\"TORNADO\",\"abilityToRemove\":\"ESCUDO\",\"playerId\":\""
                 + UUID.randomUUID() + "\"}", RoundSkillDrawController.Request.class);
         controller.pick("0042", request, () -> actor.toString());
-        verify(draws).pick("0042", actor, "TORNADO");
+        verify(draws).pick("0042", actor, "TORNADO", "ESCUDO");
     }
 
     @Test
     void rejectsMissingIdentityInvalidIdentityAndMissingRequest() {
-        var request = new RoundSkillDrawController.Request("TORNADO");
+        var request = new RoundSkillDrawController.Request("TORNADO", null);
         assertThrows(AccessDeniedException.class, () -> controller.pick("0042", request, null));
         assertThrows(AccessDeniedException.class, () -> controller.pick("0042", request, () -> "bad"));
         assertThrows(IllegalArgumentException.class, () -> controller.pick("0042", null, () -> UUID.randomUUID().toString()));

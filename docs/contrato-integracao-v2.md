@@ -1043,12 +1043,16 @@ identidade, como `playerId`, são ignorados.
 Envie com `content-type: application/json`:
 
 ```json
-{ "ability": "TORNADO" }
+{ "ability": "TORNADO", "abilityToRemove": "ESCUDO" }
 ```
 
 O código da sala tem quatro dígitos e o jogador precisa participar dela. A habilidade
-deve ser uma das três opções recebidas para aquele round. Só é aceita uma confirmação
-por jogador, antes do prazo de 8 segundos.
+`ability` deve ser uma das três opções recebidas para aquele round. A partir do segundo
+round, `abilityToRemove` é obrigatório e deve pertencer ao deck atual do jogador; no
+primeiro round, omita esse campo. A escolha manual substitui exatamente a habilidade
+indicada e mantém o deck com três habilidades. Só é aceita uma confirmação por jogador,
+antes do prazo de 8 segundos. Se o prazo vencer, o backend escolhe automaticamente uma
+opção e uma habilidade do deck a substituir.
 
 Erros são privados, em `/user/queue/errors`: `BAD_REQUEST` (400) para código ou
 habilidade inválidos; `FORBIDDEN` (403) para não participante; `CONFLICT` (409)

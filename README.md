@@ -1117,10 +1117,13 @@ futuros. Esse histórico é individual por jogador. As opções ficam
 no `GameState` do Redis e chegam somente ao dono em `/user/queue/room`, no evento
 `DRAW_OPTIONS`, com `{options, deadline}`. O prazo é de 8 segundos.
 
-Envie `SEND /app/rooms/{code}/draw/pick` com `{"ability":"TORNADO"}`. A identidade
-vem do JWT do CONNECT, e a habilidade precisa estar entre as opções do jogador.
-Confirmar bloqueia novas escolhas. Ao expirar, o servidor escolhe uma opção para
-quem ainda não confirmou; isso não conta como turno nem como timeout do W.O.
+Envie `SEND /app/rooms/{code}/draw/pick` com `{"ability":"TORNADO"}` no primeiro
+round. A partir do segundo, envie também `abilityToRemove`, por exemplo
+`{"ability":"TORNADO","abilityToRemove":"ESCUDO"}`. A identidade vem do JWT do
+CONNECT; a habilidade adicionada precisa estar entre as opções e a removida no deck
+atual do jogador. Confirmar bloqueia novas escolhas. Ao expirar, o servidor escolhe
+automaticamente uma opção e uma habilidade a substituir; isso não conta como turno nem
+como timeout do W.O.
 
 `DECK_UPDATE` envia ao dono `{deck:[{ability, source, usedThisRound}]}`. O deck
 contém as duas fixas e a escolhida. Somente após ambos terem deck, o evento interno

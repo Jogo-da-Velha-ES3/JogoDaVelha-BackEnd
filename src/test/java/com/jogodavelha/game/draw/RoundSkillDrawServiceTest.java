@@ -150,11 +150,11 @@ class RoundSkillDrawServiceTest {
     void keepsConfirmedChoicesAndCompletesOnlyWhenBothPlayersHaveADeck() {
         start();
         String first = option(p1), second = option(p2);
-        draws.pick("0042", p1, first);
+        draws.pick("0042", p1, first, null);
         verifyNoInteractions(completed);
         assertEquals(Set.of("BOMBA", "ESCUDO", first), state().getRoundSkillDecks().get(p1));
-        assertThrows(IllegalStateException.class, () -> draws.pick("0042", p1, first));
-        draws.pick("0042", p2, second);
+        assertThrows(IllegalStateException.class, () -> draws.pick("0042", p1, first, null));
+        draws.pick("0042", p2, second, null);
         assertEquals(Set.of("CONGELAR", "SILENCIO", second), state().getRoundSkillDecks().get(p2));
         verify(completed).publishEvent(new RoundDrawCompleted(gameId, 1));
         draws.expire(gameId, 1, 9_000);
@@ -165,7 +165,7 @@ class RoundSkillDrawServiceTest {
     void timeoutPicksOnlyForTheMissingPlayerWithoutCountingAForfeitTimeout() {
         start();
         String selected = option(p1);
-        draws.pick("0042", p1, selected);
+        draws.pick("0042", p1, selected, null);
         now.set(9_000);
         draws.expire(gameId, 1, 9_000);
         var state = state();
@@ -184,7 +184,7 @@ class RoundSkillDrawServiceTest {
         draws.expire(gameId, 1, 9_000);
         assertFalse(state().getRoundDraw().completed());
         now.set(9_000);
-        assertThrows(IllegalStateException.class, () -> draws.pick("0042", p1, option(p1)));
+        assertThrows(IllegalStateException.class, () -> draws.pick("0042", p1, option(p1), null));
         assertFalse(state().getRoundDraw().completed());
         verifyNoInteractions(completed);
     }
@@ -192,10 +192,10 @@ class RoundSkillDrawServiceTest {
     @Test
     void rejectsNonParticipantsAndChoicesOutsideTheOptions() {
         start();
-        assertThrows(AccessDeniedException.class, () -> draws.pick("0042", UUID.randomUUID(), "TORNADO"));
-        assertThrows(IllegalArgumentException.class, () -> draws.pick("0042", p1, "BOMBA"));
-        assertThrows(IllegalArgumentException.class, () -> draws.pick("0042", p1, " "));
-        assertThrows(IllegalArgumentException.class, () -> draws.pick("bad", p1, "TORNADO"));
+        assertThrows(AccessDeniedException.class, () -> draws.pick("0042", UUID.randomUUID(), "TORNADO", null));
+        assertThrows(IllegalArgumentException.class, () -> draws.pick("0042", p1, "BOMBA", null));
+        assertThrows(IllegalArgumentException.class, () -> draws.pick("0042", p1, " ", null));
+        assertThrows(IllegalArgumentException.class, () -> draws.pick("bad", p1, "TORNADO", null));
         assertTrue(state().getRoundSkillDecks().isEmpty());
     }
 
@@ -208,7 +208,7 @@ class RoundSkillDrawServiceTest {
         start();
         assertEquals(original, state().getRoundDraw());
         failNextCas.set(true);
-        draws.pick("0042", p1, option(p1));
+        draws.pick("0042", p1, option(p1), null);
         assertEquals(original.players().get(p1).options(), state().getRoundDraw().players().get(p1).options());
         verifyNoInteractions(completed);
     }
@@ -243,8 +243,8 @@ class RoundSkillDrawServiceTest {
     @Test
     void laterManualDrawReplacesOneOfAllCurrentSkillsAndLeavesOpponentDeckUntouched() {
         start();
-        draws.pick("0042", p1, option(p1));
-        draws.pick("0042", p2, option(p2));
+        draws.pick("0042", p1, option(p1), null);
+        draws.pick("0042", p2, option(p2), null);
         var p1Deck = Set.copyOf(state().getRoundSkillDecks().get(p1));
         var p2Deck = Set.copyOf(state().getRoundSkillDecks().get(p2));
         states.update(gameId, state -> { state.startRound(2, 10_000, 9_100); state.setPhase(GamePhase.DRAFT); return state; });
@@ -253,10 +253,15 @@ class RoundSkillDrawServiceTest {
         var options = state().getRoundDraw().players().get(p1).options();
         assertTrue(Collections.disjoint(p1Deck, options));
         String add = options.getFirst();
-        draws.pick("0042", p1, add);
+        String remove = p1Deck.stream().sorted().findFirst().orElseThrow();
+        assertThrows(IllegalArgumentException.class, () -> draws.pick("0042", p1, add, null));
+        assertThrows(IllegalArgumentException.class, () -> draws.pick("0042", p1, add, "NAO_ESTÁ_NO_DECK"));
+        assertNull(state().getRoundDraw().players().get(p1).selected());
+        draws.pick("0042", p1, add, remove);
         Set<String> updated = state().getRoundSkillDecks().get(p1);
         assertEquals(3, updated.size());
         assertTrue(updated.contains(add));
+        assertFalse(updated.contains(remove));
         assertEquals(2, updated.stream().filter(p1Deck::contains).count());
         assertEquals(p2Deck, state().getRoundSkillDecks().get(p2));
     }
@@ -337,7 +342,7 @@ class RoundSkillDrawServiceTest {
         now.set(8_999);
         failNextCas.set(true);
         onConflict = () -> now.set(9_000);
-        assertThrows(IllegalStateException.class, () -> draws.pick("0042", p1, option(p1)));
+        assertThrows(IllegalStateException.class, () -> draws.pick("0042", p1, option(p1), null));
         assertNull(state().getRoundDraw().players().get(p1).selected());
         assertTrue(state().getRoundSkillDecks().isEmpty());
     }
@@ -347,8 +352,8 @@ class RoundSkillDrawServiceTest {
         start();
         String first = option(p1), second = option(p2);
         failNextCas.set(true);
-        onConflict = () -> draws.pick("0042", p2, second);
-        draws.pick("0042", p1, first);
+        onConflict = () -> draws.pick("0042", p2, second, null);
+        draws.pick("0042", p1, first, null);
         assertEquals(first, state().getRoundDraw().players().get(p1).selected());
         assertEquals(second, state().getRoundDraw().players().get(p2).selected());
         verify(completed, times(1)).publishEvent(new RoundDrawCompleted(gameId, 1));
@@ -381,7 +386,7 @@ class RoundSkillDrawServiceTest {
     void restartAfterExpiryKeepsTheManualChoiceAndResolvesOnlyTheMissingOne() {
         start();
         String selected = option(p1);
-        draws.pick("0042", p1, selected);
+        draws.pick("0042", p1, selected, null);
         clearInvocations(websocket);
         now.set(10_000);
 
@@ -422,9 +427,9 @@ class RoundSkillDrawServiceTest {
     @Test
     void eachManualChoicePublishesOneDeckAndFirstChoicePublishesAnUpdatedSnapshot() {
         start();
-        draws.pick("0042", p1, option(p1));
+        draws.pick("0042", p1, option(p1), null);
         verify(snapshots, times(2)).publish("0042");
-        draws.pick("0042", p2, option(p2));
+        draws.pick("0042", p2, option(p2), null);
 
         verify(websocket, times(1)).sendToUser(eq(p1.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
         verify(websocket, times(1)).sendToUser(eq(p2.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
@@ -456,7 +461,7 @@ class RoundSkillDrawServiceTest {
             draws.expire(gameId, 1, 9_000);
         };
 
-        assertThrows(IllegalStateException.class, () -> draws.pick("0042", p1, manualRequest));
+        assertThrows(IllegalStateException.class, () -> draws.pick("0042", p1, manualRequest, null));
 
         var state = state();
         String selected = state.getRoundDraw().players().get(p1).selected();
