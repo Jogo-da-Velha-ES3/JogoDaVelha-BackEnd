@@ -681,6 +681,48 @@ Validações:
 - DTO: `BalanceResponse` (linha 3-6 de `BalanceResponse.java`)
 - Serviço: `CoinService.getBalance`
 
+#### GET /api/coins/packages
+**Status:** ✅ Implementado
+**Controller:** CoinController.packages
+**Autenticação:** Bearer Token obrigatório
+
+**Objetivo:** Retornar os pacotes de moedas disponíveis para compra.
+
+**Parâmetros de rota/query:** Nenhum
+
+**Headers:**
+
+- `Authorization: Bearer <token>`
+
+**Body da requisição:** Nenhum
+
+**Resposta de sucesso (200):**
+```json
+[
+{
+"id": "123e4567-e89b-12d3-a456-426614174000",
+"coins": 100,
+"priceInReais": 4.99
+},
+{
+"id": "123e4567-e89b-12d3-a456-426614174001",
+"coins": 500,
+"priceInReais": 19.99
+},
+{
+"id": "123e4567-e89b-12d3-a456-426614174002",
+"coins": 1000,
+"priceInReais": 34.99
+}
+]
+```
+**Possíveis erros:**
+- 401 UNAUTHORIZED: Token ausente ou inválido
+- 500 INTERNAL_ERROR: Erro interno do servidor
+
+**Regras e observações:**
+- DTO: `CoinPackageResponse`
+- O campo `priceInReais` representa o preço exibido ao usuário.
 ---
 
 ### 4.6 Habilidades
