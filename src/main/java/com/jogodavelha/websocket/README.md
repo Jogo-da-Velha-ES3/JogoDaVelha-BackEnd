@@ -135,7 +135,7 @@ stompClient.subscribe('/topic/rooms/' + roomCode, function (message) {
 
 #### `ROOM_SNAPSHOT`
 
-Publicado em `/topic/rooms/{code}` ao conectar, apos a entrada do segundo jogador, em atualizacoes do Draft, depois de jogada/habilidade/timeout que avance o turno e nas transicoes de round. O listener de `TurnChangedEvent` executa depois do `GameLifecycleService`: rounds encerrados e W.O. sao processados antes de decidir se ha snapshot. Transicoes de round publicam pelo fluxo de sorteio/liberacao do turno; partida encerrada publica `MATCH_END` uma vez e nao recebe snapshot posterior a limpeza do estado.
+Publicado em `/topic/rooms/{code}` ao conectar, apos a entrada do segundo jogador, em atualizacoes do Draft, depois de jogada/habilidade/timeout que avance o turno e nas transicoes de round. O listener de `TurnChangedEvent` executa depois do `GameLifecycleService`: rounds encerrados e W.O. sao processados antes de decidir se ha snapshot. Transicoes de round publicam pelo fluxo de sorteio/liberacao do turno; ao encerrar a partida, `MATCH_END` e publicado uma vez e o evento `MatchFinishedEvent` dispara o snapshot final antes da limpeza do estado Redis.
 
 O payload inclui `gameId`, fase, round, placar em `players[].roundsWon`, morte subita, tabuleiro de 16 casas (`owner: null` para vazia e `effects` para efeitos especiais) e turno. `turn.deadline` e timestamp absoluto Unix epoch em milissegundos; `startedAt` e `durationSeconds` refletem a duracao efetiva (10 s, 5 s em morte subita ou reducao por Ampulheta). O envelope segue `{type, payload, serverTime}`.
 

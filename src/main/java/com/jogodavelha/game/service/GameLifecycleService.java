@@ -2,6 +2,7 @@ package com.jogodavelha.game.service;
 
 import com.jogodavelha.game.Game;
 import com.jogodavelha.game.GameEndReason;
+import com.jogodavelha.game.MatchFinishedEvent;
 import com.jogodavelha.game.GameNotFoundException;
 import com.jogodavelha.game.GameRepository;
 import com.jogodavelha.game.GameStatus;
@@ -20,10 +21,11 @@ import com.jogodavelha.game.logic.GameStateManager;
 import com.jogodavelha.room.Room;
 import com.jogodavelha.room.RoomRepository;
 import com.jogodavelha.room.RoomStatus;
+import com.jogodavelha.websocket.RoomSnapshotRequestedEvent;
 import com.jogodavelha.websocket.WebSocketService;
-import com.jogodavelha.websocket.RoomSnapshotService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -49,7 +51,7 @@ public class GameLifecycleService implements RoundLifecycle {
     private final TurnService turns;
     private final WebSocketService websocket;
     private final ObjectProvider<RoundSkillDraft> skillDraft;
-    private final RoomSnapshotService snapshots;
+    private final ApplicationEventPublisher events;
 
     @EventListener
     public void onDraftCompleted(DraftCompleted event) {
@@ -95,7 +97,7 @@ public class GameLifecycleService implements RoundLifecycle {
             beginRound(game, state);
         } else if (state.getPhase() == GamePhase.PLAYING) {
             turns.schedule(game.getId(), state.getTurnDeadlineEpochMillis());
-            snapshots.publish(room.getCode());
+            events.publishEvent(new RoomSnapshotRequestedEvent(room.getCode()));
         }
     }
 
@@ -222,7 +224,7 @@ public class GameLifecycleService implements RoundLifecycle {
             return;
         }
         websocket.sendToTopic(topic(game.getRoom()), MatchLifecycleEvent.roundStart(state, game.getScore()));
-        snapshots.publish(game.getRoom().getCode());
+        events.publishEvent(new RoomSnapshotRequestedEvent(game.getRoom().getCode()));
         turns.schedule(gameId, state.getTurnDeadlineEpochMillis());
     }
 
@@ -244,10 +246,8 @@ public class GameLifecycleService implements RoundLifecycle {
                     "forfeit", game.getEndReason() == GameEndReason.FORFEIT_TIMEOUT,
                     "reason", game.getEndReason().name(),
                     "coinsCredited", creditedCoins(game))));
+            events.publishEvent(new MatchFinishedEvent(game.getId(), room.getCode()));
         }
-        // O MATCH_END continua sendo publicado uma única vez,conforme o fluxo existente.
-
-        snapshots.publish(room.getCode());
         states.delete(game.getId());
     }
 

@@ -181,7 +181,8 @@ public class RoomSnapshotService {
         if (game == null) return new MatchSnapshot(1, false, null, null, null);
         Slot turnSlot = gs == null || gs.getCurrentTurnPlayerId() == null ? null
                 : gs.getCurrentTurnPlayerId().equals(room.getPlayer1().getId()) ? Slot.P1 : Slot.P2;
-        Turn turn = gs == null || gs.getPhase() != GamePhase.PLAYING || turnSlot == null ? null
+        Turn turn = game.getStatus() == GameStatus.FINISHED || gs == null
+                || gs.getPhase() != GamePhase.PLAYING || turnSlot == null ? null
                 : new Turn(turnSlot, gs.getTurnDeadlineEpochMillis() - gs.getTurnDurationMillis(),
                 gs.getTurnDeadlineEpochMillis(), (int) (gs.getTurnDurationMillis() / 1000));
         return new MatchSnapshot(game.getCurrentRound(), game.isSuddenDeath(), turn,
@@ -239,6 +240,7 @@ public class RoomSnapshotService {
 
     private RoomPhase phase(Room room, State state) {
         if (room.getStatus() == RoomStatus.WAITING) return RoomPhase.WAITING;
+        if (state.game() != null && state.game().getStatus() == GameStatus.FINISHED) return RoomPhase.RESULT;
         GameState gameState = state.gameStateOptional().orElse(null);
         if (gameState != null) {
             return switch (gameState.getPhase()) {

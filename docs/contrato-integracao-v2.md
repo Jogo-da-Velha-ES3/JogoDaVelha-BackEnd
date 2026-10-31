@@ -1133,7 +1133,7 @@ códigos de erro. O mesmo mapeamento consta no README.
 - Atualização de Draft (`DraftUpdated` via `RoomSnapshotEventPublisher`)
 - Após jogada, habilidade ou timeout que encerre o turno e mantenha a partida em `PLAYING` (`TurnChangedEvent`)
 - Após mudança de round e liberação de turno (publicado pelo ciclo de vida/sorteio)
-- Encerramento definitivo é comunicado uma única vez por `MATCH_END`; não há snapshot posterior à limpeza do estado Redis
+- Encerramento definitivo: após `MATCH_END`, `MatchFinishedEvent` solicita o snapshot final antes da remoção do estado Redis
 
 **Destinatários:**
 - Público: `/topic/rooms/{code}` (snapshot sem campos privados)
@@ -1244,7 +1244,7 @@ códigos de erro. O mesmo mapeamento consta no README.
   recebendo somente as próprias opções e seu prazo original.
 - No snapshot público, `drawOptions` é sempre `null`, `mySlot` é `null` e `myDeck`
   é `[]`. A fase compartilhada pode ser `ROUND_DRAW`, mas as opções nunca são públicas.
-- `MATCH_END` mantém o envelope `{type,payload,serverTime}` e inclui `reason` com `NORMAL` ou `FORFEIT_TIMEOUT`, além de `winnerId`, `score` e `forfeit`. Este evento comunica vitória, empate e W.O.; após ele, o servidor limpa o estado Redis sem enviar snapshot redundante.
+- `MATCH_END` mantém o envelope `{type,payload,serverTime}` e inclui `reason` com `NORMAL` ou `FORFEIT_TIMEOUT`, além de `winnerId`, `score` e `forfeit`. Este evento comunica vitória, empate e W.O. e é publicado uma única vez. Em seguida, `MatchFinishedEvent` dispara `ROOM_SNAPSHOT` público e individualizado para os dois jogadores, com `phase:"RESULT"` e `outcome` final; somente depois da publicação o servidor remove o estado Redis. Chamadas repetidas de finalização não duplicam `MATCH_END` nem o snapshot final.
 - Na fase `ROUND_DRAW`, `turn` é `null`: os 8 segundos de escolha não são um turno
   e não alteram os contadores de timeout. O Draft inicial concluído não substitui
   a fase da partida no snapshot.
@@ -1525,9 +1525,10 @@ Apos jogada ou habilidade valida, o `ROOM_SNAPSHOT` contem o estado atualizado. 
 
 1. Ao terminar um round, `ROUND_END` e publicado e o ciclo inicia o sorteio do proximo round; o snapshot atualizado e publicado na abertura do sorteio e na liberacao do turno.
 2. Ao encerrar definitivamente, `MATCH_END` e publicado uma unica vez, com placar, `winnerId`, `forfeit` e `reason` (`NORMAL` ou `FORFEIT_TIMEOUT`). O evento identifica vitoria, empate ou W.O.
-3. O estado Redis e removido apos `MATCH_END`; nao e publicado snapshot subsequente com estado parcial/limpo.
+3. `MatchFinishedEvent` aciona um `ROOM_SNAPSHOT` final no topico publico e nas filas privadas dos dois jogadores, enquanto o estado Redis ainda existe. O snapshot tem fase `RESULT`, inclui `outcome` final e nao apresenta turno ativo.
+4. Apos a publicacao do snapshot final, o estado Redis e removido. Repeticoes do fluxo limpam o estado sem republicar `MATCH_END` ou o snapshot.
 
-O `Outcome` presente em snapshots de composicao/sincronizacao identifica `WIN`, `ABSOLUTE_DRAW` ou `WO`, inclui placar `[P1, P2]` e `reason`. O resultado final em tempo real e comunicado pelo evento `MATCH_END`.
+O `Outcome` presente em snapshots de composicao/sincronizacao e no snapshot final identifica `WIN`, `ABSOLUTE_DRAW` ou `WO`, inclui placar `[P1, P2]` e `reason`. O resultado final em tempo real tambem e comunicado pelo evento `MATCH_END`.
 ### 6.9 Desconexão e Reconexão de Jogadores
 
 1. Conexão WebSocket perdida
@@ -1684,7 +1685,9 @@ O `Outcome` presente em snapshots de composicao/sincronizacao identifica `WIN`, 
   `Game.forfeit(loser)`, com `end_reason=FORFEIT_TIMEOUT`.
 - `MATCH_END`, em `/topic/rooms/{code}`, mantém a indicação `forfeit:true`,
   `winnerId` e `coinsCredited` por UUID. O snapshot final tem `phase:"RESULT"`,
-  `outcome:{kind:"WO",winner:"P1"}` (ou `P2`) e as moedas por slot.
+  `outcome:{kind:"WO",winner:"P1"}` (ou `P2`) e as moedas por slot; ele é enviado
+  aos dois jogadores antes da remoção do estado Redis. `MATCH_END` e o snapshot
+  final são publicados apenas uma vez, mesmo se a finalização for repetida.
 
 **Implementação:** `GameState.getTurnDeadlineEpochMillis()` e `GameState.getTurnDurationMillis()`
 

@@ -2,6 +2,7 @@ package com.jogodavelha.websocket;
 
 import com.jogodavelha.game.draft.DraftUpdated;
 import com.jogodavelha.game.GameRepository;
+import com.jogodavelha.game.MatchFinishedEvent;
 import com.jogodavelha.game.GameStatus;
 import com.jogodavelha.game.TurnChangedEvent;
 import com.jogodavelha.game.logic.GamePhase;
@@ -23,6 +24,16 @@ public class RoomSnapshotEventPublisher {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onPlayerJoined(PlayerJoinedRoomEvent event) {
+        snapshots.publish(event.roomCode());
+    }
+
+    @EventListener
+    public void onMatchFinished(MatchFinishedEvent event) {
+        snapshots.publish(event.roomCode());
+    }
+
+    @EventListener
+    public void onSnapshotRequested(RoomSnapshotRequestedEvent event) {
         snapshots.publish(event.roomCode());
     }
 

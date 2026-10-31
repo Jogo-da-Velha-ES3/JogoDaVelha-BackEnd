@@ -11,7 +11,9 @@ import com.jogodavelha.config.SecurityConfig;
 import com.jogodavelha.config.StompJwtAuthenticationInterceptor;
 import com.jogodavelha.config.WebSocketConfig;
 import com.jogodavelha.game.Game;
+import com.jogodavelha.game.GameEndReason;
 import com.jogodavelha.game.GameRepository;
+import com.jogodavelha.game.MatchFinishedEvent;
 import com.jogodavelha.game.GameStatus;
 import com.jogodavelha.game.Score;
 import com.jogodavelha.game.draw.RoundDrawState;
@@ -45,6 +47,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.broker.SimpleBrokerMessageHandler;
 import org.springframework.messaging.simp.stomp.StompFrameHandler;
@@ -131,9 +134,11 @@ class RoomSnapshotStompIT {
     @Autowired RoomRepository rooms;
     @Autowired GameRepository games;
     @Autowired PlayerService playerService;
+    @Autowired ApplicationEventPublisher events;
     private final List<WebSocketStompClient> clients = new ArrayList<>();
     private final List<StompSession> sessions = new ArrayList<>();
     private Room room;
+    private Game game;
 
     @BeforeEach
     void setUp() {
@@ -143,7 +148,7 @@ class RoomSnapshotStompIT {
         room.setId(ROOM_ID);
         room.join(player2);
 
-        Game game = mock(Game.class);
+        game = mock(Game.class);
         when(game.getId()).thenReturn(GAME_ID);
         when(game.getStatus()).thenReturn(GameStatus.IN_PROGRESS);
         when(game.getCurrentRound()).thenReturn(1);
@@ -207,6 +212,26 @@ class RoomSnapshotStompIT {
         assertPrivateMoveSnapshot(p2.privateSnapshots(), "P2");
 
         assertEquals("X---------------", gameStates.find(GAME_ID).orElseThrow().getBoard());
+    }
+
+    @Test
+    void bothStompClientsReceiveForfeitResultSnapshotWhileRedisStateStillExists() throws Exception {
+        Client p1 = connectAndSubscribe(P1);
+        Client p2 = connectAndSubscribe(P2);
+        awaitSubscriptions();
+
+        when(game.getStatus()).thenReturn(GameStatus.FINISHED);
+        when(game.getWinner()).thenReturn(user(P2, "player-two"));
+        when(game.getEndReason()).thenReturn(GameEndReason.FORFEIT_TIMEOUT);
+        when(games.findByRoomIdAndStatus(ROOM_ID, GameStatus.FINISHED)).thenReturn(Optional.of(game));
+
+        events.publishEvent(new MatchFinishedEvent(GAME_ID, ROOM_CODE));
+
+        assertForfeitResultSnapshot(receive(p1.publicSnapshots()), null);
+        assertForfeitResultSnapshot(receive(p1.privateSnapshots()), "P1");
+        assertForfeitResultSnapshot(receive(p2.publicSnapshots()), null);
+        assertForfeitResultSnapshot(receive(p2.privateSnapshots()), "P2");
+        assertTrue(gameStates.find(GAME_ID).isPresent());
     }
 
     private Client connectAndSubscribe(UUID playerId) throws Exception {
@@ -278,6 +303,20 @@ class RoomSnapshotStompIT {
     private JsonNode snapshotPayload(JsonNode message) {
         assertEquals("ROOM_SNAPSHOT", message.path("type").asText());
         return message.path("payload");
+    }
+
+    private void assertForfeitResultSnapshot(JsonNode message, String slot) {
+        JsonNode payload = snapshotPayload(message);
+        if (slot == null) {
+            assertTrue(payload.get("mySlot").isNull());
+        } else {
+            assertEquals(slot, payload.path("mySlot").asText());
+        }
+        assertEquals("RESULT", payload.path("phase").asText());
+        assertEquals("WO", payload.path("outcome").path("kind").asText());
+        assertEquals("P2", payload.path("outcome").path("winner").asText());
+        assertEquals("FORFEIT_TIMEOUT", payload.path("outcome").path("reason").asText());
+        assertTrue(payload.get("turn").isNull());
     }
 
     private void assertMove(JsonNode payload) {
