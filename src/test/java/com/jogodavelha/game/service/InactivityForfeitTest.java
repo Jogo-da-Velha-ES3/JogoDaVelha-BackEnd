@@ -12,11 +12,11 @@ import com.jogodavelha.skill.HourglassEffect;
 import com.jogodavelha.skill.SkillActivationService;
 import com.jogodavelha.skill.SkillContext;
 import com.jogodavelha.skill.SkillEngine;
-import com.jogodavelha.websocket.RoomSnapshotService;
 import com.jogodavelha.websocket.WebSocketService;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -72,13 +72,13 @@ class InactivityForfeitTest {
         var scheduler = mock(TaskScheduler.class);
         when(scheduler.schedule(any(Runnable.class), any(Instant.class))).thenReturn(mock(ScheduledFuture.class));
         var websocket = mock(WebSocketService.class);
-        var snapshots = mock(RoomSnapshotService.class);
+        var applicationEvents = mock(ApplicationEventPublisher.class);
         var lifecycle = new AtomicReference<GameLifecycleService>();
         var engine = new SkillEngine(List.of(new HourglassEffect()), new GameValidator());
         var turns = new TurnService(states, engine, clock, scheduler,
                 event -> lifecycle.get().onTurnChanged((TurnChangedEvent) event));
         lifecycle.set(new GameLifecycleService(games, repository, rooms, states, turns, websocket,
-                mock(ObjectProvider.class), snapshots));
+                mock(ObjectProvider.class), applicationEvents));
         var moves = new MoveActionService(states, new MoveValidator(clock), turns, clock);
 
         for (int timeout = 0; timeout < 2; timeout++) {
@@ -109,7 +109,7 @@ class InactivityForfeitTest {
         verify(websocket, times(1)).sendToTopic(eq("/topic/rooms/0042"), argThat(value ->
                 value instanceof MatchLifecycleEvent event && event.type().equals("MATCH_END")
                         && Boolean.TRUE.equals(event.payload().get("forfeit"))));
-        verify(snapshots).publish("0042");
+        verify(applicationEvents).publishEvent(new MatchFinishedEvent(gameId, room.getCode()));
     }
 
     @ParameterizedTest

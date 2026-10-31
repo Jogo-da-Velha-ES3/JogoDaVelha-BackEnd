@@ -133,12 +133,14 @@ class RoomSnapshotServiceTest {
         var snapshot = snapshots.compose("0042", fixture.host().getId());
 
         assertEquals(RoomSnapshotService.RoomPhase.PLAYING, snapshot.phase());
+        assertEquals(gameId, snapshot.gameId());
         assertEquals(RoomSnapshotService.Slot.P1, snapshot.players().get(0).slot());
         assertEquals(1, snapshot.players().get(0).consecutiveTimeouts());
         assertEquals(RoomSnapshotService.Slot.P1, snapshot.board().get(0).owner());
         assertEquals("ESCUDO", snapshot.board().get(1).effects().getFirst().kind());
         assertEquals(RoomSnapshotService.Slot.P2, snapshot.turn().player());
         assertEquals(40_000, snapshot.turn().startedAt());
+        assertEquals(50_000, snapshot.turn().deadline());
         assertEquals(10, snapshot.turn().durationSeconds());
         assertEquals(3, snapshot.myDeck().size());
         assertTrue(snapshot.myDeck().stream().filter(deckSlot -> deckSlot.ability().equals("BOMBA"))

@@ -2,6 +2,7 @@ package com.jogodavelha.game.service;
 
 import com.jogodavelha.game.Game;
 import com.jogodavelha.game.GameEndReason;
+import com.jogodavelha.game.MatchFinishedEvent;
 import com.jogodavelha.game.GameNotFoundException;
 import com.jogodavelha.game.GameRepository;
 import com.jogodavelha.game.GameStatus;
@@ -20,11 +21,13 @@ import com.jogodavelha.game.logic.GameStateManager;
 import com.jogodavelha.room.Room;
 import com.jogodavelha.room.RoomRepository;
 import com.jogodavelha.room.RoomStatus;
+import com.jogodavelha.websocket.RoomSnapshotRequestedEvent;
 import com.jogodavelha.websocket.WebSocketService;
-import com.jogodavelha.websocket.RoomSnapshotService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,7 +51,7 @@ public class GameLifecycleService implements RoundLifecycle {
     private final TurnService turns;
     private final WebSocketService websocket;
     private final ObjectProvider<RoundSkillDraft> skillDraft;
-    private final RoomSnapshotService snapshots;
+    private final ApplicationEventPublisher events;
 
     @EventListener
     public void onDraftCompleted(DraftCompleted event) {
@@ -94,7 +97,7 @@ public class GameLifecycleService implements RoundLifecycle {
             beginRound(game, state);
         } else if (state.getPhase() == GamePhase.PLAYING) {
             turns.schedule(game.getId(), state.getTurnDeadlineEpochMillis());
-            snapshots.publish(room.getCode());
+            events.publishEvent(new RoomSnapshotRequestedEvent(room.getCode()));
         }
     }
 
@@ -137,6 +140,7 @@ public class GameLifecycleService implements RoundLifecycle {
 
     /** Adapter from the existing turn/gameplay event into the lifecycle boundary. */
     @EventListener
+    @Order(0)
     public void onTurnChanged(TurnChangedEvent event) {
         if (event.timedOutPlayerId() != null) {
             Game game = gameRepository.findById(event.gameId()).orElse(null);
@@ -220,7 +224,7 @@ public class GameLifecycleService implements RoundLifecycle {
             return;
         }
         websocket.sendToTopic(topic(game.getRoom()), MatchLifecycleEvent.roundStart(state, game.getScore()));
-        snapshots.publish(game.getRoom().getCode());
+        events.publishEvent(new RoomSnapshotRequestedEvent(game.getRoom().getCode()));
         turns.schedule(gameId, state.getTurnDeadlineEpochMillis());
     }
 
@@ -240,10 +244,11 @@ public class GameLifecycleService implements RoundLifecycle {
                     "score", game.getScore(),
                     "winnerId", game.getWinner() == null ? "" : game.getWinner().getId().toString(),
                     "forfeit", game.getEndReason() == GameEndReason.FORFEIT_TIMEOUT,
+                    "reason", game.getEndReason().name(),
                     "coinsCredited", creditedCoins(game))));
+            events.publishEvent(new MatchFinishedEvent(game.getId(), room.getCode()));
         }
         states.delete(game.getId());
-        snapshots.publish(room.getCode());
     }
 
     private Map<String, Integer> creditedCoins(Game game) {

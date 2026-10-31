@@ -7,6 +7,7 @@ import com.jogodavelha.game.Game;
 import com.jogodavelha.game.GameEndReason;
 import com.jogodavelha.game.GameRepository;
 import com.jogodavelha.game.GameStatus;
+import com.jogodavelha.game.MatchFinishedEvent;
 import com.jogodavelha.game.MatchLifecycleEvent;
 import com.jogodavelha.game.RewardResult;
 import com.jogodavelha.game.RoundResult;
@@ -36,6 +37,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import java.lang.reflect.Field;
@@ -66,6 +68,7 @@ class GameLifecycleServiceTest {
     @Mock private WebSocketService websocket;
     @Mock private ObjectProvider<RoundSkillDraft> skillDraft;
     @Mock private RoomSnapshotService snapshots;
+    @Mock private ApplicationEventPublisher applicationEvents;
     @Mock private RoundSkillDraft roundSkillDraft;
 
     private GameLifecycleService lifecycle;
@@ -79,7 +82,8 @@ class GameLifecycleServiceTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        lifecycle = new GameLifecycleService(games, gameRepository, rooms, states, turns, websocket, skillDraft, snapshots);
+        lifecycle = new GameLifecycleService(games, gameRepository, rooms, states, turns, websocket, skillDraft,
+                applicationEvents);
         player1 = new User("p1", "pass", "p1@test.com");
         player1.setId(UUID.randomUUID());
         player2 = new User("p2", "pass", "p2@test.com");
@@ -182,7 +186,8 @@ class GameLifecycleServiceTest {
 
         assertEquals(GamePhase.DRAFT, redisState.get().getPhase());
         verify(turns, never()).schedule(any(), anyLong());
-        lifecycle = new GameLifecycleService(games, gameRepository, rooms, states, turns, websocket, skillDraft, snapshots);
+        lifecycle = new GameLifecycleService(games, gameRepository, rooms, states, turns, websocket, skillDraft,
+                applicationEvents);
         var restarted = new RoundSkillDrawService(states, catalog, rooms, gameRepository, clock,
                 scheduler, websocket, snapshots,
                 event -> lifecycle.onRoundDrawCompleted((RoundDrawCompleted) event), new Random(99));
@@ -307,6 +312,7 @@ class GameLifecycleServiceTest {
         assertNull(redisState.get());
         verify(turns, atLeastOnce()).cancel(game.getId());
         assertEquals(RoomStatus.IN_GAME, room.getStatus());
+        verify(applicationEvents).publishEvent(new MatchFinishedEvent(game.getId(), room.getCode()));
 
         ArgumentCaptor<MatchLifecycleEvent> events = ArgumentCaptor.forClass(MatchLifecycleEvent.class);
         verify(websocket, atLeast(3)).sendToTopic(eq("/topic/rooms/4242"), events.capture());
@@ -318,6 +324,7 @@ class GameLifecycleServiceTest {
         assertEquals(new Score(2, 0), matchEnd.payload().get("score"));
         assertEquals(player1.getId().toString(), matchEnd.payload().get("winnerId"));
         assertEquals(false, matchEnd.payload().get("forfeit"));
+        assertEquals(GameEndReason.NORMAL.name(), matchEnd.payload().get("reason"));
         @SuppressWarnings("unchecked")
         Map<String, Integer> coins = (Map<String, Integer>) matchEnd.payload().get("coinsCredited");
         assertEquals(GameService.COINS_WIN, coins.get(player1.getId().toString()));
@@ -395,11 +402,16 @@ class GameLifecycleServiceTest {
 
         verify(games, times(1)).forfeit(game.getId(), player1);
         verify(states, atLeastOnce()).delete(game.getId());
+        verify(applicationEvents, times(1)).publishEvent(new MatchFinishedEvent(game.getId(), room.getCode()));
+        org.mockito.InOrder publicationOrder = inOrder(applicationEvents, states);
+        publicationOrder.verify(applicationEvents).publishEvent(new MatchFinishedEvent(game.getId(), room.getCode()));
+        publicationOrder.verify(states, times(2)).delete(game.getId());
         ArgumentCaptor<MatchLifecycleEvent> events = ArgumentCaptor.forClass(MatchLifecycleEvent.class);
         verify(websocket, times(1)).sendToTopic(eq("/topic/rooms/4242"), events.capture());
         MatchLifecycleEvent matchEnd = events.getValue();
         assertEquals("MATCH_END", matchEnd.type());
         assertEquals(true, matchEnd.payload().get("forfeit"));
+        assertEquals(GameEndReason.FORFEIT_TIMEOUT.name(), matchEnd.payload().get("reason"));
         assertEquals(player2.getId().toString(), matchEnd.payload().get("winnerId"));
         @SuppressWarnings("unchecked")
         Map<String, Integer> coins = (Map<String, Integer>) matchEnd.payload().get("coinsCredited");
@@ -407,6 +419,7 @@ class GameLifecycleServiceTest {
         assertFalse(coins.containsKey(player1.getId().toString()));
         assertEquals(GameEndReason.FORFEIT_TIMEOUT, game.getEndReason());
         assertEquals(RoomStatus.IN_GAME, room.getStatus());
+        verify(applicationEvents, times(1)).publishEvent(new MatchFinishedEvent(game.getId(), room.getCode()));
     }
 
     @Test
@@ -423,6 +436,7 @@ class GameLifecycleServiceTest {
         verify(websocket, times(1)).sendToTopic(eq("/topic/rooms/4242"),
                 argThat(event -> event instanceof MatchLifecycleEvent m && "MATCH_END".equals(m.type())));
         verify(states, atLeastOnce()).delete(game.getId());
+        verify(applicationEvents, times(1)).publishEvent(new MatchFinishedEvent(game.getId(), room.getCode()));
     }
 
     private DraftCompleted draftEvent(boolean automatic) {
