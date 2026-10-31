@@ -1057,6 +1057,43 @@ habilidade inválidos; `FORBIDDEN` (403) para não participante; `CONFLICT` (409
 para sorteio ausente, encerrado, expirado ou escolha já confirmada. Não há novos
 códigos de erro. O mesmo mapeamento consta no README.
 
+---
+
+#### SEND /app/rooms/{code}/draft/character — BE-011
+
+**Status:** ✅ Implementado
+**Controller:** `DraftCharacterController.select`
+**Autenticação:** STOMP Principal obrigatório
+
+**Objetivo:** Reservar (ou trocar) o personagem do jogador durante o Draft.
+
+**Parâmetros de rota:**
+- `code`: String de 4 dígitos
+
+**Body da requisição:**
+{ "characterId": "123e4567-e89b-12d3-a456-426614174010" }
+
+O `characterId` é o `id` retornado por `GET /api/characters/inventory`. A identidade vem do `Principal`; campos extras como `playerId` são ignorados.
+
+**Regras:**
+- Só personagens do inventário do jogador (BE-028).
+- A reserva é atômica: se dois jogadores pedem o mesmo personagem, a primeira confirmação registrada vence; o outro recebe `CONFLICT`.
+- Trocar de personagem libera o anterior imediatamente.
+- Repetir a mesma escolha não gera novo evento.
+- Não é possível alterar o personagem depois de confirmar as duas habilidades, nem após o prazo de 20s.
+- O personagem é apenas cosmético. A escolha confirmada é entregue à BE-038 em `DraftCompleted` e gravada na partida.
+
+**Resposta/Eventos resultantes:**
+- `DRAFT_UPDATE` em `/topic/rooms/{code}` (oponente vê o bloqueio e o nome de quem reservou)
+- `ROOM_SNAPSHOT` atualizado
+
+**Erros (privados, `/user/queue/errors`):**
+- `BAD_REQUEST` (400): sala ou personagem inválidos, ou personagem que o jogador não possui
+- `FORBIDDEN` (403): não participa da sala
+- `CONFLICT` (409): Draft ausente/expirado, personagem já reservado, escolhas já confirmadas
+
+---
+
 ### 5.3 Destinos de Assinatura (SUBSCRIBE)
 
 #### SUBSCRIBE /topic/rooms/{code}
@@ -1273,16 +1310,25 @@ códigos de erro. O mesmo mapeamento consta no README.
 ```json
 {
   "deadline": 1729934660000,
-  "characters": {
-    "P1": "X",
+  "characters": 
+  { 
+    "P1": "X", 
     "P2": "O"
   },
-  "ready": {
-    "P1": true,
+  "ready": 
+  { 
+    "P1": true, 
     "P2": false
+  },
+  "nicknames": 
+  { 
+    "P1": "ana", 
+    "P2": "bia"
   }
 }
 ```
+`nicknames` (acréscimo compatível, BE-011): username de quem já reservou personagem, por slot. 
+Só há entrada para quem já escolheu; o front usa isso para mostrar o bloqueio com o nome de quem reservou.
 
 **Momento de publicação:**
 - Após operação CAS no Redis (Compare-And-Swap)
@@ -1459,7 +1505,7 @@ recebe o evento. Os snapshots privados continuam disponíveis para sincronizaç�
 1. Sala entra em fase DRAFT
 2. Back-End publica `ROOM_SNAPSHOT` com fase DRAFT
 3. Front-Envia mostra UI de seleção de personagens e habilidades
-4. Jogador seleciona personagem (fluxo separado, não documentado aqui)
+4. Jogador seleciona personagem `SEND /app/rooms/{code}/draft/character`
 5. Jogador envia `SEND /app/rooms/{code}/draft/abilities` com lista de 2 habilidades
 6. Back-End valida habilidades (devem pertencer ao inventário)
 7. Back-End atualiza estado de Draft no Redis
@@ -1967,7 +2013,6 @@ Durante a auditoria, as seguintes verificações foram executadas:
 - **Testes não executados:** Testes foram listados mas não executados
 - **Integração real não testada:** Apenas análise estática de código
 - **Endpoint de gameplay broadcast:** Destino público final pendente de alinhamento com front (BE-024)
-- **Draft de personagens:** Fluxo de seleção de personagens não detalhado (pode estar em outra parte do código)
 - **Loja:** Endpoints de compra não implementados (BE-029 planejado)
 - **Recuperação de senha:** Não implementado (BE-006.1 planejado)
 
@@ -1975,7 +2020,6 @@ Durante a auditoria, as seguintes verificações foram executadas:
 
 - X e O são atribuídos a todo jogador por padrão (RN-LOJ-01)?
 - Destino público de atualizações de gameplay (BE-024)
-- Fluxo completo de seleção de personagens no Draft
 - Detalhes de implementação de W.O. em partida
 - Detalhes de implementação de rematch
 
@@ -2008,6 +2052,7 @@ Durante a auditoria, as seguintes verificações foram executadas:
 - `CharacterController.java` - Endpoint de inventário de personagens
 - `CoinController.java` - Endpoint de saldo
 - `HealthController.java` - Endpoint de health check
+- `DraftCharacterController.java` - Endpoint de seleção de personagens no Draft
 
 **Controllers STOMP:**
 - `PlayerConnectionController.java` - Conexão e sincronização
