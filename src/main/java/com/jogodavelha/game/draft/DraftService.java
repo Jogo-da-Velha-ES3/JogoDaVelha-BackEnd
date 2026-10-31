@@ -126,4 +126,21 @@ public class DraftService {
             if (state.completed()) events.publishEvent(DraftCompleted.from(state, automatic));
         }
     }
+
+    public void selectCharacter(UUID roomId, UUID playerId, UUID characterId) {
+        states.update(roomId, current -> {
+            if (current.completed() || clock.millis() >= current.deadlineEpochMillis()) {
+                throw new IllegalStateException("Prazo encerrado ou Draft já concluído.");
+            }
+            DraftState.Player me = current.player(playerId);
+            if (me.ready()) throw new IllegalStateException("Escolhas do jogador já estão confirmadas.");
+            if (!me.eligibleCharacters().contains(characterId)) {
+                throw new IllegalArgumentException("Você não possui este personagem.");
+            }
+            if (characterId.equals(current.opponentOf(playerId).characterId())) {
+                throw new IllegalStateException("Personagem já reservado pelo oponente.");
+            }
+            return current.withPlayer(me.withCharacter(characterId));
+        }).ifPresent(change -> publish(change.after(), false));
+    }
 }
