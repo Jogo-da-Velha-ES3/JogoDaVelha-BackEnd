@@ -1110,14 +1110,20 @@ O sorteio da terceira habilidade e o deck de cada round são tratados pela BE-01
 ## Sorteio por round (BE-013.1)
 
 Antes de cada round, `RoundSkillDrawService` usa o catálogo completo para sortear
-três habilidades distintas por jogador, excluindo as duas fixas. As opções ficam
+três habilidades distintas por jogador, excluindo o deck atual e todas as
+habilidades já escolhidas por aquele jogador na partida (inclusive as iniciais e
+as depois substituídas). Opções oferecidas e não escolhidas podem voltar em rounds
+futuros. Esse histórico é individual por jogador. As opções ficam
 no `GameState` do Redis e chegam somente ao dono em `/user/queue/room`, no evento
 `DRAW_OPTIONS`, com `{options, deadline}`. O prazo é de 8 segundos.
 
-Envie `SEND /app/rooms/{code}/draw/pick` com `{"ability":"TORNADO"}`. A identidade
-vem do JWT do CONNECT, e a habilidade precisa estar entre as opções do jogador.
-Confirmar bloqueia novas escolhas. Ao expirar, o servidor escolhe uma opção para
-quem ainda não confirmou; isso não conta como turno nem como timeout do W.O.
+Envie `SEND /app/rooms/{code}/draw/pick` com `{"ability":"TORNADO"}` no primeiro
+round. A partir do segundo, envie também `abilityToRemove`, por exemplo
+`{"ability":"TORNADO","abilityToRemove":"ESCUDO"}`. A identidade vem do JWT do
+CONNECT; a habilidade adicionada precisa estar entre as opções e a removida no deck
+atual do jogador. Confirmar bloqueia novas escolhas. Ao expirar, o servidor escolhe
+automaticamente uma opção e uma habilidade a substituir; isso não conta como turno nem
+como timeout do W.O.
 
 `DECK_UPDATE` envia ao dono `{deck:[{ability, source, usedThisRound}]}`. O deck
 contém as duas fixas e a escolhida. Somente após ambos terem deck, o evento interno
@@ -1140,6 +1146,18 @@ inválidos; `FORBIDDEN` (403) para quem não pertence à sala; `CONFLICT` (409) 
 sorteio ausente, encerrado, expirado ou escolha já confirmada.
 
 ## 🧪 Testes
+
+### W.O. por inatividade (BE-021)
+
+Três timeouts consecutivos do mesmo jogador encerram a partida inteira por W.O.,
+com `end_reason=FORFEIT_TIMEOUT`. O terceiro não passa a vez nem agenda outro turno.
+Uma jogada ou habilidade válida zera somente o contador de quem agiu. Trocar de
+round preserva os contadores, e auto-escolhas do Draft ou do sorteio não os aumentam.
+
+O vencedor recebe 30 coins e o perdedor 0, pelo fluxo existente de recompensas.
+`MATCH_END` indica `forfeit:true`; o snapshot final contém `outcome.kind:"WO"`,
+o vencedor e `coins:{P1:30,P2:0}` (ou os valores invertidos). Esses dados também
+ficam disponíveis ao sincronizar uma partida já encerrada.
 
 O `RoomService` da BE-008 cria salas com `createRoom(playerId)` e permite entrada
 com `joinRoom(code, playerId)`. Código inválido ou sala inexistente gera

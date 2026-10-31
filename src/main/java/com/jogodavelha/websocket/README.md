@@ -135,12 +135,15 @@ stompClient.subscribe('/topic/rooms/' + roomCode, function (message) {
 
 #### `ROOM_SNAPSHOT`
 
-Publicado em `/topic/rooms/{code}` ao conectar, após a entrada do segundo jogador, nas atualizações do Draft e nas transições de round/partida. O evento usa `{type, payload, serverTime}` e `serverTime` é epoch millis. O payload segue o `RoomSnapshot` do frontend (`code`, `phase`, `players`, `mySlot`, `round`, `suddenDeath`, `board`, `turn`, `myDeck`, `outcome` e campos opcionais do Draft/resultado). No tópico compartilhado `mySlot` é `null`, `myDeck` é `[]` e `drawOptions` é `null`.
+Publicado em `/topic/rooms/{code}` ao conectar, apos a entrada do segundo jogador, em atualizacoes do Draft, depois de jogada/habilidade/timeout que avance o turno e nas transicoes de round. O listener de `TurnChangedEvent` executa depois do `GameLifecycleService`: rounds encerrados e W.O. sao processados antes de decidir se ha snapshot. Transicoes de round publicam pelo fluxo de sorteio/liberacao do turno; ao encerrar a partida, `MATCH_END` e publicado uma vez e o evento `MatchFinishedEvent` dispara o snapshot final antes da limpeza do estado Redis.
 
-Cada jogador também recebe o mesmo `ROOM_SNAPSHOT` individualizado em `/user/queue/room`, com seu `mySlot` e `myDeck`. Opções de sorteio não são mantidas pelo estado atual do backend e permanecem `null`.
+O payload inclui `gameId`, fase, round, placar em `players[].roundsWon`, morte subita, tabuleiro de 16 casas (`owner: null` para vazia e `effects` para efeitos especiais) e turno. `turn.deadline` e timestamp absoluto Unix epoch em milissegundos; `startedAt` e `durationSeconds` refletem a duracao efetiva (10 s, 5 s em morte subita ou reducao por Ampulheta). O envelope segue `{type, payload, serverTime}`.
 
-Para sincronizar sob demanda, envie `SEND /app/rooms/{code}/sync` sem corpo. O backend deriva a identidade do `Principal`, valida participação ativa e responde somente ao solicitante em `/user/queue/room`. Não há broadcast durante sync, preservando os dados privados do outro jogador.
+No topico compartilhado `mySlot` e `null`, `myDeck` e `[]` e `drawOptions` e `null`. Cada jogador tambem recebe o `ROOM_SNAPSHOT` individualizado em `/user/queue/room`, com seu `mySlot`, seu `myDeck` e, durante `ROUND_DRAW`, apenas as proprias opcoes pendentes. As tres opcoes nunca sao publicadas no topico nem enviadas ao outro jogador. Vitoria, empate e W.O. sao comunicados por `MATCH_END`, com placar, vencedor, `forfeit` e `reason` (`NORMAL` ou `FORFEIT_TIMEOUT`).
 
+A composicao e o despacho sao medidos com `System.nanoTime()`. Um aviso e registrado quando o processamento no servidor excede 200 ms. A metrica cobre composicao e chamadas ao broker, nao confirma recebimento pelo navegador; nao ha ACK de cliente.
+
+Para sincronizar sob demanda, envie `SEND /app/rooms/{code}/sync` sem corpo. O backend deriva a identidade do `Principal`, valida participacao ativa e responde somente ao solicitante em `/user/queue/room`. Nao ha broadcast durante sync, preservando os dados privados do outro jogador.
 #### `ROOM_CLOSED`
 
 Enviado quando a sala é fechada: o host saiu enquanto ela estava `WAITING` (`POST /rooms/{code}/leave`) ou ela expirou por inatividade. É publicado só depois do commit da transação: saídas rejeitadas (sala inexistente, jogador fora da sala, partida já iniciada) não geram mensagem.
