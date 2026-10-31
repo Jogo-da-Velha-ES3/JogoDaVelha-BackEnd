@@ -22,6 +22,7 @@ import com.jogodavelha.room.RoomPlayerService;
 import com.jogodavelha.room.RoomRepository;
 import com.jogodavelha.room.RoomStatus;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,8 +39,10 @@ import java.util.stream.IntStream;
 /** Composes the frontend RoomSnapshot and keeps player-specific fields off the shared room topic. */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 @Transactional(readOnly = true)
 public class RoomSnapshotService {
+    private static final long SNAPSHOT_LATENCY_WARNING_NANOS = 200_000_000L;
     private static final List<RoomStatus> ACTIVE_ROOM_STATUSES = List.of(RoomStatus.WAITING, RoomStatus.IN_GAME);
     private final RoomRepository rooms;
     private final GameRepository games;
@@ -59,6 +62,7 @@ public class RoomSnapshotService {
 
     /** Broadcasts a safe room view, then sends a complete, individualized snapshot to each member. */
     public void publish(String code) {
+        long startedAt = System.nanoTime();
         Room room = activeRoom(code);
         long serverTime = System.currentTimeMillis();
         State state = readState(room);
@@ -68,6 +72,14 @@ public class RoomSnapshotService {
         sendPrivate(room, room.getPlayer1().getId(), Slot.P1, state, serverTime);
         if (room.getPlayer2() != null) {
             sendPrivate(room, room.getPlayer2().getId(), Slot.P2, state, serverTime);
+        }
+        long elapsedNanos = System.nanoTime() - startedAt;
+        if (elapsedNanos > SNAPSHOT_LATENCY_WARNING_NANOS) {
+            log.warn("ROOM_SNAPSHOT composition and server dispatch exceeded 200 ms: roomCode={}, elapsedMs={}",
+                    code, elapsedNanos / 1_000_000.0);
+        } else {
+            log.debug("ROOM_SNAPSHOT composed and dispatched: roomCode={}, elapsedMs={}",
+                    code, elapsedNanos / 1_000_000.0);
         }
     }
 
@@ -101,7 +113,7 @@ public class RoomSnapshotService {
                 mySlot == Slot.P1 ? room.getPlayer1().getId() : room.getPlayer2().getId()) : List.of();
         Turn turn = match.turn();
 
-        return new RoomSnapshot(room.getCode(), phase, playerStates,
+        return new RoomSnapshot(state.game() == null ? null : state.game().getId(), room.getCode(), phase, playerStates,
                 includePrivate ? mySlot : null,
                 match.round(), match.suddenDeath(), board(state.gameStateOptional().orElse(null)), turn,
                 deck, match.outcome(), serverTime, draft,
@@ -169,9 +181,10 @@ public class RoomSnapshotService {
         if (game == null) return new MatchSnapshot(1, false, null, null, null);
         Slot turnSlot = gs == null || gs.getCurrentTurnPlayerId() == null ? null
                 : gs.getCurrentTurnPlayerId().equals(room.getPlayer1().getId()) ? Slot.P1 : Slot.P2;
-        Turn turn = gs == null || gs.getPhase() != GamePhase.PLAYING || turnSlot == null ? null
+        Turn turn = game.getStatus() == GameStatus.FINISHED || gs == null
+                || gs.getPhase() != GamePhase.PLAYING || turnSlot == null ? null
                 : new Turn(turnSlot, gs.getTurnDeadlineEpochMillis() - gs.getTurnDurationMillis(),
-                (int) (gs.getTurnDurationMillis() / 1000));
+                gs.getTurnDeadlineEpochMillis(), (int) (gs.getTurnDurationMillis() / 1000));
         return new MatchSnapshot(game.getCurrentRound(), game.isSuddenDeath(), turn,
                 outcome(game, room), creditedCoins(game));
     }
@@ -192,9 +205,9 @@ public class RoomSnapshotService {
         Slot winner = game.getWinner() == null ? null
                 : game.getWinner().getId().equals(room.getPlayer1().getId()) ? Slot.P1 : Slot.P2;
         List<Integer> score = List.of(game.getScore().player1(), game.getScore().player2());
-        if (game.getEndReason() == GameEndReason.FORFEIT_TIMEOUT) return Outcome.wo(winner);
-        if (game.getOutcome() == GameOutcome.DRAW) return Outcome.draw();
-        return Outcome.win(winner, score);
+        if (game.getEndReason() == GameEndReason.FORFEIT_TIMEOUT) return Outcome.wo(winner, score, game.getEndReason().name());
+        if (game.getOutcome() == GameOutcome.DRAW) return Outcome.draw(score, game.getEndReason().name());
+        return Outcome.win(winner, score, game.getEndReason().name());
     }
 
     private List<Cell> board(GameState state) {
@@ -227,6 +240,7 @@ public class RoomSnapshotService {
 
     private RoomPhase phase(Room room, State state) {
         if (room.getStatus() == RoomStatus.WAITING) return RoomPhase.WAITING;
+        if (state.game() != null && state.game().getStatus() == GameStatus.FINISHED) return RoomPhase.RESULT;
         GameState gameState = state.gameStateOptional().orElse(null);
         if (gameState != null) {
             return switch (gameState.getPhase()) {
@@ -266,7 +280,7 @@ public class RoomSnapshotService {
     public enum RoomPhase { WAITING, MATCHED, DRAFT, VERSUS, ROUND_DRAW, PLAYING, ROUND_END, RESULT }
     public record SnapshotEnvelope(String type, RoomSnapshot payload, long serverTime) { }
     @JsonInclude(JsonInclude.Include.ALWAYS)
-    public record RoomSnapshot(String code, RoomPhase phase, List<PlayerState> players, Slot mySlot,
+    public record RoomSnapshot(UUID gameId, String code, RoomPhase phase, List<PlayerState> players, Slot mySlot,
                                int round, boolean suddenDeath, List<Cell> board, Turn turn,
                                List<DeckSlot> myDeck, Outcome outcome, long serverTime,
                                DraftSnapshot draft, DrawOptions drawOptions, Map<Slot, Integer> coins,
@@ -277,12 +291,12 @@ public class RoomSnapshotService {
     @JsonInclude(JsonInclude.Include.ALWAYS)
     public record Cell(int index, Slot owner, List<CellEffect> effects) { }
     public record CellEffect(String kind, int turnsLeft) { }
-    public record Turn(Slot player, long startedAt, int durationSeconds) { }
+    public record Turn(Slot player, long startedAt, long deadline, int durationSeconds) { }
     public record DeckSlot(String ability, String source, boolean usedThisRound) { }
-    public record Outcome(String kind, Slot winner, List<Integer> score) {
-        static Outcome win(Slot winner, List<Integer> score) { return new Outcome("WIN", winner, score); }
-        static Outcome draw() { return new Outcome("ABSOLUTE_DRAW", null, null); }
-        static Outcome wo(Slot winner) { return new Outcome("WO", winner, null); }
+    public record Outcome(String kind, Slot winner, List<Integer> score, String reason) {
+        static Outcome win(Slot winner, List<Integer> score, String reason) { return new Outcome("WIN", winner, score, reason); }
+        static Outcome draw(List<Integer> score, String reason) { return new Outcome("ABSOLUTE_DRAW", null, score, reason); }
+        static Outcome wo(Slot winner, List<Integer> score, String reason) { return new Outcome("WO", winner, score, reason); }
     }
     public record DraftSnapshot(long deadline, Map<Slot, Boolean> ready) { }
     public record DrawOptions(List<String> options, long deadline) { }
