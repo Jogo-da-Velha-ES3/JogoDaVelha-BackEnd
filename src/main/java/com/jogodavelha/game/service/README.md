@@ -20,7 +20,7 @@ Este módulo contém os serviços de gerenciamento de partidas e jogadores.
 - 10 s por turno; 5 s na morte súbita (round 3); 5 s para o jogador sob Ampulheta.
 - A expiração é feita no servidor (`TaskScheduler`), sem depender do cliente, e é idempotente:
   o job só age se o prazo (`turnDeadlineEpochMillis`) ainda for o do turno atual.
-- Timeout: registra o timeout do jogador, resolve a vitória (`SkillEngine.endAction`) e passa a vez.
+- Timeout: registra o timeout do jogador, resolve a vitória (`SkillEngine.endAction`) e passa a vez. No terceiro timeout consecutivo, encerra a partida por W.O. sem passar a vez ou reagendar o timer.
 - Jogada/habilidade: `endPlayerAction` dentro do mutator do `update`; depois do `update`,
   `publishAndSchedule` publica `TurnChangedEvent` e reagenda o timer.
 - Quem iniciar a partida ou um round deve chamar `schedule(gameId, deadline)`; ao encerrar, `cancel(gameId)`.

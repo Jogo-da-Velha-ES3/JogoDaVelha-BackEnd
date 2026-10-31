@@ -28,9 +28,6 @@ import java.util.concurrent.ScheduledFuture;
 @Service
 public class TurnService {
 
-    // Lógica de controle de turnos será implementada aqui
-    // Exemplo: alternar turnos, controlar tempo de turno, etc.
-
     private final GameStateManager stateManager;
     private final SkillEngine skillEngine;
     private final Clock clock;
@@ -124,7 +121,12 @@ public class TurnService {
                 }
                 UUID player = state.getCurrentTurnPlayerId();
                 state.recordTimeout(player);
-                winner[0] = endAction(state, player, now);
+                if (state.getConsecutiveTimeouts(player) >= 3) {
+                    state.setPhase(GamePhase.FINISHED);
+                    winner[0] = Optional.empty();
+                } else {
+                    winner[0] = endAction(state, player, now);
+                }
                 timedOut[0] = player;
                 snapshot[0] = state;
                 return state;
@@ -136,8 +138,11 @@ public class TurnService {
         if (snapshot[0] == null) {
             return;
         }
-        events.publishEvent(toEvent(snapshot[0], winner[0], timedOut[0]));
-        reschedule(snapshot[0]);
+        try {
+            events.publishEvent(toEvent(snapshot[0], winner[0], timedOut[0]));
+        } finally {
+            reschedule(snapshot[0]);
+        }
     }
 
     private void reschedule(GameState s) {
