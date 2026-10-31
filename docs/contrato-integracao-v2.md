@@ -1671,13 +1671,20 @@ O `Outcome` presente em snapshots de composicao/sincronizacao identifica `WIN`, 
 
 ### 7.7 Regras de Turno
 
-**Duração padrão:** 10 segundos; 5 segundos em morte súbita (round 3), podendo ser reduzida por Ampulheta.
+**Duração:** 10 segundos por turno; 5 segundos na morte súbita e para o jogador sob Ampulheta.
 
 **Timeout:**
 - Turno encerrado automaticamente após deadline
 - Jogador perde ação do turno
 - Consecutive timeouts incrementados
-- Múltiplos timeouts podem resultar em W.O.
+- Três timeouts consecutivos do mesmo jogador encerram a partida inteira por W.O.
+- Jogada ou habilidade válida zera somente o contador de quem agiu. Mudar de round
+  não zera os contadores. Auto-escolhas do Draft e do sorteio não contam como timeout.
+- O terceiro timeout não passa a vez nem agenda outro turno. A persistência usa
+  `Game.forfeit(loser)`, com `end_reason=FORFEIT_TIMEOUT`.
+- `MATCH_END`, em `/topic/rooms/{code}`, mantém a indicação `forfeit:true`,
+  `winnerId` e `coinsCredited` por UUID. O snapshot final tem `phase:"RESULT"`,
+  `outcome:{kind:"WO",winner:"P1"}` (ou `P2`) e as moedas por slot.
 
 **Implementação:** `GameState.getTurnDeadlineEpochMillis()` e `GameState.getTurnDurationMillis()`
 
@@ -1691,6 +1698,11 @@ O `Outcome` presente em snapshots de composicao/sincronizacao identifica `WIN`, 
 - Calculadas ao final da partida
 - Baseadas em resultado e performance
 - Enviadas via `coins` field em `ROOM_SNAPSHOT` quando partida finalizada
+- W.O. por inatividade: 30 coins ao vencedor e 0 ao perdedor. A concessão usa o
+  controle existente de recompensas para não pagar novamente em eventos repetidos.
+- Ao sincronizar uma partida já encerrada por W.O., o snapshot reconstrói
+  `coins:{P1:30,P2:0}` (ou o inverso) após confirmar `rewardsGranted`, sem depender
+  do resultado transitório da operação de pagamento.
 
 **Implementação:** `RewardResult` (linha 172-176 de `RoomSnapshotService.java`)
 
@@ -1977,7 +1989,6 @@ Durante a auditoria, as seguintes verificações foram executadas:
 - X e O são atribuídos a todo jogador por padrão (RN-LOJ-01)?
 - Destino público de atualizações de gameplay (BE-024)
 - Fluxo completo de seleção de personagens no Draft
-- Detalhes de implementação de W.O. em partida
 - Detalhes de implementação de rematch
 
 ### 10.5 Compatibilidade com Front-End

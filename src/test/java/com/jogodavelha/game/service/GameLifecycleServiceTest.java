@@ -86,6 +86,7 @@ class GameLifecycleServiceTest {
         player2.setId(UUID.randomUUID());
         room = new Room("4242", player1);
         setId(room, UUID.randomUUID());
+        lenient().when(rooms.findById(room.getId())).thenReturn(Optional.of(room));
         room.join(player2);
         character1Id = UUID.randomUUID();
         character2Id = UUID.randomUUID();

@@ -15,6 +15,7 @@ import com.jogodavelha.game.logic.GamePhase;
 import com.jogodavelha.game.logic.GameState;
 import com.jogodavelha.game.logic.GameStateManager;
 import com.jogodavelha.game.service.PlayerService;
+import com.jogodavelha.game.service.GameService;
 import com.jogodavelha.room.Room;
 import com.jogodavelha.room.RoomNotFoundException;
 import com.jogodavelha.room.RoomPlayerService;
@@ -189,6 +190,11 @@ public class RoomSnapshotService {
 
     private Map<Slot, Integer> creditedCoins(Game game) {
         RewardResult rewards = game.getRewardResult();
+        if (rewards == null && game.isRewardsGranted() && game.getEndReason() == GameEndReason.FORFEIT_TIMEOUT) {
+            boolean firstWins = game.getWinner().getId().equals(game.getPlayer1().getId());
+            return Map.of(Slot.P1, firstWins ? GameService.COINS_FORFEIT_WIN : 0,
+                    Slot.P2, firstWins ? 0 : GameService.COINS_FORFEIT_WIN);
+        }
         if (rewards == null) return null;
         return Map.of(Slot.P1, rewards.player1Reward(), Slot.P2, rewards.player2Reward());
     }

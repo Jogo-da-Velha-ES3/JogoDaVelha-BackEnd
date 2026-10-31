@@ -34,13 +34,14 @@ class TurnServiceTest {
     private SkillEngine engine;
     private long nowMillis;
     private GameState state;
+    private TaskScheduler scheduler;
 
     @SuppressWarnings({"uncheked", "rawtypes"})
     @BeforeEach
     void setUp() {
         manager = mock(GameStateManager.class);
         events = mock(ApplicationEventPublisher.class);
-        TaskScheduler scheduler = mock(TaskScheduler.class);
+        scheduler = mock(TaskScheduler.class);
         ScheduledFuture future = mock(ScheduledFuture.class);
         when(scheduler.schedule(any(Runnable.class), any(Instant.class))).thenReturn(future);
         engine = new SkillEngine(List.of(new HourglassEffect()), new GameValidator());
@@ -168,5 +169,35 @@ class TurnServiceTest {
         state.recordTimeout(p1);
         service.endPlayerAction(state, p1, 1_000);
         assertEquals(0, state.getConsecutiveTimeouts(p1));
+    }
+
+    @Test
+    void thirdTimeoutFinishesTheMatchWithoutPassingTurnOrSchedulingAnotherTimer() {
+        state.recordTimeout(p1);
+        state.recordTimeout(p1);
+        long deadline = state.getTurnDeadlineEpochMillis();
+        nowMillis = deadline;
+
+        service.expire(gameId, deadline);
+        service.expire(gameId, deadline);
+
+        assertEquals(GamePhase.FINISHED, state.getPhase());
+        assertEquals(3, state.getConsecutiveTimeouts(p1));
+        assertEquals(p1, state.getCurrentTurnPlayerId());
+        verify(scheduler, never()).schedule(any(Runnable.class), any(Instant.class));
+        verify(events, times(1)).publishEvent(org.mockito.ArgumentMatchers.<Object>argThat(value -> value instanceof TurnChangedEvent event
+                && p1.equals(event.timedOutPlayerId()) && !event.roundFinished()));
+    }
+
+    @Test
+    void draftAndRoundDrawTimeDoNotIncreaseTheTimeoutCount() {
+        state.setPhase(GamePhase.DRAFT);
+        state.recordTimeout(p1);
+        nowMillis = state.getTurnDeadlineEpochMillis();
+
+        service.expire(gameId, nowMillis);
+
+        assertEquals(1, state.getConsecutiveTimeouts(p1));
+        verifyNoInteractions(events);
     }
 }
