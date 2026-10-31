@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.random.RandomGenerator;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -375,6 +376,142 @@ class DraftServiceTest {
         service.expire(room, 21000);
         assertEquals(0, completedCount());
         verifyNoInteractions(random);
+    }
+
+    @Test
+    void selectCharacterReservesFreeCharacterAndPublishesProgress() {
+        service.start(room, "0042", p1, p2);
+
+        service.selectCharacter(room, p1, a);
+
+        assertEquals(a, snapshot().player1().characterId());
+        assertEquals(1, snapshot().version());
+        assertEquals(2, published.stream().filter(DraftUpdated.class::isInstance).count());
+    }
+
+    @Test
+    void selectCharacterRejectsOneReservedByTheOpponent() {
+        service.start(room, "0042", p1, p2);
+        service.selectCharacter(room, p1, a);
+        DraftState before = snapshot();
+
+        assertThrows(IllegalStateException.class, () -> service.selectCharacter(room, p2, a));
+
+        assertEquals(before, snapshot());
+        assertNull(snapshot().player2().characterId());
+    }
+
+    @Test
+    void selectCharacterRejectsOneOutsideTheInventory() {
+        service.start(room, "0042", p1, p2);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.selectCharacter(room, p1, UUID.randomUUID()));
+
+        assertNull(snapshot().player1().characterId());
+    }
+
+    @Test
+    void changingCharacterReleasesThePreviousOne() {
+        service.start(room, "0042", p1, p2);
+        service.selectCharacter(room, p1, a);
+        service.selectCharacter(room, p1, b);
+
+        assertDoesNotThrow(() -> service.selectCharacter(room, p2, a));
+
+        assertEquals(b, snapshot().player1().characterId());
+        assertEquals(a, snapshot().player2().characterId());
+    }
+
+    @Test
+    void repeatingTheSameSelectionPublishesNothingNew() {
+        service.start(room, "0042", p1, p2);
+        service.selectCharacter(room, p1, a);
+        long updates = published.stream().filter(DraftUpdated.class::isInstance).count();
+
+        service.selectCharacter(room, p1, a);
+
+        assertEquals(updates, published.stream().filter(DraftUpdated.class::isInstance).count());
+        assertEquals(1, snapshot().version());
+    }
+
+    @Test
+    void selectCharacterIsRejectedAfterConfirmationAndAtTheDeadline() {
+        service.start(room, "0042", p1, p2);
+        service.selectCharacter(room, p1, a);
+        service.updatePlayer(room, p1, player -> player.withSkills(List.of("BOMBA", "ESCUDO")));
+        assertThrows(IllegalStateException.class, () -> service.selectCharacter(room, p1, b));
+
+        now.set(21000);
+        assertThrows(IllegalStateException.class, () -> service.selectCharacter(room, p2, b));
+    }
+
+    @Test
+    void simultaneousRequestsForTheSameCharacterYieldASingleReservation() throws Exception {
+        service.start(room, "0042", p1, p2);
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        AtomicInteger attempts = new AtomicInteger();
+        when(redis.execute(any(RedisScript.class), eq(List.of(key)), anyString(), anyString(), anyString()))
+                .thenAnswer(invocation -> {
+                    if (attempts.incrementAndGet() <= 2) barrier.await(5, TimeUnit.SECONDS);
+                    return compareAndSet(invocation);
+                });
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> service.selectCharacter(room, p1, a));
+            var second = executor.submit(() -> service.selectCharacter(room, p2, a));
+            int successes = 0;
+            int conflicts = 0;
+            for (var result : List.of(first, second)) {
+                try {
+                    result.get(8, TimeUnit.SECONDS);
+                    successes++;
+                } catch (ExecutionException e) {
+                    assertInstanceOf(IllegalStateException.class, e.getCause());
+                    conflicts++;
+                }
+            }
+            assertEquals(1, successes);
+            assertEquals(1, conflicts);
+        }
+
+        long owners = Stream.of(snapshot().player1(), snapshot().player2()).filter(
+                player -> a.equals(player.characterId())
+        ).count();
+        assertEquals(1, owners);
+    }
+
+    @Test
+    void retryAfterAVersionConflictSeesTheCharacterTakenByTheOpponent() throws Exception {
+        service.start(room, "0042", p1, p2);
+        AtomicInteger attempts = new AtomicInteger();
+        when(redis.execute(any(RedisScript.class), eq(List.of(key)), anyString(), anyString(), anyString()))
+                .thenAnswer(invocation -> {
+                    if (attempts.incrementAndGet() == 1) {
+                        DraftState concurrent = snapshot().withPlayer(snapshot().player2().withCharacter(a)).withVersion(1);
+                        stored.set(mapper.writeValueAsString(concurrent));
+                        return 0L;
+                    }
+                    return compareAndSet(invocation);
+                });
+
+        assertThrows(IllegalStateException.class, () -> service.selectCharacter(room, p1, a));
+
+        assertNull(snapshot().player1().characterId());
+        assertEquals(a, snapshot().player2().characterId());
+    }
+
+    @Test
+    void autoCompletionDeliversTheCharacterOfBothPlayersToTheMatchOrchestration() {
+        service.start(room, "0042", p1, p2);
+        service.selectCharacter(room, p1, a);
+        now.set(21000);
+
+        service.expire(room, 21000);
+
+        DraftCompleted event = completedEvent();
+        assertEquals(a, event.players().get(0).characterId());
+        assertEquals(b, event.players().get(1).characterId());
     }
 
     private Long compareAndSet(InvocationOnMock invocation) throws Exception {

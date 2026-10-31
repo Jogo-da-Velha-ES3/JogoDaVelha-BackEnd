@@ -1,6 +1,7 @@
 package com.jogodavelha.game.draft;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jogodavelha.auth.UserRepository;
 import com.jogodavelha.character.Character;
 import com.jogodavelha.character.CharacterRepository;
 import com.jogodavelha.character.CharacterSymbol;
@@ -12,6 +13,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -20,8 +22,13 @@ import static org.mockito.Mockito.*;
 class DraftEventPublisherTest {
     private final CharacterRepository characters = mock(CharacterRepository.class);
     private final WebSocketService websocket = mock(WebSocketService.class);
-    private final DraftEventPublisher publisher = new DraftEventPublisher(websocket, characters,
-            Clock.fixed(Instant.ofEpochMilli(1000), ZoneOffset.UTC));
+    private final UserRepository users = mock(UserRepository.class);
+    private final DraftEventPublisher publisher = new DraftEventPublisher(
+            websocket,
+            characters,
+            Clock.fixed(Instant.ofEpochMilli(1000), ZoneOffset.UTC),
+            users
+    );
 
     @Test
     void publishesCharacterSymbolsAndReadinessWithoutPrivateChoices() throws Exception {
@@ -48,7 +55,7 @@ class DraftEventPublisherTest {
         assertEquals("O", json.path("payload").path("characters").path("P2").asText());
         assertTrue(json.path("payload").path("ready").path("P1").asBoolean());
         assertFalse(json.path("payload").path("ready").path("P2").asBoolean());
-        assertEquals(3, json.path("payload").size());
+        assertEquals(4, json.path("payload").size());
         assertFalse(json.toString().contains("BOMBA"));
         assertFalse(json.toString().contains("eligible"));
         assertFalse(json.toString().contains(x.toString()));
@@ -66,5 +73,24 @@ class DraftEventPublisherTest {
         verifyNoInteractions(characters);
         verify(websocket).sendToTopic(eq("/topic/rooms/0042"), argThat(message ->
                 ((DraftEventPublisher.Message) message).payload().characters().isEmpty()));
+    }
+
+    @Test
+    void nicknamesContainOnlyPlayersWhoChoseACharacter() {
+        UUID p1 = UUID.randomUUID(), p2 = UUID.randomUUID(), characterId = UUID.randomUUID();
+        var character = mock(com.jogodavelha.character.Character.class);
+        when(character.getId()).thenReturn(characterId);
+        when(character.getSymbol()).thenReturn(com.jogodavelha.character.CharacterSymbol.X);
+        when(characters.findAllById(any())).thenReturn(List.of(character));
+        when(users.findById(p1)).thenReturn(Optional.of(new com.jogodavelha.auth.User("ana", "h", "a@a.com")));
+
+        publisher.onDraftUpdated(new DraftUpdated(UUID.randomUUID(), "0042", 1L, 1L, List.of(
+                new DraftUpdated.PlayerStatus(p1, characterId, DraftState.Stage.SKILLS, false),
+                new DraftUpdated.PlayerStatus(p2, null, DraftState.Stage.CHARACTER, false))));
+
+        var captor = org.mockito.ArgumentCaptor.forClass(Object.class);
+        verify(websocket).sendToTopic(eq("/topic/rooms/0042"), captor.capture());
+        var message = (DraftEventPublisher.Message) captor.getValue();
+        assertEquals(java.util.Map.of("P1", "ana"), message.payload().nicknames());
     }
 }
