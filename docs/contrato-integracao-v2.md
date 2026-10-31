@@ -1,12 +1,10 @@
-﻿# Contrato de Integração Back-End × Front-End V2
+# Contrato de Integração Back-End × Front-End V2
 
 **Versão:** 2.0
 **Data de elaboração:** 26/10/2026
 **Fonte da verdade:** Implementação na branch `dev`
 **Documento anterior preservado:** `docs/contrato-integracao.md`
 
-**BE-013.1:** os trechos de sorteio por round abaixo estão implementados na PR #119,
-em revisão. As demais seções mantêm a referência da auditoria da `dev`.
 
 ---
 
@@ -1118,12 +1116,16 @@ identidade, como `playerId`, são ignorados.
 Envie com `content-type: application/json`:
 
 ```json
-{ "ability": "TORNADO" }
+{ "ability": "TORNADO", "abilityToRemove": "ESCUDO" }
 ```
 
 O código da sala tem quatro dígitos e o jogador precisa participar dela. A habilidade
-deve ser uma das três opções recebidas para aquele round. Só é aceita uma confirmação
-por jogador, antes do prazo de 8 segundos.
+`ability` deve ser uma das três opções recebidas para aquele round. A partir do segundo
+round, `abilityToRemove` é obrigatório e deve pertencer ao deck atual do jogador; no
+primeiro round, omita esse campo. A escolha manual substitui exatamente a habilidade
+indicada e mantém o deck com três habilidades. Só é aceita uma confirmação por jogador,
+antes do prazo de 8 segundos. Se o prazo vencer, o backend escolhe automaticamente uma
+opção e uma habilidade do deck a substituir.
 
 Erros são privados, em `/user/queue/errors`: `BAD_REQUEST` (400) para código ou
 habilidade inválidos; `FORBIDDEN` (403) para não participante; `CONFLICT` (409)
@@ -1202,6 +1204,9 @@ códigos de erro. O mesmo mapeamento consta no README.
 - Sincronização solicitada (`PlayerConnectionController.sync`)
 - Entrada de jogador na sala (`PlayerJoinedRoomEvent` via `RoomSnapshotEventPublisher`)
 - Atualização de Draft (`DraftUpdated` via `RoomSnapshotEventPublisher`)
+- Após jogada, habilidade ou timeout que encerre o turno e mantenha a partida em `PLAYING` (`TurnChangedEvent`)
+- Após mudança de round e liberação de turno (publicado pelo ciclo de vida/sorteio)
+- Encerramento definitivo: após `MATCH_END`, `MatchFinishedEvent` solicita o snapshot final antes da remoção do estado Redis
 
 **Destinatários:**
 - Público: `/topic/rooms/{code}` (snapshot sem campos privados)
@@ -1219,8 +1224,9 @@ códigos de erro. O mesmo mapeamento consta no README.
 **Formato do payload (RoomSnapshot):**
 ```json
 {
+  "gameId": "123e4567-e89b-12d3-a456-426614174003",
   "code": "0042",
-  "phase": "IN_GAME",
+  "phase": "PLAYING",
   "players": [
     {
       "slot": "P1",
@@ -1257,12 +1263,20 @@ códigos de erro. O mesmo mapeamento consta no README.
     { "index": 5, "owner": null, "effects": [] },
     { "index": 6, "owner": null, "effects": [] },
     { "index": 7, "owner": null, "effects": [] },
-    { "index": 8, "owner": null, "effects": [] }
+    { "index": 8, "owner": null, "effects": [] },
+    { "index": 9, "owner": null, "effects": [] },
+    { "index": 10, "owner": null, "effects": [] },
+    { "index": 11, "owner": null, "effects": [] },
+    { "index": 12, "owner": null, "effects": [] },
+    { "index": 13, "owner": null, "effects": [] },
+    { "index": 14, "owner": null, "effects": [] },
+    { "index": 15, "owner": null, "effects": [] }
   ],
   "turn": {
     "player": "P1",
     "startedAt": 1729934600000,
-    "durationSeconds": 30
+    "deadline": 1729934610000,
+    "durationSeconds": 10
   },
   "myDeck": [],
   "outcome": null,
@@ -1276,6 +1290,8 @@ códigos de erro. O mesmo mapeamento consta no README.
   "rematch": null
 }
 ```
+
+`gameId` identifica a partida atual (nulo antes de sua criação). `turn.deadline` é o prazo absoluto em milissegundos Unix epoch; `turn.startedAt` é o início calculado a partir do prazo menos a duração efetiva. A duração efetiva pode ser 10 segundos, 5 segundos na morte súbita ou reduzida pela Ampulheta.
 
 **Momento de publicação:**
 - Após persistência das mudanças (transação commitada)
@@ -1295,10 +1311,13 @@ códigos de erro. O mesmo mapeamento consta no README.
 - No snapshot privado, `mySlot` indica o slot do destinatário e `myDeck` contém o deck daquele jogador. Os demais campos também aparecem quando nulos.
 - Durante `ROUND_DRAW`, o snapshot privado contém `drawOptions:{options,deadline}`
   apenas para quem ainda não confirmou. Após confirmar, `drawOptions` é `null`
-  e `myDeck` contém as duas habilidades fixas e a sorteada. O adversário continua
+  e `myDeck` contém o deck atualizado do próprio jogador: no primeiro round são
+  as duas habilidades fixas e a sorteada; nos seguintes reflete a substituição.
+  O adversário continua
   recebendo somente as próprias opções e seu prazo original.
 - No snapshot público, `drawOptions` é sempre `null`, `mySlot` é `null` e `myDeck`
   é `[]`. A fase compartilhada pode ser `ROUND_DRAW`, mas as opções nunca são públicas.
+- `MATCH_END` mantém o envelope `{type,payload,serverTime}` e inclui `reason` com `NORMAL` ou `FORFEIT_TIMEOUT`, além de `winnerId`, `score` e `forfeit`. Este evento comunica vitória, empate e W.O. e é publicado uma única vez. Em seguida, `MatchFinishedEvent` dispara `ROOM_SNAPSHOT` público e individualizado para os dois jogadores, com `phase:"RESULT"` e `outcome` final; somente depois da publicação o servidor remove o estado Redis. Chamadas repetidas de finalização não duplicam `MATCH_END` nem o snapshot final.
 - Na fase `ROUND_DRAW`, `turn` é `null`: os 8 segundos de escolha não são um turno
   e não alteram os contadores de timeout. O Draft inicial concluído não substitui
   a fase da partida no snapshot.
@@ -1318,8 +1337,18 @@ códigos de erro. O mesmo mapeamento consta no README.
 - Implementado em `RoomSnapshotService` (linha 50-109)
 - Usa `@JsonInclude(JsonInclude.Include.ALWAYS)` para campos sempre presentes
 - `RoomPhase`: WAITING, MATCHED, DRAFT, VERSUS, ROUND_DRAW, PLAYING, ROUND_END, RESULT
-- `Outcome.kind`: "WIN", "ABSOLUTE_DRAW", "WO"
+- `Outcome.kind`: "WIN", "ABSOLUTE_DRAW", "WO"; `reason`: `NORMAL` ou `FORFEIT_TIMEOUT`; placar usa `[P1, P2]`
 - `CellEffect.kind`: "ESCUDO", "CONGELAR", "REFORCO"
+- `board` sempre contém 16 células, índices `0` a `15`. `owner: null` representa casa vazia; bloqueios por escudo e demais efeitos são descritos em `effects`.
+
+Exemplo de resultado por W.O. em `outcome` quando o snapshot é consultado após a finalização:
+```json
+{ "kind": "WO", "winner": "P2", "score": [1, 0], "reason": "FORFEIT_TIMEOUT" }
+```
+
+**Privacidade:** o tópico contém somente estado compartilhado; `mySlot` é `null`, `myDeck` é `[]` e `drawOptions` é `null`. Cada jogador recebe separadamente em `/user/queue/room` seu `mySlot`, deck e, enquanto ainda não escolheu, suas próprias três opções de sorteio. O snapshot privado do oponente nunca é enviado ao solicitante.
+
+**Métrica de latência:** `RoomSnapshotService.publish` mede com `System.nanoTime()` a composição e as chamadas de despacho ao broker, incluindo tópico público e filas privadas. Acima de 200 ms registra aviso. Essa medição não confirma entrega nem recebimento pelo navegador (não há ACK de cliente).
 
 ---
 
@@ -1372,7 +1401,7 @@ códigos de erro. O mesmo mapeamento consta no README.
 
 #### DRAW_OPTIONS e DECK_UPDATE — BE-013.1
 
-**Status:** Implementados na PR #119, em revisão.
+**Status:** Implementados.
 **Publicador:** `RoundSkillDrawService`.
 **Destino:** somente `/user/queue/room`, usando o UUID autenticado do destinatário.
 Nunca são publicados em `/topic/rooms/{code}`.
@@ -1386,7 +1415,13 @@ Nunca são publicados em `/topic/rooms/{code}`.
 ```
 
 São três códigos distintos do catálogo completo, podendo incluir habilidades não
-compradas e excluindo as duas fixas. `deadline` e `serverTime` são epoch millis.
+compradas e excluindo todo o deck atual e todas as habilidades já escolhidas pelo
+próprio jogador na partida (as iniciais e as escolhidas em sorteios anteriores,
+mesmo se substituídas). Opções oferecidas e não escolhidas podem aparecer em sorteios
+futuros. O histórico é independente por jogador. No primeiro round, o deck tem as
+duas habilidades iniciais e a escolhida é adicionada. Nos rounds seguintes, uma das
+três habilidades atuais é removida aleatoriamente e a escolhida é adicionada.
+`deadline` e `serverTime` são epoch millis.
 
 ```json
 {
@@ -1402,7 +1437,8 @@ compradas e excluindo as duas fixas. `deadline` e `serverTime` são epoch millis
 }
 ```
 
-Cada escolha salva publica um `DECK_UPDATE` ao dono. A segunda escolha não reenvia
+Cada escolha salva publica um `DECK_UPDATE` ao dono com exatamente três habilidades.
+A segunda escolha não reenvia
 os decks já publicados. Na expiração, somente quem recebeu uma escolha automática
 recebe o evento. Os snapshots privados continuam disponíveis para sincronização.
 
@@ -1546,60 +1582,26 @@ recebe o evento. Os snapshots privados continuam disponíveis para sincronizaç�
 - Deck do round é gravado no estado Redis
 - Até deck configurado, ativações de habilidade falham com `SKILL_NOT_IN_DECK`
 
-### 6.6 Início e Andamento da Partida
+### 6.6 Inicio e Andamento da Partida
 
-1. Ambos jogadores confirmam o Draft inicial. A BE-013.1 abre `ROUND_DRAW`, com
-   três opções privadas para cada jogador e prazo de 8 segundos. Quem não escolhe
-   recebe uma escolha automática entre suas opções. O tempo não conta para W.O.
-2. Depois de salvar os dois decks (duas fixas e uma sorteada), o evento interno
-   `RoundDrawCompleted` libera a fase `PLAYING` e o timer do turno. Isso se repete
-   a cada round, limpando consumo e efeitos sem zerar os contadores de timeout.
-3. Back-End publica `ROOM_SNAPSHOT` com tabuleiro vazio e turno do primeiro jogador
-4. Jogador da vez envia `SEND /app/game/{gameId}/move` com posição
-5. Back-End valida jogada via `MoveActionService`
-6. Back-End atualiza estado do jogo no Redis
-7. Back-End emite `TurnChangedEvent` (interna)
-8. Atualizações publicadas via broadcast (destino público pendente de alinhamento BE-024)
-9. Jogador pode ativar habilidade via `SEND /app/game/{gameId}/skill`
-10. Processamento similar, com validações específicas de habilidade
+1. Depois do Draft inicial e do sorteio, o ciclo de vida libera `PLAYING` e agenda o turno de 10 segundos (5 segundos na morte subita).
+2. Jogador da vez envia `SEND /app/game/{gameId}/move` com posicao ou ativa habilidade em `/app/game/{gameId}/skill`.
+3. O servidor valida e persiste a acao no Redis, entao `TurnService` publica `TurnChangedEvent`.
+4. `GameLifecycleService` executa primeiro (ordem 0), processando timeout/W.O. ou fim de round. O publicador do snapshot executa depois (ordem 1) e so publica se jogo e estado continuarem em `PLAYING`.
+5. `ROOM_SNAPSHOT` e publicado no topico compartilhado e em filas privadas individualizadas.
 
-**Observações:**
-- Turno tem deadline (30 segundos por padrão)
-- Timeout de turno é tratado pelo Back-End
-- Habilidades são validadas contra deck do round
+### 6.7 Atualizacoes do Tabuleiro
 
-### 6.7 Atualizações do Tabuleiro
-
-1. Jogada ou habilidade processada com sucesso
-2. Back-End atualiza estado do tabuleiro no Redis
-3. Back-End publica `ROOM_SNAPSHOT` com tabuleiro atualizado
-4. Snapshot inclui `board` com `Cell` objetos (index, owner, effects)
-5. Front-Envia atualiza UI com novo estado do tabuleiro
-6. Efeitos de células (ESCUDO, CONGELAR, REFORCO) incluídos
-
-**Observações:**
-- `Cell.owner`: null, "P1" ou "P2"
-- `Cell.effects`: lista de efeitos ativos com turnos restantes
-- Snapshot é fonte única de verdade para estado do tabuleiro
+Apos jogada ou habilidade valida, o `ROOM_SNAPSHOT` contem o estado atualizado. `board` tem 16 celulas de indices 0 a 15; `owner` e `null`, `P1` ou `P2`; `effects` inclui efeitos ativos como `ESCUDO`, `CONGELAR` e `REFORCO`. Bloqueios permanecem representados pelo efeito correspondente, preservando as regras do dominio.
 
 ### 6.8 Encerramento de Rodada e Partida
 
-1. Vitória, empate ou timeout detectado
-2. Back-End finaliza rodada
-3. Back-End publica `ROOM_SNAPSHOT` com fase ROUND_END
-4. Back-End calcula recompensas e atualiza placar
-5. Se partida não finalizada, inicia nova rodada
-6. Se partida finalizada, muda fase para RESULT
-7. Back-End publica `ROOM_SNAPSHOT` com `outcome` preenchido
-8. Back-End grava resultado em histórico
-9. Front-Envia mostra tela de resultado
+1. Ao terminar um round, `ROUND_END` e publicado e o ciclo inicia o sorteio do proximo round; o snapshot atualizado e publicado na abertura do sorteio e na liberacao do turno.
+2. Ao encerrar definitivamente, `MATCH_END` e publicado uma unica vez, com placar, `winnerId`, `forfeit` e `reason` (`NORMAL` ou `FORFEIT_TIMEOUT`). O evento identifica vitoria, empate ou W.O.
+3. `MatchFinishedEvent` aciona um `ROOM_SNAPSHOT` final no topico publico e nas filas privadas dos dois jogadores, enquanto o estado Redis ainda existe. O snapshot tem fase `RESULT`, inclui `outcome` final e nao apresenta turno ativo.
+4. Apos a publicacao do snapshot final, o estado Redis e removido. Repeticoes do fluxo limpam o estado sem republicar `MATCH_END` ou o snapshot.
 
-**Observações:**
-- `Outcome.kind`: "WIN", "ABSOLUTE_DRAW" ou "WO"
-- `Outcome.winner`: "P1" ou "P2" (null para empate)
-- `Outcome.score`: lista de placar [p1, p2]
-- Recompensas em moedas enviadas via `coins` no snapshot
-
+O `Outcome` presente em snapshots de composicao/sincronizacao e no snapshot final identifica `WIN`, `ABSOLUTE_DRAW` ou `WO`, inclui placar `[P1, P2]` e `reason`. O resultado final em tempo real tambem e comunicado pelo evento `MATCH_END`.
 ### 6.9 Desconexão e Reconexão de Jogadores
 
 1. Conexão WebSocket perdida
@@ -1743,18 +1745,27 @@ recebe o evento. Os snapshots privados continuam disponíveis para sincronizaç�
 
 ### 7.7 Regras de Turno
 
-**Duração padrão:** 30 segundos (configurável)
+**Duração:** 10 segundos por turno; 5 segundos na morte súbita e para o jogador sob Ampulheta.
 
 **Timeout:**
 - Turno encerrado automaticamente após deadline
 - Jogador perde ação do turno
 - Consecutive timeouts incrementados
-- Múltiplos timeouts podem resultar em W.O.
+- Três timeouts consecutivos do mesmo jogador encerram a partida inteira por W.O.
+- Jogada ou habilidade válida zera somente o contador de quem agiu. Mudar de round
+  não zera os contadores. Auto-escolhas do Draft e do sorteio não contam como timeout.
+- O terceiro timeout não passa a vez nem agenda outro turno. A persistência usa
+  `Game.forfeit(loser)`, com `end_reason=FORFEIT_TIMEOUT`.
+- `MATCH_END`, em `/topic/rooms/{code}`, mantém a indicação `forfeit:true`,
+  `winnerId` e `coinsCredited` por UUID. O snapshot final tem `phase:"RESULT"`,
+  `outcome:{kind:"WO",winner:"P1"}` (ou `P2`) e as moedas por slot; ele é enviado
+  aos dois jogadores antes da remoção do estado Redis. `MATCH_END` e o snapshot
+  final são publicados apenas uma vez, mesmo se a finalização for repetida.
 
 **Implementação:** `GameState.getTurnDeadlineEpochMillis()` e `GameState.getTurnDurationMillis()`
 
 **Uso:**
-- `Turn` object em `ROOM_SNAPSHOT` inclui `startedAt` e `durationSeconds`
+- `Turn` em `ROOM_SNAPSHOT` inclui `startedAt`, prazo absoluto `deadline` (epoch millis) e `durationSeconds`
 - Front-Envia deve mostrar countdown e bloquear ações após timeout
 
 ### 7.8 Regras de Recompensa
@@ -1763,6 +1774,11 @@ recebe o evento. Os snapshots privados continuam disponíveis para sincronizaç�
 - Calculadas ao final da partida
 - Baseadas em resultado e performance
 - Enviadas via `coins` field em `ROOM_SNAPSHOT` quando partida finalizada
+- W.O. por inatividade: 30 coins ao vencedor e 0 ao perdedor. A concessão usa o
+  controle existente de recompensas para não pagar novamente em eventos repetidos.
+- Ao sincronizar uma partida já encerrada por W.O., o snapshot reconstrói
+  `coins:{P1:30,P2:0}` (ou o inverso) após confirmar `rewardsGranted`, sem depender
+  do resultado transitório da operação de pagamento.
 
 **Implementação:** `RewardResult` (linha 172-176 de `RoomSnapshotService.java`)
 
@@ -2047,9 +2063,9 @@ Durante a auditoria, as seguintes verificações foram executadas:
 
 ### 10.3 Limitações da Auditoria
 
-- **Testes não executados:** Testes foram listados mas não executados
-- **Integração real não testada:** Apenas análise estática de código
-- **Endpoint de gameplay broadcast:** Destino público final pendente de alinhamento com front (BE-024)
+- **Validação BE-024:** 603 testes passaram, incluindo testes unitários de snapshots/ciclo de vida e testes STOMP existentes; `mvn clean verify` concluiu com sucesso.
+- **Integração real de snapshot após ação de gameplay não verificada com dois clientes STOMP:** Os testes STOMP existentes cobrem autenticação, associação ao tópico e privacidade do sorteio; o broadcast de gameplay é validado nos testes de serviço/event listener.
+- O gameplay usa `/topic/rooms/{code}` com `ROOM_SNAPSHOT`, alinhado ao contrato V2 nesta implementação.
 - **Draft de personagens:** Fluxo de seleção de personagens não detalhado (pode estar em outra parte do código)
 - **Loja:** Endpoints de compra não implementados (BE-029 planejado)
 
@@ -2058,7 +2074,6 @@ Durante a auditoria, as seguintes verificações foram executadas:
 - X e O são atribuídos a todo jogador por padrão (RN-LOJ-01)?
 - Destino público de atualizações de gameplay (BE-024)
 - Fluxo completo de seleção de personagens no Draft
-- Detalhes de implementação de W.O. em partida
 - Detalhes de implementação de rematch
 
 ### 10.5 Compatibilidade com Front-End

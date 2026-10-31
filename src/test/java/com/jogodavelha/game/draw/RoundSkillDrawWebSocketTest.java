@@ -102,9 +102,11 @@ class RoundSkillDrawWebSocketTest {
         @Bean GameStateManager states() {
             var states = mock(GameStateManager.class);
             var state = GameState.builder().gameId(GAME).player1Id(P1).player2Id(P2)
-                    .roundNumber(1).phase(GamePhase.DRAFT).build();
+                    .roundNumber(2).phase(GamePhase.DRAFT).build();
             state.setInitialSkills(P1, List.of("BOMBA", "ESCUDO"));
             state.setInitialSkills(P2, List.of("SILENCIO", "CONGELAR"));
+            state.setRoundSkillDeck(P1, List.of("BOMBA", "ESCUDO", "AMPULHETA"));
+            state.setRoundSkillDeck(P2, List.of("SILENCIO", "CONGELAR", "AMPULHETA"));
             when(states.find(GAME)).thenReturn(Optional.of(state));
             doAnswer(call -> {
                 Function<GameState, GameState> update = call.getArgument(1);
@@ -136,7 +138,7 @@ class RoundSkillDrawWebSocketTest {
         var opponent = subscribe(second, "/user/queue/room", P2);
         var stranger = subscribe(outsider, "/user/queue/room", strangerId);
         var publicEvents = subscribe(first, "/topic/rooms/0042", P1);
-        draws.beginRound(GAME, 1, P1, P2);
+        draws.beginRound(GAME, 2, P1, P2);
 
         var firstOptions = receive(own);
         var secondOptions = receive(opponent);
@@ -148,12 +150,17 @@ class RoundSkillDrawWebSocketTest {
         var headers = new StompHeaders();
         headers.setDestination("/app/rooms/0042/draw/pick");
         headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
-        first.send(headers, ("{\"ability\":\"" + ability + "\",\"playerId\":\"" + P2 + "\"}").getBytes(StandardCharsets.UTF_8));
+        first.send(headers, ("{\"ability\":\"" + ability + "\",\"abilityToRemove\":\"BOMBA\",\"playerId\":\"" + P2 + "\"}").getBytes(StandardCharsets.UTF_8));
 
         var deck = receive(own);
         assertEquals("DECK_UPDATE", deck.path("type").asText());
         assertEquals(3, deck.path("payload").path("deck").size());
-        assertEquals(ability, states.find(GAME).orElseThrow().getRoundDraw().players().get(P1).selected());
+        var state = states.find(GAME).orElseThrow();
+        assertEquals(ability, state.getRoundDraw().players().get(P1).selected());
+        assertEquals(3, state.getRoundSkillDecks().get(P1).size());
+        assertFalse(state.getRoundSkillDecks().get(P1).contains("BOMBA"));
+        assertTrue(state.getRoundSkillDecks().get(P1).contains(ability));
+        assertEquals(Set.of("SILENCIO", "CONGELAR", "AMPULHETA"), state.getRoundSkillDecks().get(P2));
         assertNull(states.find(GAME).orElseThrow().getRoundDraw().players().get(P2).selected());
         assertFalse(states.find(GAME).orElseThrow().getRoundDraw().completed());
         assertNull(opponent.poll(200, TimeUnit.MILLISECONDS));

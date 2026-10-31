@@ -20,6 +20,14 @@ public interface GameRepository extends JpaRepository<Game, UUID> {
 
     Optional<Game> findByRoomIdAndStatus(UUID roomId, GameStatus status);
 
+    @Query("SELECT g.status AS status, g.room.code AS roomCode FROM Game g WHERE g.id = :id")
+    Optional<SnapshotRoute> findSnapshotRouteById(@Param("id") UUID id);
+
+    interface SnapshotRoute {
+        GameStatus getStatus();
+        String getRoomCode();
+    }
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT g FROM Game g WHERE g.id = :id")
     Optional<Game> findByIdForUpdate(@Param("id") UUID id);
