@@ -12,8 +12,7 @@ import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class PasswordResetServiceTest {
@@ -24,8 +23,7 @@ class PasswordResetServiceTest {
     private final PasswordEncoder encoder = new BCryptPasswordEncoder();
     private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
     private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
-    private final PasswordResetService service =
-            new PasswordResetService(users, tokens, encoder, events, clock);
+    private final PasswordResetService service = new PasswordResetService(users, tokens, encoder, events, clock);
     private final User user = new User("ana", encoder.encode("senhaAntiga1"), "ana@example.com");
 
     PasswordResetServiceTest() {
@@ -41,11 +39,26 @@ class PasswordResetServiceTest {
     void validTokenChangesPassword() {
         PasswordResetToken t = token("raw", NOW.plusSeconds(600));
         when(tokens.findByTokenHash(PasswordResetService.sha256("raw"))).thenReturn(Optional.of(t));
+        when(tokens.consume(any(), eq(NOW))).thenReturn(1);
+        when(users.findById(user.getId())).thenReturn(Optional.of(user));
 
         service.reset("raw", "novaSenha123", "novaSenha123");
 
         assertTrue(encoder.matches("novaSenha123", user.getPasswordHash()));
         assertFalse(encoder.matches("senhaAntiga1", user.getPasswordHash()));
         verify(tokens).invalidateActiveFor(user.getId(), NOW);
+    }
+
+    @Test
+    void secondConcurrentRequestIsRejectedWhenConsumeUpdatesNoRow() {
+        PasswordResetToken t = token("raw", NOW.plusSeconds(600));
+        when(tokens.findByTokenHash(PasswordResetService.sha256("raw"))).thenReturn(Optional.of(t));
+        when(tokens.consume(any(), eq(NOW))).thenReturn(0);
+
+        assertThrows(InvalidResetTokenException.class,
+                () -> service.reset("raw", "novaSenha123", "novaSenha123")
+        );
+
+        assertTrue(encoder.matches("senhaAntiga1", user.getPasswordHash()));
     }
 }

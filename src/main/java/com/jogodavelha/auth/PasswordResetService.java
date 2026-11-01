@@ -49,6 +49,12 @@ public class PasswordResetService {
         PasswordResetToken token = tokens.findByTokenHash(sha256(rawToken))
                 .filter(t -> t.isUsable(now))
                 .orElseThrow(InvalidResetTokenException::new);
+
+        // Consumo atômico: só uma das requisições concorrentes obtém 1 linha.
+        if (tokens.consume(token.getId(), now) != 1) {
+            throw new InvalidResetTokenException();
+        }
+
         User user = token.getUser();
         user.setPasswordHash(encoder.encode(newPassword));
         tokens.invalidateActiveFor(user.getId(), now); // invalida este e quaisquer outros
