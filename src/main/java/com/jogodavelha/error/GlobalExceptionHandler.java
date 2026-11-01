@@ -1,6 +1,7 @@
 package com.jogodavelha.error;
 
 import com.jogodavelha.auth.*;
+import com.jogodavelha.shop.ShopException;
 import com.jogodavelha.room.RoomAlreadyStartedException;
 import com.jogodavelha.room.RoomFullException;
 import com.jogodavelha.room.RoomNotFoundException;
@@ -29,6 +30,11 @@ import java.util.Map;
 @Slf4j
 @RestControllerAdvice(basePackages = "com.jogodavelha")
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
+
+    @ExceptionHandler(ShopException.class)
+    public ResponseEntity<ApiError> handleShop(ShopException ex, HttpServletRequest request) {
+        return build(ex.getCode(), ex.getMessage(), ex.getStatus(), request);
+    }
 
     @ExceptionHandler(UsernameAlreadyExistsException.class)
     public ResponseEntity<ApiError> handleUsernameExists(UsernameAlreadyExistsException ex, HttpServletRequest request) {

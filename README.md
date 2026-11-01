@@ -1,6 +1,48 @@
 # JogoDaVelha-BackEnd
 Backend de um projeto acadêmico de Engenharia de Software III — Jogo da Velha inovador multiplayer
 
+## Loja (BE-029)
+
+Todas as rotas abaixo exigem JWT e usam o usuário autenticado. As categorias são
+`characters`, `skills` e `avatars`; `itemId` é o UUID retornado pelo catálogo.
+
+| Método | Rota | Uso |
+| --- | --- | --- |
+| GET | `/api/shop/{category}` | Catálogo com preço, posse e equipamento |
+| GET | `/api/shop/{category}/inventory` | Itens próprios da categoria |
+| POST | `/api/shop/{category}/{itemId}/purchase` | Compra com Coins |
+| PUT | `/api/shop/{category}/{itemId}/equip` | Equipar personagem ou avatar |
+
+Compra, débito e extrato fazem parte da mesma transação. Compras do mesmo usuário
+usam bloqueio no PostgreSQL para evitar cobrança duplicada e gasto do mesmo saldo
+em pedidos simultâneos. Itens já adquiridos retornam conflito, sem novo débito.
+Os inventários anteriores de personagens e habilidades continuam disponíveis.
+
+O equipamento fica em `user_equipment`, separado do personagem do Draft e do
+favorito calculado pelo histórico. Habilidades são escolhidas no Draft, mantendo
+o limite de duas iniciais. O perfil e `RoomPlayerService` consultam o mesmo avatar;
+a loja não publica eventos STOMP nem altera o formato de `ROOM_SNAPSHOT`.
+
+A V23 cria catálogo, posse e equipamento de avatares, sem alterar migrations
+anteriores. O catálogo inicial contém apenas `DEFAULT`, gratuito e disponível a
+todos; este código também é o fallback para quem não equipou avatar. Outros
+códigos, imagens e preços de avatares ainda precisam ser definidos com o front.
+O backend retorna o código do avatar, não uma URL de imagem.
+
+Erros da loja seguem `ApiError`:
+
+| Código | HTTP | Uso |
+| --- | ---: | --- |
+| `SHOP_INVALID_REQUEST` | 400 | Categoria inválida ou tentativa de equipar habilidade |
+| `SHOP_ITEM_NOT_FOUND` | 404 | Item não existe na categoria |
+| `SHOP_ITEM_ALREADY_OWNED` | 409 | Item já pertence ao jogador |
+| `INSUFFICIENT_COINS` | 409 | Saldo insuficiente |
+| `SHOP_ITEM_NOT_OWNED` | 403 | Tentativa de equipar item sem posse |
+
+Testes locais: `./mvnw test`. Para validar as migrations e compras concorrentes
+somente em PostgreSQL descartável: `./mvnw test -Dtest=ShopPersistenceIT` (Docker).
+O teste não lê `DB_URL` ou `.env` e não conecta no banco do projeto.
+
 ## 📋 Visão Geral
 
 Backend de jogo da velha multiplayer por turnos usando Spring Boot + Maven, seguindo uma arquitetura modular com PostgreSQL para dados persistentes e Redis para gerenciamento de estado rápido/temporário.

@@ -36,7 +36,8 @@ class RoomSnapshotServiceTest {
     private final GameRepository games = mock(GameRepository.class);
     private final DraftStateManager drafts = mock(DraftStateManager.class);
     private final GameStateManager gameStates = mock(GameStateManager.class);
-    private final RoomPlayerService roomPlayers = spy(new RoomPlayerService());
+    private final RoomPlayerService roomPlayers = spy(new RoomPlayerService(
+            mock(com.jogodavelha.avatar.AvatarService.class)));
     private final PlayerService playerService = mock(PlayerService.class);
     private final CharacterRepository characters = mock(CharacterRepository.class);
     private final WebSocketService websocket = mock(WebSocketService.class);

@@ -1,6 +1,7 @@
 package com.jogodavelha.profile;
 
 import com.jogodavelha.auth.User;
+import com.jogodavelha.avatar.AvatarService;
 import com.jogodavelha.auth.UserRepository;
 import com.jogodavelha.character.Character;
 import com.jogodavelha.character.CharacterRepository;
@@ -27,6 +28,7 @@ public class ProfileService {
     private final UserRepository userRepository;
     private final UserStatsRepository userStatsRepository;
     private final CharacterRepository characterRepository;
+    private final AvatarService avatars;
 
     public ProfileResponse getProfile(UUID userId) {
 
@@ -39,7 +41,7 @@ public class ProfileService {
         return new ProfileResponse(
                 user.getUsername(),
                 user.getCoinsBalance(),
-                null,
+                avatars.equippedCode(userId),
                 favoriteCharacter
         );
     }

@@ -10,6 +10,11 @@ public class CoinTransactionService {
 
     private final CoinTransactionRepository repository;
 
+    public void registerDebit(User user, int amount, String source) {
+        repository.save(new CoinTransaction(user, CoinTransactionType.DEBIT,
+                amount, user.getCoinsBalance(), source));
+    }
+
     public void registerCredit(
             User user,
             int amount,
