@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -31,6 +32,7 @@ class AuthControllerTest {
 
     @Autowired MockMvc mvc;
     @MockitoBean AuthService authService;
+    @MockitoBean PasswordResetService passwordResetService;
 
     private static final String REGISTER_URL = "/api/auth/register";
     private static final String LOGIN_URL = "/api/auth/login";
@@ -131,5 +133,31 @@ class AuthControllerTest {
                         .content("{\"identifier\":\"\",\"password\":\"\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fields.identifier").exists());
+    }
+
+    @Test
+    void forgotPasswordAlwaysReturns200() throws Exception {
+        mvc.perform(post("/api/auth/forgot-password").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"user@example.com\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").exists());
+    }
+
+    @Test
+    void resetPasswordWithInvalidTokenReturns400() throws Exception {
+        doThrow(new InvalidResetTokenException()).when(passwordResetService).reset(any(), any(), any());
+        mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"x\",\"newPassword\":\"segredo123\",\"confirmPassword\":\"segredo123\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_RESET_TOKEN"));
+    }
+
+    @Test
+    void resetPasswordMismatchReturns400() throws Exception {
+        doThrow(new PasswordMismatchException()).when(passwordResetService).reset(any(), any(), any());
+        mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"x\",\"newPassword\":\"segredo123\",\"confirmPassword\":\"outra123\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PASSWORD_MISMATCH"));
     }
 }

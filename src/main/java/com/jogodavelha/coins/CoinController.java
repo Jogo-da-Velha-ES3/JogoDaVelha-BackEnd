@@ -1,5 +1,6 @@
 package com.jogodavelha.coins;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -15,6 +16,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/coins")
 @RequiredArgsConstructor
+@Tag(name = "Coin", description = "Gerenciamento de saldo e compra de pacotes de moedas")
 public class CoinController {
 
     private final CoinService coinService;
