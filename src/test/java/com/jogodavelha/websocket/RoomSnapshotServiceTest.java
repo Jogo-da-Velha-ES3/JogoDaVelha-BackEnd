@@ -166,6 +166,42 @@ class RoomSnapshotServiceTest {
     }
 
     @Test
+    void recoverySnapshotPreservesBoardTurnAndAbsoluteDeadline() throws Exception {
+        RoomFixture fixture = activeRoom(false);
+        UUID gameId = UUID.randomUUID();
+        Game game = new Game(fixture.room(), fixture.host());
+        game.setPlayer2(fixture.guest());
+        setId(game, gameId);
+        when(games.findByRoomIdAndStatus(fixture.room().getId(), GameStatus.IN_PROGRESS))
+                .thenReturn(Optional.of(game));
+        long deadline = 50_000;
+        GameState state = GameState.builder().gameId(gameId).board("X---------------")
+                .player1Id(fixture.host().getId()).player2Id(fixture.guest().getId())
+                .firstPlayerId(fixture.host().getId()).currentTurnPlayerId(fixture.guest().getId())
+                .turnDurationMillis(10_000).turnDeadlineEpochMillis(deadline)
+                .roundNumber(2).phase(GamePhase.PLAYING).build();
+        when(gameStates.find(gameId)).thenReturn(Optional.of(state));
+
+        snapshots.publish("0042");
+
+        var captor = org.mockito.ArgumentCaptor.forClass(Object.class);
+        verify(websocket, times(2)).sendToUser(anyString(), eq("/queue/room"), captor.capture());
+        var snapshotsSent = captor.getAllValues().stream()
+                .map(value -> (RoomSnapshotService.SnapshotEnvelope) value)
+                .toList();
+        var p1Snapshot = snapshotsSent.stream()
+                .filter(value -> value.payload().mySlot() == RoomSnapshotService.Slot.P1)
+                .findFirst().orElseThrow().payload();
+        assertEquals(RoomSnapshotService.Slot.P2, p1Snapshot.turn().player());
+        assertEquals(40_000, p1Snapshot.turn().startedAt());
+        assertEquals(deadline, p1Snapshot.turn().deadline());
+        assertEquals(RoomSnapshotService.Slot.P1, p1Snapshot.board().getFirst().owner());
+        assertEquals("X---------------", state.getBoard());
+        assertEquals(deadline, state.getTurnDeadlineEpochMillis());
+        assertEquals(2, state.getRoundNumber());
+    }
+
+    @Test
     void syncRejectsNonParticipantWithoutPublishing() {
         RoomFixture fixture = activeRoom(true);
 

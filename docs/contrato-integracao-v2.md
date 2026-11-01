@@ -1002,20 +1002,25 @@ Authorization: Bearer <jwt_token>
 - Principal deve ser não-nulo
 - Principal deve ser UUID válido
 - SessionId deve estar presente
+- Código deve conter quatro dígitos e o Principal deve pertencer à sala ativa
 
 **Processamento:**
-- Registro da sessão em `PlayerSessionRegistry.register`
-- Marcação de jogador conectado via `PlayerService.markConnected`
-- Publicação de `ROOM_SNAPSHOT` via `RoomSnapshotService.publish` (se disponível)
+- Associação da sessão ao jogador e ao slot real (`P1`/`P2`) em `PlayerSessionRegistry`
+- Marcação da presença no Redis via `PlayerService.markConnected`, com TTL
+- Em reconexão após desconexão, emissão de `PLAYER_RECONNECTED` somente ao adversário
+- Publicação de `ROOM_SNAPSHOT` via `RoomSnapshotService.publish`
 
 **Resposta/Eventos resultantes:**
 - `ROOM_SNAPSHOT` publicado em `/topic/rooms/{code}` (público)
 - `ROOM_SNAPSHOT` enviado para `/user/queue/room` (privado para cada jogador)
+- `PLAYER_RECONNECTED` enviado para `/user/queue/room` somente ao adversário, quando aplicável
 
 **Regras e observações:**
 - Identidade vem do `Principal` estabelecido no CONNECT
+- O `slot` e o adversário são derivados da associação persistida da sala; não são recebidos do cliente
+- Repetir o SEND não repete a transição nem a notificação de presença
 - **BREAKING:** Não envie `playerId` no corpo (campo ignorado se presente)
-- `RoomSnapshotService` é opcional (injetado via `@Autowired(required = false)`)
+- A composição e a publicação do snapshot continuam centralizadas em `RoomSnapshotService`
 
 ---
 
@@ -1569,6 +1574,50 @@ recebe o evento. Os snapshots privados continuam disponíveis para sincronizaç�
 - Verifica `RoomCodeAllocator.ACTIVE`
 - Rejeita com `AccessDeniedException` se não pertencer
 
+### 5.8 Eventos de desconexão e reconexão (BE-025)
+
+As transições de presença são enviadas apenas ao adversário, pela fila privada autenticada
+`/user/queue/room`. Elas não são publicadas no tópico compartilhado
+`/topic/rooms/{code}`, pois esse tópico também entrega a mensagem ao jogador que originou
+a transição.
+
+| `type` | Quando é emitido | Destinatário |
+| --- | --- | --- |
+| `PLAYER_DISCONNECTED` | A última sessão STOMP do jogador na sala é encerrada | Adversário da sala |
+| `PLAYER_RECONNECTED` | O jogador volta a conectar após estar marcado como desconectado | Adversário da sala |
+
+Envelope:
+
+```json
+{
+  "type": "PLAYER_DISCONNECTED",
+  "payload": {
+    "roomCode": "0042",
+    "slot": "P1"
+  },
+  "serverTime": 1793400000000
+}
+```
+
+`PLAYER_RECONNECTED` usa o mesmo payload. `slot` é o slot real do jogador que mudou de
+presença (`P1` ou `P2`); `serverTime` é um timestamp epoch em milissegundos. O jogador
+reconectado solicita/recebe o `ROOM_SNAPSHOT` pelo fluxo existente, enquanto a notificação
+de presença vai somente ao adversário.
+
+O estado de presença fica em chaves Redis separadas do estado da partida. O TTL padrão é
+300.000 ms (`GAME_PRESENCE_TTL`) e as sessões ativas renovam a presença a cada 30.000 ms
+(`GAME_PRESENCE_REFRESH_INTERVAL`). O broker simples negocia heartbeats de 10.000 ms com
+um `TaskScheduler`; a detecção de quedas abruptas depende de o cliente solicitar/enviar
+heartbeats STOMP compatíveis (`heartbeatIncoming` e `heartbeatOutgoing`). Heartbeats não
+alteram o prazo nem os contadores de timeout da partida. Desconexões duplicadas e o
+encerramento de uma sessão enquanto outra do mesmo jogador permanece ativa não geram uma
+transição lógica duplicada.
+
+O registro de sessões e o broker STOMP simples são locais à instância do Back-End. A
+contagem de sessões simultâneas está coberta dentro de uma instância; uma implantação
+com múltiplas instâncias requer broker e coordenação de sessões distribuídos, ainda não
+implementados.
+
 ---
 
 ## 6. Fluxos Completos de Integração
@@ -1597,13 +1646,15 @@ recebe o evento. Os snapshots privados continuam disponíveis para sincronizaç�
 5. Front-Envia envia frame CONNECT com `Authorization: Bearer <token>`
 6. Back-End valida token via `StompJwtAuthenticationInterceptor`
 7. Front-Envia envia `SEND /app/rooms/{code}/connect`
-8. Back-End registra sessão e marca jogador conectado
+8. Back-End valida o pertencimento à sala, registra a sessão autenticada e atualiza a presença com TTL
 9. Back-End publica `ROOM_SNAPSHOT` em `/topic/rooms/{code}` e `/user/queue/room`
 10. Front-End assina `/topic/rooms/{code}` e `/user/queue/room`
 11. Front-Envia atualiza UI com snapshot recebido
 
 **Observações:**
 - Identidade do jogador vem do JWT, não do corpo da mensagem
+- Em reconexão, o snapshot contém o estado autoritativo atual; tabuleiro, turno e prazo não são reinicializados
+- Eventos de presença são privados para o adversário; quedas abruptas dependem da negociação de heartbeats pelo cliente
 - Segundo jogador entra via `POST /api/rooms/{code}/join`
 
 ### 6.3 Conexão STOMP e Sincronização Inicial
@@ -1617,7 +1668,8 @@ recebe o evento. Os snapshots privados continuam disponíveis para sincronizaç�
 7. Front-Envia atualiza estado com snapshot
 
 **Observações:**
-- Se conexão for perdida, usar `SEND /app/rooms/{code}/sync` para resincronizar
+- Se conexão for perdida, a última sessão encerrada atualiza a presença e notifica o adversário; ao reconectar, o SEND `/app/rooms/{code}/connect` publica o snapshot autoritativo
+- `SEND /app/rooms/{code}/sync` continua disponível para resincronização sob demanda
 - Snapshot privado inclui deck e campos específicos do usuário
 
 ### 6.4 Entrada do Segundo Jogador
