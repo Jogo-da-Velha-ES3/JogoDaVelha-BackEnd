@@ -33,7 +33,7 @@ public class PasswordResetMailer {
                     + "\n\nSe você não solicitou, ignore este e-mail.");
             mailSender.send(msg);
         } catch (Exception e) {
-            log.error("Falha ao enviar e-mail de recuperação"); // sem token nem endereço
+            log.error("Falha ao enviar e-mail de recuperação", e); // sem token nem endereço
         }
     }
 
