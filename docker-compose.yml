@@ -51,6 +51,8 @@ services:
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,https://jogodavelha-frontend.vercel.app,https://jogodavelha-frontend-dev.vercel.app,https://*.vercel.app}
       GAME_STATE_TTL: ${GAME_STATE_TTL}
       GAME_STATE_UPDATE_MAX_RETRIES: ${GAME_STATE_UPDATE_MAX_RETRIES}
+      GAME_PRESENCE_TTL: ${GAME_PRESENCE_TTL:-300000}
+      GAME_PRESENCE_REFRESH_INTERVAL: ${GAME_PRESENCE_REFRESH_INTERVAL:-30000}
       FRONTEND_RESET_PASSWORD_URL: ${FRONTEND_RESET_PASSWORD_URL:-http://localhost:3000/reset-password}
       PASSWORD_RESET_TTL_MINUTES: ${PASSWORD_RESET_TTL_MINUTES:-30}
       MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
