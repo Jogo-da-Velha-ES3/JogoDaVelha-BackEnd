@@ -1,24 +1,22 @@
 package com.jogodavelha.room;
 
 import com.jogodavelha.auth.User;
+import com.jogodavelha.avatar.AvatarService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /** Fonte única dos dados dos jogadores da sala (reutilizável por eventos e snapshot). */
 @Service
+@RequiredArgsConstructor
 public class RoomPlayerService {
+    private final AvatarService avatars;
 
     public RoomPlayerInfo info(User user) {
-        return new RoomPlayerInfo(user.getId(), user.getUsername(), equippedAvatar(user));
+        return new RoomPlayerInfo(user.getId(), user.getUsername(), avatars.equippedCode(user.getId()));
     }
 
     public RoomPlayerInfo host(Room room) {
         return info(room.getPlayer1());
     }
 
-    /** Avatar equipado (cosmético do inventário, distinto do personagem do Draft).
-     *  Ainda não existe fonte de dados (o perfil o expõe como null); devolve null.
-     *  Quando a loja/inventário o implementar, delegar a ele aqui, em um único ponto. */
-    private String equippedAvatar(User user) {
-        return null;
-    }
 }
