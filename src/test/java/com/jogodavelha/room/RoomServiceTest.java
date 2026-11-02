@@ -26,7 +26,7 @@ class RoomServiceTest {
     private final RoomCodeAllocator allocator = spy(new RoomCodeAllocator(rooms, games, mock(JdbcTemplate.class)));
     private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
     private final RoomService service = new RoomService(rooms, users, allocator, events,
-            new RoomPlayerService(mock(com.jogodavelha.avatar.AvatarService.class)));
+            new RoomPlayerService(mock(com.jogodavelha.avatar.AvatarService.class)), games);
     private final User owner = player("owner");
     private final User guest = player("guest");
     private final Room room = new Room("0042", owner);
@@ -266,5 +266,28 @@ class RoomServiceTest {
         assertEquals(RoomStatus.IN_GAME, room.getStatus());
         verify(rooms, never()).saveAndFlush(any());
         verify(events, never()).publishEvent(any(Object.class));
+    }
+
+    @Test
+    void closeAfterMatchIsIdempotentAndPublishesOnlyOnce() {
+        room.setId(UUID.randomUUID());
+        room.join(guest);
+        var game = new com.jogodavelha.game.Game(room, owner);
+        game.setPlayer2(guest);
+        game.registerRoundResult(com.jogodavelha.game.RoundResult.PLAYER1_WIN);
+        game.registerRoundResult(com.jogodavelha.game.RoundResult.PLAYER1_WIN);
+        when(rooms.findByCode("0042")).thenReturn(Optional.of(room));
+        when(games.findByRoomIdAndStatus(room.getId(), com.jogodavelha.game.GameStatus.IN_PROGRESS))
+                .thenReturn(Optional.empty());
+        when(games.findTopByRoomIdAndStatusOrderByFinishedAtDesc(room.getId(),
+                com.jogodavelha.game.GameStatus.FINISHED)).thenReturn(Optional.of(game));
+        when(rooms.saveAndFlush(room)).thenReturn(room);
+
+        service.closeAfterMatch("0042", owner.getId(), RoomClosedEvent.RETURN_TO_LOBBY);
+        service.closeAfterMatch("0042", owner.getId(), RoomClosedEvent.RETURN_TO_LOBBY);
+
+        assertEquals(RoomStatus.CLOSED, room.getStatus());
+        verify(rooms, times(1)).saveAndFlush(room);
+        verify(events, times(1)).publishEvent(any(RoomClosedEvent.class));
     }
 }

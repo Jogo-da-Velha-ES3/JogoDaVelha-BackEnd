@@ -19,6 +19,8 @@ import com.jogodavelha.room.Room;
 import com.jogodavelha.room.RoomPlayerService;
 import com.jogodavelha.room.RoomRepository;
 import com.jogodavelha.room.RoomStatus;
+import com.jogodavelha.room.RematchStateManager;
+import com.jogodavelha.room.RematchState;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -43,8 +45,9 @@ class RoomSnapshotServiceTest {
     private final PlayerService playerService = mock(PlayerService.class);
     private final CharacterRepository characters = mock(CharacterRepository.class);
     private final WebSocketService websocket = mock(WebSocketService.class);
+    private final RematchStateManager rematches = mock(RematchStateManager.class);
     private final RoomSnapshotService snapshots = new RoomSnapshotService(
-            rooms, games, drafts, gameStates, roomPlayers, playerService, characters, websocket);
+            rooms, games, drafts, gameStates, roomPlayers, playerService, characters, websocket, rematches);
     private final ObjectMapper mapper = new ObjectMapper();
 
     @Test
@@ -238,7 +241,8 @@ class RoomSnapshotServiceTest {
         game.setPlayer2(fixture.guest());
         setId(game, gameId);
         game.forfeit(hostLoses ? fixture.host() : fixture.guest());
-        when(games.findByRoomIdAndStatus(fixture.room().getId(), GameStatus.FINISHED)).thenReturn(Optional.of(game));
+        when(games.findTopByRoomIdAndStatusOrderByFinishedAtDesc(fixture.room().getId(), GameStatus.FINISHED))
+                .thenReturn(Optional.of(game));
 
         assertNull(snapshots.compose("0042", fixture.host().getId()).coins());
         game.markRewardsGranted();
@@ -251,6 +255,49 @@ class RoomSnapshotServiceTest {
         assertEquals(Map.of(RoomSnapshotService.Slot.P1, hostLoses ? 0 : 30,
                 RoomSnapshotService.Slot.P2, hostLoses ? 30 : 0), result.coins());
         assertNull(result.turn());
+    }
+
+    @Test
+    void pendingRematchAppearsInSnapshotWithRequesterAndServerDeadline() throws Exception {
+        RoomFixture fixture = activeRoom(false);
+        Game game = finishedGame(fixture);
+        UUID roomId = fixture.room().getId();
+        long deadline = System.currentTimeMillis() + 15_000;
+        when(games.findTopByRoomIdAndStatusOrderByFinishedAtDesc(roomId, GameStatus.FINISHED))
+                .thenReturn(Optional.of(game));
+        when(rematches.find(roomId)).thenReturn(Optional.of(new RematchState(
+                roomId, "0042", game.getId(), fixture.host().getId(), deadline, 1,
+                RematchState.Status.PENDING)));
+
+        var snapshot = snapshots.compose("0042", fixture.host().getId());
+
+        assertEquals(RoomSnapshotService.RoomPhase.RESULT, snapshot.phase());
+        assertEquals(game.getId(), snapshot.gameId());
+        assertEquals(RoomSnapshotService.Slot.P1, snapshot.rematch().by());
+        assertEquals(deadline, snapshot.rematch().deadline());
+    }
+
+    @Test
+    void newDraftTakesPrecedenceOverThePreviousFinishedMatchInSnapshot() throws Exception {
+        RoomFixture fixture = activeRoom(false);
+        Game previous = finishedGame(fixture);
+        long deadline = previous.getFinishedAt().toEpochMilli() + 20_000;
+        var eligible = new DraftEligibilityProvider.EligibleItems(
+                List.of(UUID.randomUUID(), UUID.randomUUID()), List.of("BOMBA", "ESCUDO"));
+        DraftState draft = new DraftState(fixture.room().getId(), "0042", deadline, 0,
+                DraftState.Player.initial(fixture.host().getId(), eligible),
+                DraftState.Player.initial(fixture.guest().getId(), eligible));
+        when(games.findTopByRoomIdAndStatusOrderByFinishedAtDesc(fixture.room().getId(), GameStatus.FINISHED))
+                .thenReturn(Optional.of(previous));
+        when(drafts.find(fixture.room().getId())).thenReturn(Optional.of(draft));
+
+        var snapshot = snapshots.compose("0042", fixture.host().getId());
+
+        assertEquals(RoomSnapshotService.RoomPhase.DRAFT, snapshot.phase());
+        assertNull(snapshot.gameId());
+        assertNull(snapshot.outcome());
+        assertEquals(deadline, snapshot.draft().deadline());
+        assertNull(snapshot.rematch());
     }
 
     @Test
@@ -314,6 +361,15 @@ class RoomSnapshotServiceTest {
         User user = new User(username, "private-password", username + "@example.com");
         user.setId(UUID.randomUUID());
         return user;
+    }
+
+    private Game finishedGame(RoomFixture fixture) throws Exception {
+        Game game = new Game(fixture.room(), fixture.host());
+        game.setPlayer2(fixture.guest());
+        setId(game, UUID.randomUUID());
+        game.registerRoundResult(com.jogodavelha.game.RoundResult.PLAYER1_WIN);
+        game.registerRoundResult(com.jogodavelha.game.RoundResult.PLAYER1_WIN);
+        return game;
     }
 
     private void setId(Game game, UUID id) throws Exception {

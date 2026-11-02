@@ -1139,14 +1139,37 @@ jogadores passada a `start` define P1 (host) e P2 (convidado). Inventários e
 habilidades escolhidas não são enviados ao tópico. O formato acompanha o consumidor
 existente no frontend; a validação conjunta segue pendente na FE-17.
 
-`DraftCompleted` é interno e leva as escolhas finais à BE-038. A auto-escolha não
-chama o serviço de turnos nem altera contadores de W.O. Os eventos não têm fila
-persistente ou reentrega automática após falha/reinício.
+`DraftCompleted` é interno e leva as escolhas finais a `GameLifecycleService`, que
+reutiliza o fluxo normal para criar a partida e o `GameState`. O Draft inicial começa
+após a entrada do segundo jogador; uma revanche aceita limpa o Draft anterior e chama
+o mesmo `DraftService.start`, sem substituir o registro da partida encerrada.
+Os eventos não têm fila persistente ou reentrega automática após falha/reinício.
 
-As BE-011/BE-013 implementam as mensagens de escolha usando `updatePlayer`;
-a BE-038 liga o início do Draft à sala e cria a partida ao receber `DraftCompleted`.
-Essas integrações não fazem parte da BE-037. Não há novos handlers de escolha,
-códigos públicos de erro, migrations ou alterações no `GameState` nesta entrega.
+## Pós-jogo: revanche e lobby (BE-039)
+
+Após `MATCH_END`, cada membro pode enviar uma solicitação ou voltar ao lobby. A
+solicitação aguarda o adversário por 15 segundos; o prazo absoluto é publicado no
+`ROOM_SNAPSHOT.rematch.deadline` e validado pelo servidor em toda operação. O estado
+temporário fica no Redis e as transições usam compare-and-set.
+
+Envie sem corpo e sem `playerId` (a identidade vem do `Principal` autenticado):
+
+| Destino STOMP | Ação |
+|---|---|
+| `/app/rooms/{code}/rematch/request` | Solicitar revanche |
+| `/app/rooms/{code}/rematch/accept` | Aceitar a solicitação do adversário |
+| `/app/rooms/{code}/rematch/decline` | Recusar e encerrar a sala |
+| `/app/rooms/{code}/lobby` | Encerrar a sala e voltar ao lobby |
+
+Os erros são enviados ao solicitante em `/user/queue/errors`: `BAD_REQUEST` (400)
+para código inválido, `FORBIDDEN` (403) para não participante e `CONFLICT` (409)
+para fase, ordem, prazo ou negociação inválidos. Após aceite, a mesma sala e os mesmos
+jogadores recebem um novo Draft; o `ROOM_SNAPSHOT` deixa de mostrar o resultado
+anterior e retorna ao resultado da nova partida somente após seu encerramento.
+Recusa, expiração, retorno ao lobby e desconexão definitiva com negociação pendente
+publicam o `ROOM_CLOSED` existente com motivos `REMATCH_DECLINED`, `REMATCH_EXPIRED`,
+`RETURN_TO_LOBBY` e `REMATCH_DISCONNECTED`, respectivamente. Uma desconexão parcial
+de uma entre várias sessões do mesmo jogador não fecha a sala.
 Os testes usam Redis, inventários e agendador simulados. A integração STOMP usa
 servidor local em porta aleatória e dois clientes autenticados, sem PostgreSQL,
 Redis externo ou Flyway, cobrindo conclusão antecipada e auto-escolha por prazo.

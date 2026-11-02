@@ -1239,9 +1239,55 @@ O `characterId` é o `id` retornado por `GET /api/characters/inventory`. A ident
 
 ---
 
+#### SEND /app/rooms/{code}/rematch/request — BE-039
+
+**Status:** Implementado; destinos e formato da proposta BE-039 aguardam alinhamento com o Front-End.
+**Controller:** `RematchController.request`
+**Autenticação:** STOMP `Principal` obrigatório
+
+Envie sem corpo. O usuário autenticado solicita revanche após um resultado final; o
+backend inicia uma negociação única por sala com prazo de 15 segundos. O adversário
+responde pelo destino `rematch/accept` ou `rematch/decline`. O snapshot mantém
+`rematch: {"by":"P1|P2","deadline":<epochMillis>}` durante a negociação e `null`
+quando não há solicitação válida. A data-limite é do servidor; a contagem regressiva
+do cliente é apenas visual.
+
+#### SEND /app/rooms/{code}/rematch/accept — BE-039
+
+Aceita sem corpo somente uma solicitação pendente feita pelo outro jogador, antes do
+prazo. O aceite preserva a partida encerrada e seus resultados/recompensas, reutiliza
+a sala e inicia `DraftService.start` com os mesmos participantes. A conclusão do Draft
+segue o fluxo usual de `DraftCompleted` e cria uma nova partida. O novo snapshot usa
+`phase: "DRAFT"`, `gameId: null`, `outcome: null` e seleções vazias até a nova partida.
+
+#### SEND /app/rooms/{code}/rematch/decline — BE-039
+
+Recusa sem corpo a negociação pendente. A sala é encerrada e os membros recebem
+`ROOM_CLOSED` com `reason: "REMATCH_DECLINED"`.
+
+#### SEND /app/rooms/{code}/lobby — BE-039
+
+Encerra a sala a partir do resultado, com ou sem solicitação pendente. Se houver
+negociação, ela é cancelada primeiro. Os membros recebem `ROOM_CLOSED` com
+`reason: "RETURN_TO_LOBBY"`.
+
+Todos os destinos de revanche usam o código de quatro dígitos, não recebem `playerId`
+e derivam o usuário do `Principal`. Erros são enviados ao solicitante em
+`/user/queue/errors`: `BAD_REQUEST` (400) para código inválido, `FORBIDDEN` (403)
+para usuário fora da sala e `CONFLICT` (409) para fase/resultados inválidos,
+solicitação duplicada, ação fora de ordem ou prazo expirado. O servidor controla e
+valida os 15 segundos em cada operação; aceite, recusa, expiração, desconexão e saída
+para o lobby competem por uma transição atômica no Redis.
+
+---
+
 ### 5.3 Destinos de Assinatura (SUBSCRIBE)
 
 #### SUBSCRIBE /topic/rooms/{code}
+
+Além dos eventos descritos abaixo, o tópico recebe `ROOM_CLOSED` quando a sala é
+encerrada, inclusive por recusa/expiração de revanche, retorno ao lobby ou desconexão
+durante negociação pendente.
 
 **Status:** ✅ Implementado
 **Autorização:** Apenas membros da sala
@@ -1425,6 +1471,7 @@ O `characterId` é o `id` retornado por `GET /api/characters/inventory`. A ident
 - No snapshot público, `drawOptions` é sempre `null`, `mySlot` é `null` e `myDeck`
   é `[]`. A fase compartilhada pode ser `ROUND_DRAW`, mas as opções nunca são públicas.
 - `MATCH_END` mantém o envelope `{type,payload,serverTime}` e inclui `reason` com `NORMAL` ou `FORFEIT_TIMEOUT`, além de `winnerId`, `score` e `forfeit`. Este evento comunica vitória, empate e W.O. e é publicado uma única vez. Em seguida, `MatchFinishedEvent` dispara `ROOM_SNAPSHOT` público e individualizado para os dois jogadores, com `phase:"RESULT"` e `outcome` final; somente depois da publicação o servidor remove o estado Redis. Chamadas repetidas de finalização não duplicam `MATCH_END` nem o snapshot final.
+- Após aceitar a revanche, o snapshot continua usando o envelope padrão e a mesma sala. `gameId` aponta para a nova partida apenas depois que o Draft termina e `GameLifecycleService` cria o novo `Game`; a partida anterior continua no histórico.
 - Na fase `ROUND_DRAW`, `turn` é `null`: os 8 segundos de escolha não são um turno
   e não alteram os contadores de timeout. O Draft inicial concluído não substitui
   a fase da partida no snapshot.
@@ -1448,6 +1495,13 @@ O `characterId` é o `id` retornado por `GET /api/characters/inventory`. A ident
 - `CellEffect.kind`: "ESCUDO", "CONGELAR", "REFORCO"
 - `board` sempre contém 16 células, índices `0` a `15`. `owner: null` representa casa vazia; bloqueios por escudo e demais efeitos são descritos em `effects`.
 
+`rematch` é sempre serializado. No resultado, uma negociação ativa tem o formato
+`{"by":"P1","deadline":1793102415000}` (ou `P2`); após o prazo ou sem negociação,
+é `null`. O mesmo estado é seguro no tópico público, pois revela apenas qual slot
+solicitou a revanche e o prazo. Ao aceitar, o Draft novo tem precedência sobre a
+partida finalizada anterior: `gameId`, `outcome` e `coins` ficam nulos, o tabuleiro é
+vazio e a fase é `DRAFT` até a conclusão da preparação.
+
 Exemplo de resultado por W.O. em `outcome` quando o snapshot é consultado após a finalização:
 ```json
 { "kind": "WO", "winner": "P2", "score": [1, 0], "reason": "FORFEIT_TIMEOUT" }
@@ -1456,6 +1510,36 @@ Exemplo de resultado por W.O. em `outcome` quando o snapshot é consultado após
 **Privacidade:** o tópico contém somente estado compartilhado; `mySlot` é `null`, `myDeck` é `[]` e `drawOptions` é `null`. Cada jogador recebe separadamente em `/user/queue/room` seu `mySlot`, deck e, enquanto ainda não escolheu, suas próprias três opções de sorteio. O snapshot privado do oponente nunca é enviado ao solicitante.
 
 **Métrica de latência:** `RoomSnapshotService.publish` mede com `System.nanoTime()` a composição e as chamadas de despacho ao broker, incluindo tópico público e filas privadas. Acima de 200 ms registra aviso. Essa medição não confirma entrega nem recebimento pelo navegador (não há ACK de cliente).
+
+---
+
+#### ROOM_CLOSED
+
+**Status:** Implementado
+**Publicador:** `RoomEventPublisher.onRoomClosed`
+**Destino:** `/topic/rooms/{code}`
+
+Evento existente, publicado após o commit quando uma sala é encerrada. Além dos
+motivos existentes `HOST_LEFT` e `EXPIRED`, a BE-039 usa `REMATCH_DECLINED`,
+`REMATCH_EXPIRED`, `RETURN_TO_LOBBY` e `REMATCH_DISCONNECTED`. `closedBy` contém o
+UUID do jogador que recusou, saiu ou se desconectou; é `null` quando o prazo expirou.
+O envelope e o payload existentes não foram alterados:
+
+```json
+{
+  "type": "ROOM_CLOSED",
+  "payload": {
+    "roomCode": "0042",
+    "closedBy": "3f2b8c1e-0000-0000-0000-000000000001",
+    "reason": "REMATCH_DECLINED"
+  },
+  "serverTime": 1792843200000
+}
+```
+
+O evento é enviado ao tópico assinado pelos dois membros. Repetições e corridas de
+encerramento não publicam um segundo evento. Uma desconexão de uma sessão não é
+considerada definitiva enquanto existir outra sessão do mesmo jogador na mesma sala.
 
 ---
 
@@ -2189,7 +2273,6 @@ Durante a auditoria, as seguintes verificações foram executadas:
 - Destino público de atualizações de gameplay (BE-024)
 - Detalhes de implementação de W.O. em partida
 - Fluxo completo de seleção de personagens no Draft
-- Detalhes de implementação de rematch
 
 ### 10.5 Compatibilidade com Front-End
 
@@ -2221,6 +2304,7 @@ Durante a auditoria, as seguintes verificações foram executadas:
 - `CoinController.java` - Endpoint de saldo
 - `HealthController.java` - Endpoint de health check
 - `DraftCharacterController.java` - Endpoint de seleção de personagens no Draft
+- `RematchController.java` - Ações STOMP de revanche e retorno ao lobby
 
 **Controllers STOMP:**
 - `PlayerConnectionController.java` - Conexão e sincronização
@@ -2239,6 +2323,7 @@ Durante a auditoria, as seguintes verificações foram executadas:
 
 **Serviços:**
 - `RoomSnapshotService.java` - Composição e publicação de snapshots
+- `RematchService.java` / `RematchStateManager.java` - Negociação temporária e transições da revanche
 - `DraftEventPublisher.java` - Publicação de eventos de Draft
 - `RoomSnapshotEventPublisher.java` - Publicação de snapshots em eventos
 - `WebSocketService.java` - Serviço de envio de mensagens STOMP

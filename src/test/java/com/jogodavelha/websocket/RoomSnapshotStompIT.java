@@ -29,6 +29,7 @@ import com.jogodavelha.game.service.TurnService;
 import com.jogodavelha.room.Room;
 import com.jogodavelha.room.RoomPlayerService;
 import com.jogodavelha.room.RoomRepository;
+import com.jogodavelha.room.RematchStateManager;
 import com.jogodavelha.skill.SkillEngine;
 import com.jogodavelha.skill.SkillActivationService;
 import org.junit.jupiter.api.AfterEach;
@@ -119,6 +120,7 @@ class RoomSnapshotStompIT {
         @Bean RoomRepository rooms() { return mock(RoomRepository.class); }
         @Bean GameRepository games() { return mock(GameRepository.class); }
         @Bean DraftStateManager drafts() { return mock(DraftStateManager.class); }
+        @Bean RematchStateManager rematches() { return mock(RematchStateManager.class); }
         @Bean CharacterRepository characters() { return mock(CharacterRepository.class); }
         @Bean PlayerService playerService() { return mock(PlayerService.class); }
         @Bean SkillActivationService skillActivationService() { return mock(SkillActivationService.class); }
@@ -226,7 +228,8 @@ class RoomSnapshotStompIT {
         when(game.getStatus()).thenReturn(GameStatus.FINISHED);
         when(game.getWinner()).thenReturn(user(P2, "player-two"));
         when(game.getEndReason()).thenReturn(GameEndReason.FORFEIT_TIMEOUT);
-        when(games.findByRoomIdAndStatus(ROOM_ID, GameStatus.FINISHED)).thenReturn(Optional.of(game));
+        when(games.findTopByRoomIdAndStatusOrderByFinishedAtDesc(ROOM_ID, GameStatus.FINISHED))
+                .thenReturn(Optional.of(game));
 
         events.publishEvent(new MatchFinishedEvent(GAME_ID, ROOM_CODE));
 
