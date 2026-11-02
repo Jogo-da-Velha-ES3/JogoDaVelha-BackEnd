@@ -107,6 +107,9 @@ class RoomSnapshotStompIT {
             GameValidator.class, SkillEngine.class, RoomSnapshotService.class, RoomSnapshotEventPublisher.class,
             WebSocketService.class, RoomPlayerService.class})
     static class TestApplication {
+        @Bean com.jogodavelha.avatar.AvatarService avatars() {
+            return mock(com.jogodavelha.avatar.AvatarService.class);
+        }
         @Bean ObjectMapper objectMapper() { return new ObjectMapper(); }
         @Bean JwtService jwtService(JwtProperties properties, Clock clock) { return new JwtService(properties, clock); }
         @Bean @Primary Clock testClock() {

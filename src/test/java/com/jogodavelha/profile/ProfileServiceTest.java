@@ -39,6 +39,9 @@ class ProfileServiceTest {
     @Mock
     private CharacterRepository characterRepository;
 
+    @Mock
+    private com.jogodavelha.avatar.AvatarService avatars;
+
     @InjectMocks
     private ProfileService profileService;
 
@@ -51,12 +54,13 @@ class ProfileServiceTest {
 
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(gameRepository.findFinishedGamesByPlayerId(userId)).thenReturn(List.of());
+        when(avatars.equippedCode(userId)).thenReturn("DEFAULT");
 
         ProfileResponse response = profileService.getProfile(userId);
 
         assertEquals("testuser", response.username());
         assertEquals(100, response.coinsBalance());
-        assertNull(response.avatar());
+        assertEquals("DEFAULT", response.avatar());
         assertNull(response.preferredCharacter());
     }
 

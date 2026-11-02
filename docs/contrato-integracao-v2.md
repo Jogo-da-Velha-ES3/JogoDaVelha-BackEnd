@@ -336,6 +336,79 @@ Validações:
 
 ---
 
+#### POST /api/auth/forgot-password
+
+**Status:** ✅ Implementado (BE-006.1)
+**Controller:** `AuthController.forgotPassword`
+**Autenticação:** Pública
+
+**Objetivo:** Solicitar link de recuperação de senha por e-mail.
+
+**Body da requisição:**
+```json
+{ 
+  "email": "ana@example.com"
+}
+```
+
+
+Validações: `email` obrigatório, formato válido, até 254 caracteres.
+
+**Resposta de sucesso (200):** sempre a mesma, exista o e-mail ou não:
+```json
+{ 
+  "message": "Se o e-mail estiver cadastrado, você receberá um link para redefinir a senha."
+}
+```
+
+**Possíveis erros:**
+- 400 VALIDATION_ERROR
+- 400 INVALID_REQUEST_BODY
+- 500 INTERNAL_ERROR
+
+**Regras e observações:**
+- Resposta idêntica para e-mail cadastrado ou não (evita enumeração de usuários).
+- Token de uso único, guardado só como hash SHA-256, com expiração (`PASSWORD_RESET_TTL_MINUTES`, padrão 30).
+- Link do e-mail: `{FRONTEND_RESET_PASSWORD_URL}?token={token}`. Envio assíncrono, após o commit.
+- Um novo pedido invalida os anteriores. Sem rate limit.
+
+---
+
+#### POST /api/auth/reset-password
+
+**Status:** ✅ Implementado (BE-006.1)
+**Autenticação:** Pública
+
+**Body da requisição:**
+```json
+{ 
+  "token": "<token-do-link>", 
+  "newPassword": "novaSenha123", 
+  "confirmPassword": "novaSenha123"
+}
+```
+
+Validações: `token` obrigatório; `newPassword` 6-72 caracteres; `confirmPassword` obrigatório e igual a `newPassword`.
+
+**Resposta de sucesso (200):**
+```json
+{ 
+  "message": "Senha alterada com sucesso."
+}
+```
+
+**Possíveis erros:**
+- 400 INVALID_RESET_TOKEN: token inexistente, expirado ou já usado (um único código, para não revelar o estado)
+- 400 PASSWORD_MISMATCH: senhas diferentes
+- 400 VALIDATION_ERROR / INVALID_REQUEST_BODY
+- 500 INTERNAL_ERROR
+
+**Regras e observações:**
+- Senha gravada com BCrypt; todos os tokens do usuário são invalidados.
+- Depois do reset, o login funciona só com a nova senha.
+
+---
+
 ### 4.2 Saúde da API
 
 #### GET /api/health
@@ -514,7 +587,7 @@ Validações:
 {
   "username": "testuser",
   "coinsBalance": 150,
-  "avatar": null,
+  "avatar": "DEFAULT",
   "preferredCharacter": "X"
 }
 ```
@@ -526,7 +599,7 @@ Validações:
 **Regras e observações:**
 - DTO: `ProfileResponse` (linha 3-9 de `ProfileResponse.java`)
 - Serviço: `ProfileService.getProfile`
-- `avatar`: Campo reservado (sempre null nesta versão)
+- `avatar`: Código do avatar equipado; `DEFAULT` quando não há seleção (BE-029).
 - `preferredCharacter`: Personagem mais utilizado pelo usuário; null se não houver histórico
 
 ---
@@ -810,6 +883,76 @@ Validações:
 - Personagens são cosméticos e não têm poderes
 - Endpoint retorna apenas registros existentes em `user_characters`
 - Pendência: confirmar se X e O são atribuídos a todo jogador (RN-LOJ-01)
+
+---
+
+### 4.8 Loja: catálogo, compra e equipamento (BE-029)
+
+**Status:** 🚧 Implementação nesta branch; integração visual da loja pendente no front.
+
++Rotas REST autenticadas. A identidade vem do JWT; não envie `userId`, saldo ou
+preço no corpo. O front ainda não possui uma API de loja implementada; estas
+rotas são novas e não substituem os inventários existentes.
+
+`category`: `characters`, `skills` ou `avatars`. `itemId`: UUID do catálogo.
+
+| Método | Rota | Resposta 200 |
+| --- | --- | --- |
+| GET | `/api/shop/{category}` | Lista de `ShopItem` |
+| GET | `/api/shop/{category}/inventory` | Lista de `ShopItem` com `owned:true` |
+| POST | `/api/shop/{category}/{itemId}/purchase` | `{item: ShopItem, coinsBalance: number}` |
+| PUT | `/api/shop/{category}/{itemId}/equip` | `ShopItem` equipado |
+
+POST e PUT não recebem corpo. Formato de `ShopItem`:
+
+```json
+{
+  "id": "123e4567-e89b-12d3-a456-426614174010",
+  "category": "CHARACTERS",
+  "code": "ESTRELA",
+  "name": "Estrela",
+  "description": "Personagem cosmético para o Draft.",
+  "priceCoins": 700,
+  "owned": false,
+  "equipped": false
+}
+```
+
+As categorias na resposta são `CHARACTERS`, `SKILLS` e `AVATARS`. A lista é
+ordenada por preço e código; nomes, preços e posse vêm do banco. Para personagens,
+`code` é o símbolo; para habilidades e avatares, é o código do respectivo catálogo.
+A descrição de personagem indica sua finalidade cosmética, pois o catálogo atual
+não possui descrição própria.
+
+Compra adquire posse sem equipar automaticamente. Saldo, posse e extrato são
+atômicos; requisições repetidas não descontam novamente. Compra de habilidade
+amplia o inventário usado no Draft, mantendo as duas escolhas iniciais.
+
+Equipamento só aceita personagens e avatares próprios. Trocar um avatar substitui
+o anterior, sem alterar o personagem equipado, o personagem reservado no Draft ou
+o favorito do histórico. `equipped` é sempre `false` para habilidades.
+
+`GET /api/profile` e os dados de jogador produzidos por `RoomPlayerService`
+retornam em `avatar` o código do avatar equipado. Sem equipamento, retornam
+`DEFAULT`. Esse avatar é gratuito e aparece como próprio no catálogo, sem exigir
+uma compra. Equipá-lo remove a seleção de avatar pago. O front deve renderizar seu
+fallback para `DEFAULT`; o código não é uma URL. O catálogo inicial não cria
+avatares pagos nem define imagens/preços que ainda não foram acordados.
+`PLAYER_JOINED` usa esses mesmos dados, sem mudança na estrutura do evento.
+A montagem de `ROOM_SNAPSHOT` continua sob responsabilidade da BE-035.2.
+
+Erros usam o envelope `ApiError` existente:
+
+| Código | HTTP | Condição |
+| --- | ---: | --- |
+| `SHOP_INVALID_REQUEST` | 400 | Categoria inválida ou tentativa de equipar habilidade |
+| `SHOP_ITEM_NOT_FOUND` | 404 | Item não existe na categoria |
+| `SHOP_ITEM_ALREADY_OWNED` | 409 | Item já adquirido, inclusive clique duplicado |
+| `INSUFFICIENT_COINS` | 409 | Saldo insuficiente |
+| `SHOP_ITEM_NOT_OWNED` | 403 | Equipamento sem posse |
+
+UUID malformado retorna `BAD_REQUEST` (400). JWT ausente ou inválido retorna
+`UNAUTHORIZED` (401). Não há novos destinos ou eventos STOMP nesta tarefa.
 
 ---
 
@@ -1798,6 +1941,13 @@ O `Outcome` presente em snapshots de composicao/sincronizacao e no snapshot fina
 | `UNAUTHORIZED` | 401 | Rota protegida sem autenticação | `JwtAuthenticationEntryPoint` |
 | `FORBIDDEN` | 403 | Acesso negado a recurso protegido | `ApiAccessDeniedHandler` |
 | `INTERNAL_ERROR` | 500 | Exceção inesperada ou erro 5xx | `GlobalExceptionHandler.handleUnexpected` |
+| `INVALID_RESET_TOKEN` | 400 | Token de recuperação inválido, expirado ou já usado | `GlobalExceptionHandler.handleInvalidResetToken` |
+| `PASSWORD_MISMATCH` | 400 | `newPassword` e `confirmPassword` diferentes | `GlobalExceptionHandler.handlePasswordMismatch` |
+| `SHOP_INVALID_REQUEST` | 400 | Categoria inválida ou tentativa de equipar habilidade | `GlobalExceptionHandler.handleShop` |
+| `SHOP_ITEM_NOT_FOUND` | 404 | Item ausente na categoria | `GlobalExceptionHandler.handleShop` |
+| `SHOP_ITEM_ALREADY_OWNED` | 409 | Compra duplicada | `GlobalExceptionHandler.handleShop` |
+| `INSUFFICIENT_COINS` | 409 | Saldo insuficiente para compra | `GlobalExceptionHandler.handleShop` |
+| `SHOP_ITEM_NOT_OWNED` | 403 | Equipamento sem posse | `GlobalExceptionHandler.handleShop` |
 
 ### 8.3 Códigos de Erro STOMP
 
@@ -1873,6 +2023,12 @@ O `Outcome` presente em snapshots de composicao/sincronizacao e no snapshot fina
 - Habilidade não está no deck do round atual
 - Deck ainda não configurado (Draft incompleto)
 
+**INVALID_RESET_TOKEN:**
+- Token de recuperação inválido, expirado ou já usado
+
+**PASSWORD_MISMATCH:**
+- `newPassword` e `confirmPassword` diferentes
+
 ### 8.5 Comportamento Recomendado para Front-End
 
 **Erros REST:**
@@ -1922,6 +2078,8 @@ O `Outcome` presente em snapshots de composicao/sincronizacao e no snapshot fina
 - [ ] Implementar consulta de inventário de habilidades via `GET /api/skills/inventory`
 - [ ] Implementar consulta de inventário de personagens via `GET /api/characters/inventory`
 - [ ] Implementar health check via `GET /api/health`
+- [ ] Implementar forgot password via `POST /api/forgot-password`
+- [ ] Implementar reset password via `POST /api/reset-password`
 
 ### 9.3 Conexão STOMP
 
@@ -2033,8 +2191,7 @@ Durante a auditoria, as seguintes verificações foram executadas:
 - **Integração real de snapshot após ação de gameplay não verificada com dois clientes STOMP:** Os testes STOMP existentes cobrem autenticação, associação ao tópico e privacidade do sorteio; o broadcast de gameplay é validado nos testes de serviço/event listener.
 - O gameplay usa `/topic/rooms/{code}` com `ROOM_SNAPSHOT`, alinhado ao contrato V2 nesta implementação.
 - **Draft de personagens:** Fluxo de seleção de personagens não detalhado (pode estar em outra parte do código)
-- **Loja:** Endpoints de compra não implementados (BE-029 planejado)
-- **Recuperação de senha:** Não implementado (BE-006.1 planejado)
+- **Loja:** Catálogo, compra e equipamento implementados na BE-029; imagens e catálogo de avatares pagos ainda dependem de definição com o front.
 
 ### 10.4 Pontos Pendentes de Confirmação
 

@@ -51,7 +51,7 @@ class RoomPersistenceIT {
         @Bean Flyway flyway(DataSource ds) {
             Flyway flyway = Flyway.configure().dataSource(ds).locations("classpath:be007-no-sql")
                     .cleanDisabled(true).baselineOnMigrate(false)
-                    .javaMigrations(new V1__TestUsers(), new V2__TestRooms())
+                    .javaMigrations(new V1__TestUsers(), new V2__TestRooms(), new V3__TestPasswordResetTokens())
                     .load();
             flyway.migrate();
             return flyway;
@@ -107,6 +107,23 @@ class RoomPersistenceIT {
                     )
                 """);
                 statement.execute("CREATE UNIQUE INDEX rooms_active_code_unique ON rooms(code) WHERE status IN ('WAITING', 'IN_GAME')");
+            }
+        }
+    }
+
+    public static class V3__TestPasswordResetTokens extends BaseJavaMigration {
+        public void migrate(Context context) throws Exception {
+            try (var statement = context.getConnection().createStatement()) {
+                statement.execute("""
+                CREATE TABLE password_reset_tokens (
+                    id uuid PRIMARY KEY,
+                    user_id uuid NOT NULL REFERENCES users(id),
+                    token_hash varchar(64) NOT NULL,
+                    expires_at timestamptz NOT NULL,
+                    used_at timestamptz,
+                    created_at timestamptz NOT NULL DEFAULT now()
+                )
+            """);
             }
         }
     }
