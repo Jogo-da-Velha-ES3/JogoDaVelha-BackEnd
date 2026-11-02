@@ -101,6 +101,7 @@ class StompJwtWebSocketIntegrationTest {
                     return USER_ID.equals(playerId) || OTHER_USER_ID.equals(playerId)
                             ? Optional.of(room) : Optional.empty();
                 });
+        when(rooms.findByCodeAndStatusIn("0042", RoomCodeAllocator.ACTIVE)).thenReturn(Optional.of(room));
     }
 
     @AfterEach
