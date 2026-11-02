@@ -7,6 +7,8 @@ import com.jogodavelha.character.CharacterRepository;
 import com.jogodavelha.game.GameRepository;
 import com.jogodavelha.game.Game;
 import com.jogodavelha.game.GameStatus;
+import com.jogodavelha.game.draft.DraftEligibilityProvider;
+import com.jogodavelha.game.draft.DraftState;
 import com.jogodavelha.game.draft.DraftStateManager;
 import com.jogodavelha.game.draw.RoundDrawState;
 import com.jogodavelha.game.logic.GamePhase;
@@ -101,6 +103,34 @@ class RoomSnapshotServiceTest {
         assertEquals("P1", privateJson.path("payload").path("mySlot").asText());
         assertEquals("BOMBA", privateJson.path("payload").path("myDeck").get(0).path("ability").asText());
         verify(websocket).sendToUser(eq(fixture.guest().getId().toString()), eq("/queue/room"), any());
+    }
+
+    @Test
+    void publishedSnapshotProjectsPersistedDraftSelectionAndReadiness() {
+        RoomFixture fixture = activeRoom(false);
+        UUID characterId = UUID.randomUUID();
+        var eligible = new DraftEligibilityProvider.EligibleItems(
+                List.of(characterId, UUID.randomUUID()), List.of("BOMBA", "ESCUDO"));
+        var draft = new DraftState(fixture.room().getId(), "0042", 21_000L, 2L,
+                DraftState.Player.initial(fixture.host().getId(), eligible)
+                        .withCharacter(characterId).withSkills(List.of("BOMBA", "ESCUDO")),
+                DraftState.Player.initial(fixture.guest().getId(), eligible));
+        when(drafts.find(fixture.room().getId())).thenReturn(Optional.of(draft));
+        var character = new com.jogodavelha.character.Character("X",
+                com.jogodavelha.character.CharacterSymbol.X, 0);
+        character.setId(characterId);
+        when(characters.findAllById(List.of(characterId))).thenReturn(List.of(character));
+
+        snapshots.publish("0042");
+
+        var captor = org.mockito.ArgumentCaptor.forClass(Object.class);
+        verify(websocket).sendToTopic(eq("/topic/rooms/0042"), captor.capture());
+        JsonNode snapshot = mapper.valueToTree(captor.getValue());
+        assertEquals("ROOM_SNAPSHOT", snapshot.path("type").asText());
+        assertEquals(21_000L, snapshot.path("payload").path("draft").path("deadline").asLong());
+        assertTrue(snapshot.path("payload").path("draft").path("ready").path("P1").asBoolean());
+        assertFalse(snapshot.path("payload").path("draft").path("ready").path("P2").asBoolean());
+        assertEquals("X", snapshot.path("payload").path("players").get(0).path("character").asText());
     }
 
     @Test

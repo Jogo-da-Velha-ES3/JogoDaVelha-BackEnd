@@ -91,6 +91,11 @@ public record DraftState(UUID roomId, String roomCode, long deadlineEpochMillis,
                 characterOptions(second).stream().anyMatch(other -> !character.equals(other)));
     }
 
+    public Player opponentOf(UUID playerId) {
+        player(playerId); // valida pertencimento
+        return player1.playerId().equals(playerId) ? player2 : player1;
+    }
+
     public record Player(UUID playerId, List<UUID> eligibleCharacters, List<String> eligibleSkills,
                          UUID characterId, List<String> initialSkills) {
         public Player {

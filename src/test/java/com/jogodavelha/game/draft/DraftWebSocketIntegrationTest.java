@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jogodavelha.auth.JwtService;
 import com.jogodavelha.auth.User;
+import com.jogodavelha.auth.UserRepository;
 import com.jogodavelha.character.Character;
 import com.jogodavelha.character.CharacterRepository;
 import com.jogodavelha.character.CharacterSymbol;
@@ -139,6 +140,7 @@ class DraftWebSocketIntegrationTest {
         @Bean WebSocketService webSocketServiceSpy(SimpMessagingTemplate template) {
             return spy(new WebSocketService(template));
         }
+        @Bean UserRepository userRepository() { return mock(UserRepository.class); }
     }
 
     static class MutableClock extends Clock {
@@ -213,7 +215,7 @@ class DraftWebSocketIntegrationTest {
             assertEquals(last, receive(second));
             assertEquals("DRAFT_UPDATE", last.path("type").asText());
             assertEquals(state.deadlineEpochMillis(), last.path("payload").path("deadline").asLong());
-            assertEquals(3, last.path("payload").size());
+            assertEquals(4, last.path("payload").size());
             assertFalse(last.toString().contains("BOMBA"));
             assertFalse(last.toString().contains("eligible"));
         }

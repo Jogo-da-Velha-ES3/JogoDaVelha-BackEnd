@@ -3,12 +3,15 @@ package com.jogodavelha.websocket;
 import com.jogodavelha.game.GameRepository;
 import com.jogodavelha.game.GameStatus;
 import com.jogodavelha.game.TurnChangedEvent;
+import com.jogodavelha.game.draft.DraftState;
+import com.jogodavelha.game.draft.DraftUpdated;
 import com.jogodavelha.game.logic.GamePhase;
 import com.jogodavelha.game.logic.GameState;
 import com.jogodavelha.game.logic.GameStateManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.annotation.Order;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -20,6 +23,19 @@ class RoomSnapshotEventPublisherTest {
     private final GameRepository games = mock(GameRepository.class);
     private final GameStateManager states = mock(GameStateManager.class);
     private final RoomSnapshotEventPublisher publisher = new RoomSnapshotEventPublisher(snapshots, games, states);
+
+    @Test
+    void publishesOneSnapshotForEachDraftUpdate() {
+        UUID p1 = UUID.randomUUID(), p2 = UUID.randomUUID();
+        var event = new DraftUpdated(UUID.randomUUID(), "0042", 21_000L, 2L, List.of(
+                new DraftUpdated.PlayerStatus(p1, UUID.randomUUID(), DraftState.Stage.SKILLS, false),
+                new DraftUpdated.PlayerStatus(p2, null, DraftState.Stage.CHARACTER, false)));
+
+        publisher.onDraftUpdated(event);
+
+        verify(snapshots, times(1)).publish("0042");
+        verifyNoInteractions(games, states);
+    }
 
     @Test
     void publishesAfterTurnEventOnlyWhileMatchRemainsInPlayingPhase() {
