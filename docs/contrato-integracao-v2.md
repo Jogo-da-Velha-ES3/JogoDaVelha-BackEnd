@@ -1482,25 +1482,15 @@ Exemplo de resultado por W.O. em `outcome` quando o snapshot é consultado após
 ```json
 {
   "deadline": 1729934660000,
-  "characters": 
-  { 
-    "P1": "X", 
-    "P2": "O"
-  },
-  "ready": 
-  { 
-    "P1": true, 
-    "P2": false
-  },
-  "nicknames": 
-  { 
-    "P1": "ana", 
-    "P2": "bia"
-  }
+  "characters": { "P1": "X" },
+  "ready": { "P1": false, "P2": false },
+  "nicknames": { "P1": "ana" }
 }
 ```
-`nicknames` (acréscimo compatível, BE-011): username de quem já reservou personagem, por slot. 
-Só há entrada para quem já escolheu; o front usa isso para mostrar o bloqueio com o nome de quem reservou.
+`nicknames` (acréscimo compatível, BE-011): username de quem já reservou personagem,
+por slot. Só há entrada para quem já escolheu; o front usa isso para mostrar o bloqueio
+com o nome de quem reservou. `ready` indica a confirmação das duas habilidades iniciais:
+pode ser `false` mesmo quando o personagem já foi escolhido.
 
 **Momento de publicação:**
 - Após operação CAS no Redis (Compare-And-Swap)
