@@ -1241,7 +1241,7 @@ O `characterId` é o `id` retornado por `GET /api/characters/inventory`. A ident
 
 #### SEND /app/rooms/{code}/rematch/request — BE-039
 
-**Status:** Implementado; destinos e formato da proposta BE-039 aguardam alinhamento com o Front-End.
+**Status:** Implementado e acordado com o Front-End; destinos STOMP e formato `rematch: {by, deadline}` definitivos.
 **Controller:** `RematchController.request`
 **Autenticação:** STOMP `Principal` obrigatório
 
