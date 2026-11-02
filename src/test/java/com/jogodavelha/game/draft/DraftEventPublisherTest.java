@@ -93,4 +93,33 @@ class DraftEventPublisherTest {
         var message = (DraftEventPublisher.Message) captor.getValue();
         assertEquals(java.util.Map.of("P1", "ana"), message.payload().nicknames());
     }
+
+    @Test
+    void nicknameLookupFailureDoesNotPreventDraftUpdatePublication() {
+        UUID p1 = UUID.randomUUID(), p2 = UUID.randomUUID();
+        UUID characterX = UUID.randomUUID(), characterO = UUID.randomUUID();
+        var firstCharacter = mock(com.jogodavelha.character.Character.class);
+        when(firstCharacter.getId()).thenReturn(characterX);
+        when(firstCharacter.getSymbol()).thenReturn(CharacterSymbol.X);
+        var secondCharacter = mock(com.jogodavelha.character.Character.class);
+        when(secondCharacter.getId()).thenReturn(characterO);
+        when(secondCharacter.getSymbol()).thenReturn(CharacterSymbol.O);
+        when(characters.findAllById(any())).thenReturn(List.of(firstCharacter, secondCharacter));
+        when(users.findById(p1)).thenThrow(new IllegalStateException("database unavailable"));
+        when(users.findById(p2)).thenReturn(
+                Optional.of(new com.jogodavelha.auth.User("bia", "h", "bia@example.com")));
+
+        publisher.onDraftUpdated(new DraftUpdated(UUID.randomUUID(), "0042", 21_000L, 2L, List.of(
+                new DraftUpdated.PlayerStatus(p1, characterX, DraftState.Stage.SKILLS, false),
+                new DraftUpdated.PlayerStatus(p2, characterO, DraftState.Stage.SKILLS, false))));
+
+        var captor = ArgumentCaptor.forClass(Object.class);
+        verify(websocket).sendToTopic(eq("/topic/rooms/0042"), captor.capture());
+        var message = (DraftEventPublisher.Message) captor.getValue();
+        assertEquals("DRAFT_UPDATE", message.type());
+        assertEquals(java.util.Map.of("P1", CharacterSymbol.X, "P2", CharacterSymbol.O),
+                message.payload().characters());
+        assertEquals(java.util.Map.of("P1", false, "P2", false), message.payload().ready());
+        assertEquals(java.util.Map.of("P2", "bia"), message.payload().nicknames());
+    }
 }

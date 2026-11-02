@@ -557,6 +557,8 @@ O envelope externo também contém `serverTime` como número inteiro de milisseg
 - **Snapshot individual:** enviado a cada participante em `/user/queue/room`, com o `mySlot` e `myDeck` daquele destinatário; `drawOptions` segue nulo porque o backend não mantém esse estado. Este é o único destino cujo `ROOM_SNAPSHOT` deve atualizar o estado individual do jogador no frontend. A fila exige sessão autenticada no `CONNECT`.
 
 Embora ambos usem `type: "ROOM_SNAPSHOT"` e compartilhem o formato base `RoomSnapshot`, são projeções diferentes: o cliente deve distinguir pelo destino STOMP de origem. Não encaminhe a mensagem do tópico público ao reducer/handler que substitui o snapshot individual; trate-a apenas como atualização dos dados compartilhados.
+Nas alterações do Draft, o snapshot é emitido a partir do estado gravado no Redis e
+serve como projeção de recuperação caso um evento transitório não seja recebido.
 
 Exemplo resumido de snapshot público em sala `WAITING` (os campos privados usam `null`/lista vazia):
 
@@ -632,6 +634,10 @@ escolhas não reinicia o prazo; a auto-escolha não conta para W.O. A elegibilid
 `DraftUpdated` é interno e aciona a publicação abaixo após gravar o Redis.
 `DraftCompleted` também é interno: leva as escolhas finais à BE-038, sem expor
 habilidades no tópico público. Os eventos não têm entrega persistente ou replay.
+Cada alteração também publica `ROOM_SNAPSHOT`, projetado do estado persistido no
+Redis. Se a consulta secundária de username falhar, `DRAFT_UPDATE` continua sendo
+publicado sem o nickname daquele jogador; use `ROOM_SNAPSHOT` para reconciliar a
+visão compartilhada.
 
 Exemplo de `DRAFT_UPDATE` recebido pelos inscritos em `/topic/rooms/0042`:
 
@@ -641,7 +647,8 @@ Exemplo de `DRAFT_UPDATE` recebido pelos inscritos em `/topic/rooms/0042`:
   "payload": {
     "deadline": 1792670020000,
     "characters": { "P1": "X", "P2": "O" },
-    "ready": { "P1": true, "P2": false }
+    "ready": { "P1": true, "P2": false },
+    "nicknames": { "P1": "ana" }
   },
   "serverTime": 1792670000000
 }
@@ -651,7 +658,10 @@ Exemplo de `DRAFT_UPDATE` recebido pelos inscritos em `/topic/rooms/0042`:
 o convidado; lados não dependem de quem começa a jogar. `characters` omite lados
 que ainda não escolheram e usa `X`, `O`, `TRIANGULO`, `QUADRADO`, `ESTRELA` ou
 `CORACAO`, não UUIDs. `ready` sempre contém os dois lados. Inventários e habilidades
-escolhidas não são publicados. A inscrição no tópico exige sessão STOMP autenticada e participante da sala ativa correspondente ao código.
+escolhidas não são publicados. `nicknames` contém os nomes disponíveis dos jogadores
+que já selecionaram personagem; falha ao consultar um nome não impede o evento e
+omite apenas a entrada indisponível. A inscrição no tópico exige sessão STOMP
+autenticada e participante da sala ativa correspondente ao código.
 
 O formato corresponde a `src/types/events.ts` e `src/stores/serverEvents.ts` do
 [frontend, commit 718864c](https://github.com/Jogo-da-Velha-ES3/JogoDaVelha-FrontEnd/tree/718864c8124b9a5ca84466447875199f9b1dbaf9).
@@ -804,6 +814,7 @@ Erros/compatibilidade:
 | 24/10/2026 | `POST /api/rooms/{code}/leave`, evento `ROOM_CLOSED` e expiração de salas `WAITING` abandonadas.                                                                                          | NOVO                          | BE-036; PR feat/room-leave-expiration       |
 | 25/10/2026 | BE-038: `DraftCompleted` do pacote `draft`, personagens persistidos, sala permanece `IN_GAME` no `MATCH_END` (revanche BE-039) e `coinsCredited` reflete o crédito real. | NOVO | BE-038 |
 | 25/10/2026 | Seleção de duas habilidades iniciais por STOMP, confirmação no Draft e erros privados. | NOVO | BE-013 |
+| 01/11/2026 | Falha ao enriquecer nickname não bloqueia `DRAFT_UPDATE`; `ROOM_SNAPSHOT` reconcilia a projeção do estado persistido do Draft. | ALTERADO | Draft |
 
 ### Implementação BE-038 (2026-10-25)
 

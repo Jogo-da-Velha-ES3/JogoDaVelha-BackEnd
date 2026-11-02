@@ -5,6 +5,7 @@ import com.jogodavelha.character.Character;
 import com.jogodavelha.character.CharacterRepository;
 import com.jogodavelha.character.CharacterSymbol;
 import com.jogodavelha.websocket.WebSocketService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -16,6 +17,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Component
+@Slf4j
 public class DraftEventPublisher {
     private final WebSocketService websocket;
     private final CharacterRepository characters;
@@ -44,16 +46,6 @@ public class DraftEventPublisher {
                         .collect(Collectors.toMap(Character::getId, Character::getSymbol));
         Map<String, CharacterSymbol> selected = new LinkedHashMap<>();
         Map<String, Boolean> ready = new LinkedHashMap<>();
-        for (int index = 0; index < event.players().size(); index++) {
-            var player = event.players().get(index);
-            String slot = "P" + (index + 1);
-            ready.put(slot, player.ready());
-            if (player.characterId() != null) {
-                selected.put(slot, Objects.requireNonNull(symbols.get(player.characterId()),
-                        "Personagem selecionado não existe no catálogo."));
-            }
-        }
-
         Map<String, String> nicknames = new LinkedHashMap<>();
         for (int index = 0; index < event.players().size(); index++) {
             var player = event.players().get(index);
@@ -65,9 +57,14 @@ public class DraftEventPublisher {
                         Objects.requireNonNull(symbols.get(player.characterId()),
                         "Personagem selecionado não existe no catálogo.")
                 );
-                users.findById(player.playerId()).ifPresent(
-                        user -> nicknames.put(slot, user.getUsername())
-                );
+                try {
+                    users.findById(player.playerId()).ifPresent(
+                            user -> nicknames.put(slot, user.getUsername())
+                    );
+                } catch (RuntimeException exception) {
+                    log.warn("Could not enrich DRAFT_UPDATE with nickname: roomCode={}, playerId={}",
+                            event.roomCode(), player.playerId(), exception);
+                }
             }
         }
 
