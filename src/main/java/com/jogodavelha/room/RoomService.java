@@ -2,6 +2,8 @@ package com.jogodavelha.room;
 
 import com.jogodavelha.auth.User;
 import com.jogodavelha.auth.UserRepository;
+import com.jogodavelha.game.GameRepository;
+import com.jogodavelha.game.GameStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -19,6 +21,7 @@ public class RoomService {
     private final RoomCodeAllocator allocator;
     private final ApplicationEventPublisher events;
     private final RoomPlayerService roomPlayers;
+    private final GameRepository games;
 
     public Room createRoom(UUID playerId) {
         return allocator.reserve(findPlayer(playerId));
@@ -72,6 +75,26 @@ public class RoomService {
         Room saved = rooms.saveAndFlush(room);
         events.publishEvent(new RoomClosedEvent(saved.getCode(), saved.getId(), playerId, "HOST_LEFT"));
         return saved;
+    }
+
+    public void closeAfterMatch(String code, UUID playerId, String reason) {
+        validateCode(code);
+        if (reason == null || reason.isBlank()) throw new IllegalArgumentException("Informe o motivo do encerramento.");
+        allocator.lockMembership();
+        Room room = rooms.findByCode(code).orElseThrow(
+                () -> new RoomNotFoundException("Sala não encontrada ou encerrada."));
+        boolean member = playerId == null || room.getPlayer1().getId().equals(playerId)
+                || room.getPlayer2() != null && room.getPlayer2().getId().equals(playerId);
+        if (!member) throw new IllegalArgumentException("Jogador não pertence à sala.");
+        if (room.getStatus() == RoomStatus.CLOSED) return;
+        if (room.getStatus() != RoomStatus.IN_GAME || room.getPlayer2() == null
+                || games.findByRoomIdAndStatus(room.getId(), GameStatus.IN_PROGRESS).isPresent()
+                || games.findTopByRoomIdAndStatusOrderByFinishedAtDesc(room.getId(), GameStatus.FINISHED).isEmpty()) {
+            throw new RoomAlreadyStartedException("A sala só pode ser encerrada na tela de resultado.");
+        }
+        room.close();
+        Room saved = rooms.saveAndFlush(room);
+        events.publishEvent(new RoomClosedEvent(saved.getCode(), saved.getId(), playerId, reason));
     }
 
     private void validateCode(String code) {

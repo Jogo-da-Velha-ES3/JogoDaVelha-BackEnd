@@ -15,6 +15,8 @@ public interface RoomRepository extends JpaRepository<Room, UUID> {
 
     Optional<Room> findByCodeAndStatusIn(String code, Collection<RoomStatus> statuses);
 
+    Optional<Room> findByCode(String code);
+
     @Query("select r from Room r where r.code = :code and r.status in :statuses "
             + "and (r.player1.id = :playerId or r.player2.id = :playerId)")
     Optional<Room> findActiveMembership(@Param("code") String code,

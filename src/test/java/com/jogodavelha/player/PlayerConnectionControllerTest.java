@@ -3,6 +3,7 @@ package com.jogodavelha.player;
 import com.jogodavelha.game.PlayerDisconnectionListener;
 import com.jogodavelha.game.PlayerSessionRegistry;
 import com.jogodavelha.game.service.PlayerService;
+import com.jogodavelha.room.RematchService;
 import com.jogodavelha.websocket.PlayerConnectionController;
 import com.jogodavelha.websocket.RoomSnapshotService;
 import org.junit.jupiter.api.Test;
@@ -21,7 +22,9 @@ class PlayerConnectionControllerTest {
     private final PlayerService playerService = mock(PlayerService.class);
     private final PlayerSessionRegistry playerSessionRegistry = mock(PlayerSessionRegistry.class);
     private final RoomSnapshotService snapshots = mock(RoomSnapshotService.class);
-    private final PlayerDisconnectionListener listener = new PlayerDisconnectionListener(playerService, playerSessionRegistry);
+    private final RematchService rematches = mock(RematchService.class);
+    private final PlayerDisconnectionListener listener = new PlayerDisconnectionListener(
+            playerService, playerSessionRegistry, rematches);
     private final PlayerConnectionController controller = new PlayerConnectionController(playerService, playerSessionRegistry);
 
     PlayerConnectionControllerTest() {
@@ -76,7 +79,8 @@ class PlayerConnectionControllerTest {
     void marksPlayerDisconnectedWhenSessionIsKnown() {
         UUID playerId = UUID.randomUUID();
         PlayerSessionRegistry.Entry entry = new PlayerSessionRegistry.Entry("0042", playerId);
-        when(playerSessionRegistry.remove("session-123")).thenReturn(entry);
+        when(playerSessionRegistry.removeAndCheckLast("session-123"))
+                .thenReturn(new PlayerSessionRegistry.Removal(entry, true));
 
         SessionDisconnectEvent event = mock(SessionDisconnectEvent.class);
         when(event.getSessionId()).thenReturn("session-123");
@@ -84,11 +88,13 @@ class PlayerConnectionControllerTest {
         listener.handleDisconnect(event);
 
         verify(playerService).markDisconnected("0042", playerId);
+        verify(rematches).onPlayerDisconnected("0042", playerId);
     }
 
     @Test
     void doesNothingWhenSessionIsUnknown() {
-        when(playerSessionRegistry.remove("session-999")).thenReturn(null);
+        when(playerSessionRegistry.removeAndCheckLast("session-999"))
+                .thenReturn(new PlayerSessionRegistry.Removal(null, false));
 
         SessionDisconnectEvent event = mock(SessionDisconnectEvent.class);
         when(event.getSessionId()).thenReturn("session-999");
