@@ -276,18 +276,20 @@ class RoomServiceTest {
         game.setPlayer2(guest);
         game.registerRoundResult(com.jogodavelha.game.RoundResult.PLAYER1_WIN);
         game.registerRoundResult(com.jogodavelha.game.RoundResult.PLAYER1_WIN);
-        when(rooms.findByCode("0042")).thenReturn(Optional.of(room));
+        when(rooms.findById(room.getId())).thenReturn(Optional.of(room));
         when(games.findByRoomIdAndStatus(room.getId(), com.jogodavelha.game.GameStatus.IN_PROGRESS))
                 .thenReturn(Optional.empty());
         when(games.findTopByRoomIdAndStatusOrderByFinishedAtDesc(room.getId(),
                 com.jogodavelha.game.GameStatus.FINISHED)).thenReturn(Optional.of(game));
         when(rooms.saveAndFlush(room)).thenReturn(room);
 
-        service.closeAfterMatch("0042", owner.getId(), RoomClosedEvent.RETURN_TO_LOBBY);
-        service.closeAfterMatch("0042", owner.getId(), RoomClosedEvent.RETURN_TO_LOBBY);
+        service.closeAfterMatch(room.getId(), owner.getId(), RoomClosedEvent.RETURN_TO_LOBBY);
+        service.closeAfterMatch(room.getId(), owner.getId(), RoomClosedEvent.RETURN_TO_LOBBY);
 
         assertEquals(RoomStatus.CLOSED, room.getStatus());
         verify(rooms, times(1)).saveAndFlush(room);
         verify(events, times(1)).publishEvent(any(RoomClosedEvent.class));
+        verify(rooms, times(2)).findById(room.getId());
+        verify(rooms, never()).findByCode(anyString());
     }
 }

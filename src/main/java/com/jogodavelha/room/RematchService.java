@@ -91,7 +91,7 @@ public class RematchService {
         states.transition(pending, RematchState.Status.DECLINED)
                 .orElseThrow(() -> new IllegalStateException("A negociação de revanche já foi encerrada."));
         cancel(room.getId());
-        roomService.closeAfterMatch(code, playerId, RoomClosedEvent.REMATCH_DECLINED);
+        roomService.closeAfterMatch(room.getId(), playerId, RoomClosedEvent.REMATCH_DECLINED);
     }
 
     public void returnToLobby(String code, UUID playerId) {
@@ -115,7 +115,7 @@ public class RematchService {
             }
             cancel(room.getId());
         }
-        roomService.closeAfterMatch(code, playerId, RoomClosedEvent.RETURN_TO_LOBBY);
+        roomService.closeAfterMatch(room.getId(), playerId, RoomClosedEvent.RETURN_TO_LOBBY);
     }
 
     public void onPlayerDisconnected(String code, UUID playerId) {
@@ -130,7 +130,7 @@ public class RematchService {
         }
         if (states.transition(pending, RematchState.Status.CANCELLED).isEmpty()) return;
         cancel(room.getId());
-        roomService.closeAfterMatch(code, playerId, RoomClosedEvent.REMATCH_DISCONNECTED);
+        roomService.closeAfterMatch(room.getId(), playerId, RoomClosedEvent.REMATCH_DISCONNECTED);
     }
 
     public void expire(UUID roomId, UUID expectedGameId, long expectedDeadline) {
@@ -147,7 +147,7 @@ public class RematchService {
         Optional<RematchState> expired = states.transition(pending, RematchState.Status.EXPIRED);
         if (expired.isEmpty()) return;
         cancel(roomId);
-        roomService.closeAfterMatch(pending.roomCode(), null, RoomClosedEvent.REMATCH_EXPIRED);
+        roomService.closeAfterMatch(roomId, null, RoomClosedEvent.REMATCH_EXPIRED);
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -177,14 +177,16 @@ public class RematchService {
     }
 
     private Game requireFinishedResult(Room room) {
-        if (draftStates.find(room.getId()).isPresent()) {
-            throw new IllegalStateException("A sala já está em preparação para uma partida.");
-        }
         if (games.findByRoomIdAndStatus(room.getId(), GameStatus.IN_PROGRESS).isPresent()) {
             throw new IllegalStateException("A revanche só pode ser negociada após o encerramento da partida.");
         }
-        return games.findTopByRoomIdAndStatusOrderByFinishedAtDesc(room.getId(), GameStatus.FINISHED)
+        Game finished = games.findTopByRoomIdAndStatusOrderByFinishedAtDesc(room.getId(), GameStatus.FINISHED)
                 .orElseThrow(() -> new IllegalStateException("Não há resultado de partida para negociar revanche."));
+        DraftState draft = draftStates.find(room.getId()).orElse(null);
+        if (draft != null && (!draft.completed() || isDraftAfterGame(draft, finished))) {
+            throw new IllegalStateException("A sala já está em preparação para uma partida.");
+        }
+        return finished;
     }
 
     private RematchState requirePending(Room room, UUID playerId) {
@@ -218,8 +220,7 @@ public class RematchService {
         if (!states.acquireInitialization(room.getId(), lockToken)) return;
         try {
             DraftState existing = draftStates.find(room.getId()).orElse(null);
-            if (existing != null && previous.getFinishedAt() != null
-                    && existing.deadlineEpochMillis() > previous.getFinishedAt().toEpochMilli()) {
+            if (existing != null && isDraftAfterGame(existing, previous)) {
                 drafts.resume(room.getId());
                 snapshots.publish(room.getCode());
                 return;
@@ -232,6 +233,11 @@ public class RematchService {
         } finally {
             states.releaseInitialization(room.getId(), lockToken);
         }
+    }
+
+    private boolean isDraftAfterGame(DraftState draft, Game game) {
+        return game.getFinishedAt() != null
+                && draft.deadlineEpochMillis() - DraftState.DURATION_MILLIS > game.getFinishedAt().toEpochMilli();
     }
 
     private void schedule(RematchState state) {

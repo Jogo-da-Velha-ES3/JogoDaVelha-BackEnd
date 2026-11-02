@@ -77,11 +77,11 @@ public class RoomService {
         return saved;
     }
 
-    public void closeAfterMatch(String code, UUID playerId, String reason) {
-        validateCode(code);
+    public void closeAfterMatch(UUID roomId, UUID playerId, String reason) {
+        if (roomId == null) throw new IllegalArgumentException("Informe a identidade da sala.");
         if (reason == null || reason.isBlank()) throw new IllegalArgumentException("Informe o motivo do encerramento.");
         allocator.lockMembership();
-        Room room = rooms.findByCode(code).orElseThrow(
+        Room room = rooms.findById(roomId).orElseThrow(
                 () -> new RoomNotFoundException("Sala não encontrada ou encerrada."));
         boolean member = playerId == null || room.getPlayer1().getId().equals(playerId)
                 || room.getPlayer2() != null && room.getPlayer2().getId().equals(playerId);

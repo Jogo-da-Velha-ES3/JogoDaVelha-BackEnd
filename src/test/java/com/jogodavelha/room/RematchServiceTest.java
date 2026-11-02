@@ -133,22 +133,58 @@ class RematchServiceTest {
     }
 
     @Test
+    void completedDraftFromFinishedMatchDoesNotBlockRematchOrLobby() throws Exception {
+        setField(previous, "finishedAt", Instant.ofEpochMilli(clock.millis()));
+        when(draftStates.find(room.getId())).thenReturn(Optional.of(previousCompletedDraft()));
+        when(states.find(room.getId())).thenReturn(Optional.empty());
+        when(states.begin(any(RematchState.class))).thenReturn(true);
+
+        assertDoesNotThrow(() -> service.request("0042", player1.getId()));
+        verify(snapshots).publish("0042");
+
+        assertDoesNotThrow(() -> service.returnToLobby("0042", player1.getId()));
+        verify(roomService).closeAfterMatch(room.getId(), player1.getId(), RoomClosedEvent.RETURN_TO_LOBBY);
+    }
+
+    @Test
+    void draftStartedAfterFinishedMatchBlocksRematch() throws Exception {
+        setField(previous, "finishedAt", Instant.ofEpochMilli(clock.millis()));
+        var eligible = new com.jogodavelha.game.draft.DraftEligibilityProvider.EligibleItems(
+                java.util.List.of(UUID.randomUUID(), UUID.randomUUID()), java.util.List.of("A", "B"));
+        var first = com.jogodavelha.game.draft.DraftState.Player.initial(player1.getId(), eligible)
+                .withCharacter(eligible.characters().get(0)).withSkills(java.util.List.of("A", "B"));
+        var second = com.jogodavelha.game.draft.DraftState.Player.initial(player2.getId(), eligible)
+                .withCharacter(eligible.characters().get(1)).withSkills(java.util.List.of("A", "B"));
+        var newDraft = new com.jogodavelha.game.draft.DraftState(room.getId(), "0042",
+                clock.millis() + com.jogodavelha.game.draft.DraftState.DURATION_MILLIS + 1_000,
+                0, first, second);
+        when(draftStates.find(room.getId())).thenReturn(Optional.of(newDraft));
+
+        var exception = assertThrows(IllegalStateException.class,
+                () -> service.request("0042", player1.getId()));
+
+        assertEquals("A sala já está em preparação para uma partida.", exception.getMessage());
+        verify(states, never()).begin(any());
+    }
+
+    @Test
     void acceptanceCreatesFreshDraftOnceAndRetainsFinishedGame() {
         RematchState pending = pending();
         RematchState accepted = pending.withStatus(RematchState.Status.ACCEPTED);
         when(states.find(room.getId())).thenReturn(Optional.of(pending));
         when(states.transition(pending, RematchState.Status.ACCEPTED)).thenReturn(Optional.of(accepted));
         when(games.findById(previous.getId())).thenReturn(Optional.of(previous));
-        when(draftStates.find(room.getId())).thenReturn(Optional.empty());
+        when(draftStates.find(room.getId())).thenReturn(Optional.of(previousCompletedDraft()));
         when(states.acquireInitialization(eq(room.getId()), anyString())).thenReturn(true);
 
         service.accept("0042", player2.getId());
 
         verify(drafts).cancel(room.getId());
         verify(draftStates).delete(room.getId());
+        verify(drafts, never()).resume(room.getId());
         verify(gameStates).delete(previous.getId());
         verify(drafts).start(room.getId(), "0042", player1.getId(), player2.getId());
-        verify(roomService, never()).closeAfterMatch(anyString(), any(), anyString());
+        verify(roomService, never()).closeAfterMatch(any(UUID.class), any(), anyString());
         verify(states).releaseInitialization(eq(room.getId()), anyString());
         assertEquals(GameStatus.FINISHED, previous.getStatus());
     }
@@ -165,7 +201,7 @@ class RematchServiceTest {
 
         assertThrows(IllegalStateException.class, () -> service.accept("0042", player2.getId()));
 
-        verify(roomService).closeAfterMatch("0042", null, RoomClosedEvent.REMATCH_EXPIRED);
+        verify(roomService).closeAfterMatch(room.getId(), null, RoomClosedEvent.REMATCH_EXPIRED);
         verify(states, never()).transition(pending, RematchState.Status.ACCEPTED);
     }
 
@@ -178,7 +214,7 @@ class RematchServiceTest {
 
         service.decline("0042", player2.getId());
 
-        verify(roomService).closeAfterMatch("0042", player2.getId(), RoomClosedEvent.REMATCH_DECLINED);
+        verify(roomService).closeAfterMatch(room.getId(), player2.getId(), RoomClosedEvent.REMATCH_DECLINED);
         verify(states, never()).transition(pending, RematchState.Status.CANCELLED);
     }
 
@@ -193,7 +229,7 @@ class RematchServiceTest {
 
         service.onPlayerDisconnected("0042", player1.getId());
 
-        verify(roomService).closeAfterMatch("0042", player1.getId(), RoomClosedEvent.REMATCH_DISCONNECTED);
+        verify(roomService).closeAfterMatch(room.getId(), player1.getId(), RoomClosedEvent.REMATCH_DISCONNECTED);
     }
 
     @Test
@@ -216,7 +252,7 @@ class RematchServiceTest {
 
         service.returnToLobby("0042", player1.getId());
 
-        verify(roomService).closeAfterMatch("0042", player1.getId(), RoomClosedEvent.RETURN_TO_LOBBY);
+        verify(roomService).closeAfterMatch(room.getId(), player1.getId(), RoomClosedEvent.RETURN_TO_LOBBY);
     }
 
     @Test
@@ -228,7 +264,7 @@ class RematchServiceTest {
 
         assertThrows(IllegalStateException.class, () -> service.returnToLobby("0042", player1.getId()));
 
-        verify(roomService, never()).closeAfterMatch(anyString(), any(), anyString());
+        verify(roomService, never()).closeAfterMatch(any(UUID.class), any(), anyString());
     }
 
     @Test
@@ -241,7 +277,7 @@ class RematchServiceTest {
         service.expire(room.getId(), old.gameId(), old.deadlineEpochMillis());
 
         verify(states, never()).transition(any(), any());
-        verify(roomService, never()).closeAfterMatch(anyString(), any(), anyString());
+        verify(roomService, never()).closeAfterMatch(any(UUID.class), any(), anyString());
     }
 
     @Test
@@ -291,6 +327,19 @@ class RematchServiceTest {
                 clock.millis() + RematchService.RESPONSE_WINDOW_MILLIS, 0, RematchState.Status.PENDING);
     }
 
+    private com.jogodavelha.game.draft.DraftState previousCompletedDraft() {
+        var eligible = new com.jogodavelha.game.draft.DraftEligibilityProvider.EligibleItems(
+                java.util.List.of(UUID.randomUUID(), UUID.randomUUID()), java.util.List.of("A", "B"));
+        var first = com.jogodavelha.game.draft.DraftState.Player.initial(player1.getId(), eligible)
+                .withCharacter(eligible.characters().get(0)).withSkills(java.util.List.of("A", "B"));
+        var second = com.jogodavelha.game.draft.DraftState.Player.initial(player2.getId(), eligible)
+                .withCharacter(eligible.characters().get(1)).withSkills(java.util.List.of("A", "B"));
+        return new com.jogodavelha.game.draft.DraftState(room.getId(), "0042",
+                previous.getFinishedAt().toEpochMilli()
+                        + com.jogodavelha.game.draft.DraftState.DURATION_MILLIS - 1_000,
+                0, first, second);
+    }
+
     private static User user(String username) {
         User user = new User(username, "hash", username + "@example.test");
         user.setId(UUID.randomUUID());
@@ -298,8 +347,12 @@ class RematchServiceTest {
     }
 
     private static void setId(Object entity, UUID id) throws Exception {
-        Field field = entity.getClass().getDeclaredField("id");
+        setField(entity, "id", id);
+    }
+
+    private static void setField(Object entity, String fieldName, Object value) throws Exception {
+        Field field = entity.getClass().getDeclaredField(fieldName);
         field.setAccessible(true);
-        field.set(entity, id);
+        field.set(entity, value);
     }
 }
