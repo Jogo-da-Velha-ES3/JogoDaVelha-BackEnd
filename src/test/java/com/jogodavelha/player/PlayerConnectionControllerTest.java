@@ -5,6 +5,7 @@ import com.jogodavelha.game.PlayerConnectionService;
 import com.jogodavelha.game.PlayerDisconnectionListener;
 import com.jogodavelha.game.PlayerSessionRegistry;
 import com.jogodavelha.game.service.PlayerService;
+import com.jogodavelha.room.RematchService;
 import com.jogodavelha.room.Room;
 import com.jogodavelha.room.RoomCodeAllocator;
 import com.jogodavelha.room.RoomRepository;
@@ -32,8 +33,9 @@ class PlayerConnectionControllerTest {
     private final RoomRepository rooms = mock(RoomRepository.class);
     private final RoomSnapshotService snapshots = mock(RoomSnapshotService.class);
     private final PlayerPresenceEventPublisher presenceEvents = mock(PlayerPresenceEventPublisher.class);
+    private final RematchService rematches = mock(RematchService.class);
     private final PlayerDisconnectionListener listener =
-            new PlayerDisconnectionListener(connections, presenceEvents);
+            new PlayerDisconnectionListener(connections, presenceEvents, rematches);
     private final PlayerConnectionController controller =
             new PlayerConnectionController(connections, rooms, snapshots, presenceEvents);
 
@@ -124,11 +126,13 @@ class PlayerConnectionControllerTest {
 
         listener.handleDisconnect(event);
         verify(presenceEvents, never()).disconnected(any());
+        verify(rematches, never()).onPlayerDisconnected(anyString(), any(UUID.class));
         listener.handleDisconnect(finalEvent);
         listener.handleDisconnect(finalEvent);
 
         verify(playerService).markDisconnected("0042", p1.getId());
         verify(presenceEvents, times(1)).disconnected(entry);
+        verify(rematches, times(1)).onPlayerDisconnected("0042", p1.getId());
     }
 
     @Test
@@ -141,6 +145,7 @@ class PlayerConnectionControllerTest {
 
         verify(presenceEvents).disconnected(entry);
         verify(playerService).markDisconnected("0042", p2.getId());
+        verify(rematches).onPlayerDisconnected("0042", p2.getId());
     }
 
     private static SimpMessageHeaderAccessor headers(String sessionId) {

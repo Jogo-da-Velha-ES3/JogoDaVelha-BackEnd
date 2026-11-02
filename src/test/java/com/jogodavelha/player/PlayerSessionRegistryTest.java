@@ -56,10 +56,11 @@ class PlayerSessionRegistryTest {
     @Test
     void onlyTreatsTheLastRoomSessionAsADisconnect() {
         UUID playerId = UUID.randomUUID();
-        registry.register("session-1", "0042", playerId);
-        registry.register("session-2", "0042", playerId);
+        var entry = new PlayerSessionRegistry.Entry("0042", playerId);
+        registry.register("session-1", entry);
+        registry.register("session-2", entry);
 
-        assertFalse(registry.removeAndCheckLast("session-1").lastSessionForPlayer());
-        assertTrue(registry.removeAndCheckLast("session-2").lastSessionForPlayer());
+        assertFalse(registry.removeWithStatus("session-1").lastSession());
+        assertTrue(registry.removeWithStatus("session-2").lastSession());
     }
 }

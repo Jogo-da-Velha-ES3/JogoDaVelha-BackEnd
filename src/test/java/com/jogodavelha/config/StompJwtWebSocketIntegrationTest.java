@@ -6,6 +6,7 @@ import com.jogodavelha.game.PlayerConnectionService;
 import com.jogodavelha.game.PlayerDisconnectionListener;
 import com.jogodavelha.game.PlayerSessionRegistry;
 import com.jogodavelha.game.service.PlayerService;
+import com.jogodavelha.room.RematchService;
 import com.jogodavelha.room.Room;
 import com.jogodavelha.room.RoomCodeAllocator;
 import com.jogodavelha.room.RoomRepository;
@@ -79,6 +80,7 @@ class StompJwtWebSocketIntegrationTest {
         @Bean PlayerService playerService() { return mock(PlayerService.class); }
         @Bean RoomRepository roomRepository() { return mock(RoomRepository.class); }
         @Bean RoomSnapshotService roomSnapshotService() { return mock(RoomSnapshotService.class); }
+        @Bean RematchService rematchService() { return mock(RematchService.class); }
     }
 
     @LocalServerPort int port;
