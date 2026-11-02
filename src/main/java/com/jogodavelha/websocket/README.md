@@ -135,9 +135,11 @@ stompClient.subscribe('/topic/rooms/' + roomCode, function (message) {
 
 #### `ROOM_SNAPSHOT`
 
-Publicado em `/topic/rooms/{code}` ao conectar, apos a entrada do segundo jogador, em atualizacoes do Draft, depois de jogada/habilidade/timeout que avance o turno e nas transicoes de round. O listener de `TurnChangedEvent` executa depois do `GameLifecycleService`: rounds encerrados e W.O. sao processados antes de decidir se ha snapshot. Transicoes de round publicam pelo fluxo de sorteio/liberacao do turno; ao encerrar a partida, `MATCH_END` e publicado uma vez e o evento `MatchFinishedEvent` dispara o snapshot final antes da limpeza do estado Redis.
+Publicado em `/topic/rooms/{code}` ao conectar, apos a entrada do segundo jogador, em atualizacoes do Draft, depois de jogada/habilidade/timeout que avance o turno, nas transicoes de round e nas mudancas da negociacao de revanche. O listener de `TurnChangedEvent` executa depois do `GameLifecycleService`: rounds encerrados e W.O. sao processados antes de decidir se ha snapshot. Transicoes de round publicam pelo fluxo de sorteio/liberacao do turno; ao encerrar a partida, `MATCH_END` e publicado uma vez e o evento `MatchFinishedEvent` dispara o snapshot final antes da limpeza do estado Redis.
 
 O payload inclui `gameId`, fase, round, placar em `players[].roundsWon`, morte subita, tabuleiro de 16 casas (`owner: null` para vazia e `effects` para efeitos especiais) e turno. `turn.deadline` e timestamp absoluto Unix epoch em milissegundos; `startedAt` e `durationSeconds` refletem a duracao efetiva (10 s, 5 s em morte subita ou reducao por Ampulheta). O envelope segue `{type, payload, serverTime}`.
+
+Durante a tela de resultado, `rematch` e `null` ou `{by:"P1|P2", deadline:<epochMillis>}`. O prazo de 15 segundos e validado pelo servidor. Ao aceitar, o snapshot substitui o resultado antigo pela preparacao nova (`phase:"DRAFT"`, `gameId:null`, `outcome:null`); a sala e os jogadores permanecem os mesmos.
 
 No topico compartilhado `mySlot` e `null`, `myDeck` e `[]` e `drawOptions` e `null`. Cada jogador tambem recebe o `ROOM_SNAPSHOT` individualizado em `/user/queue/room`, com seu `mySlot`, seu `myDeck` e, durante `ROUND_DRAW`, apenas as proprias opcoes pendentes. As tres opcoes nunca sao publicadas no topico nem enviadas ao outro jogador. Vitoria, empate e W.O. sao comunicados por `MATCH_END`, com placar, vencedor, `forfeit` e `reason` (`NORMAL` ou `FORFEIT_TIMEOUT`).
 
@@ -146,7 +148,7 @@ A composicao e o despacho sao medidos com `System.nanoTime()`. Um aviso e regist
 Para sincronizar sob demanda, envie `SEND /app/rooms/{code}/sync` sem corpo. O backend deriva a identidade do `Principal`, valida participacao ativa e responde somente ao solicitante em `/user/queue/room`. Nao ha broadcast durante sync, preservando os dados privados do outro jogador.
 #### `ROOM_CLOSED`
 
-Enviado quando a sala é fechada: o host saiu enquanto ela estava `WAITING` (`POST /rooms/{code}/leave`) ou ela expirou por inatividade. É publicado só depois do commit da transação: saídas rejeitadas (sala inexistente, jogador fora da sala, partida já iniciada) não geram mensagem.
+Enviado após o commit quando a sala é encerrada: host saiu enquanto ela estava `WAITING`, sala expirou por inatividade, revanche foi recusada/expirou, um jogador voltou ao lobby ou desconectou definitivamente com negociação pendente. Saídas rejeitadas e repetições não publicam mensagens duplicadas.
 
 | Campo        | Tipo              | Descrição                                     |
 |--------------|-------------------|-----------------------------------------------|
@@ -159,8 +161,8 @@ Campos de `payload`:
 | Campo      | Tipo          | Descrição                                                       |
 |------------|---------------|-----------------------------------------------------------------|
 | `roomCode` | string        | Código da sala                                                  |
-| `closedBy` | string (UUID) | ID de quem saiu. É `null` quando a sala expira                  |
-| `reason`   | string        | `HOST_LEFT` (saída voluntária) ou `EXPIRED` (expiração)         |
+| `closedBy` | string (UUID) | ID de quem saiu/recusou/desconectou. É `null` quando o prazo expira |
+| `reason`   | string        | `HOST_LEFT`, `EXPIRED`, `REMATCH_DECLINED`, `REMATCH_EXPIRED`, `RETURN_TO_LOBBY` ou `REMATCH_DISCONNECTED` |
 
 Exemplo:
 

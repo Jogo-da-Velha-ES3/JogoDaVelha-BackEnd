@@ -52,4 +52,15 @@ class PlayerSessionRegistryTest {
     void returnsNullForUnknownSession() {
         assertNull(registry.remove("nao-existe"));
     }
+
+    @Test
+    void onlyTreatsTheLastRoomSessionAsADisconnect() {
+        UUID playerId = UUID.randomUUID();
+        var entry = new PlayerSessionRegistry.Entry("0042", playerId);
+        registry.register("session-1", entry);
+        registry.register("session-2", entry);
+
+        assertFalse(registry.removeWithStatus("session-1").lastSession());
+        assertTrue(registry.removeWithStatus("session-2").lastSession());
+    }
 }

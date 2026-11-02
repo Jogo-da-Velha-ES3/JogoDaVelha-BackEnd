@@ -21,6 +21,8 @@ import com.jogodavelha.room.RoomNotFoundException;
 import com.jogodavelha.room.RoomPlayerService;
 import com.jogodavelha.room.RoomRepository;
 import com.jogodavelha.room.RoomStatus;
+import com.jogodavelha.room.RematchState;
+import com.jogodavelha.room.RematchStateManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
@@ -52,6 +54,7 @@ public class RoomSnapshotService {
     private final PlayerService playerService;
     private final CharacterRepository characters;
     private final WebSocketService websocket;
+    private final RematchStateManager rematches;
 
     public RoomSnapshot compose(String code, UUID viewerId) {
         Room room = activeRoom(code);
@@ -119,7 +122,7 @@ public class RoomSnapshotService {
                 deck, match.outcome(), serverTime, draft,
                 includePrivate && mySlot != null ? drawOptions(state.gameState(),
                         mySlot == Slot.P1 ? room.getPlayer1().getId() : room.getPlayer2().getId()) : null,
-                match.coins(), null);
+                match.coins(), rematch(state, serverTime));
     }
 
     private void sendPrivate(Room room, UUID userId, Slot slot, State state, long serverTime) {
@@ -129,10 +132,16 @@ public class RoomSnapshotService {
 
     private State readState(Room room) {
         DraftState draft = drafts.find(room.getId()).orElse(null);
-        Game game = games.findByRoomIdAndStatus(room.getId(), GameStatus.IN_PROGRESS)
-                .or(() -> games.findByRoomIdAndStatus(room.getId(), GameStatus.FINISHED)).orElse(null);
+        Game active = games.findByRoomIdAndStatus(room.getId(), GameStatus.IN_PROGRESS).orElse(null);
+        Game finished = games.findTopByRoomIdAndStatusOrderByFinishedAtDesc(room.getId(), GameStatus.FINISHED)
+                .orElse(null);
+        boolean preparingNewMatch = active == null && draft != null
+                && (finished == null || finished.getFinishedAt() == null
+                || draft.deadlineEpochMillis() > finished.getFinishedAt().toEpochMilli());
+        Game game = active != null ? active : preparingNewMatch ? null : finished;
         GameState gameState = game == null ? null : gameStates.find(game.getId()).orElse(null);
-        return new State(draft, game, gameState);
+        RematchState negotiation = rematches.find(room.getId()).orElse(null);
+        return new State(draft, game, gameState, negotiation);
     }
 
     private List<PlayerState> players(Room room, State state, MatchSnapshot match) {
@@ -255,6 +264,21 @@ public class RoomSnapshotService {
                 ? RoomPhase.RESULT : RoomPhase.MATCHED;
     }
 
+    private Rematch rematch(State state, long serverTime) {
+        RematchState negotiation = state.rematch();
+        Game game = state.game();
+        if (negotiation == null || negotiation.status() != RematchState.Status.PENDING
+                || negotiation.deadlineEpochMillis() <= serverTime || game == null
+                || game.getStatus() != GameStatus.FINISHED || !game.getId().equals(negotiation.gameId())) {
+            return null;
+        }
+        Slot requester = game.getPlayer1().getId().equals(negotiation.requesterId()) ? Slot.P1
+                : game.getPlayer2() != null && game.getPlayer2().getId().equals(negotiation.requesterId())
+                ? Slot.P2 : null;
+        if (requester == null) return null;
+        return new Rematch(requester, negotiation.deadlineEpochMillis());
+    }
+
     private DrawOptions drawOptions(GameState state, UUID viewerId) {
         if (state == null || state.getPhase() != GamePhase.DRAFT || state.getRoundDraw() == null) return null;
         var player = state.getRoundDraw().players().get(viewerId);
@@ -301,7 +325,7 @@ public class RoomSnapshotService {
     public record DraftSnapshot(long deadline, Map<Slot, Boolean> ready) { }
     public record DrawOptions(List<String> options, long deadline) { }
     public record Rematch(Slot by, long deadline) { }
-    private record State(DraftState draft, Game game, GameState gameState) {
+    private record State(DraftState draft, Game game, GameState gameState, RematchState rematch) {
         Optional<GameState> gameStateOptional() { return Optional.ofNullable(gameState); }
         Optional<DraftState> draftOptional() { return Optional.ofNullable(draft); }
     }
