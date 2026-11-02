@@ -1,58 +1,79 @@
 package com.jogodavelha.player;
 
 import com.jogodavelha.game.service.PlayerService;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
 import java.util.UUID;
+import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class PlayerServiceTest {
+    private static final long TTL_MILLIS = 60_000;
+    private static final String KEY = "presence:room:0042:player:";
 
     @SuppressWarnings("unchecked")
     private final RedisTemplate<String, Object> redis = mock(RedisTemplate.class);
     private final ValueOperations<String, Object> valueOps = mock(ValueOperations.class);
-    private final PlayerService service = new PlayerService(redis);
-
+    private final PlayerService service = new PlayerService(redis, TTL_MILLIS);
     private final UUID playerId = UUID.randomUUID();
-    private final String roomCode = "0042";
 
-    @BeforeEach
-    void setUp() {
+    @Test
+    void marksInitialConnectionWithConfiguredTtl() {
         when(redis.opsForValue()).thenReturn(valueOps);
+        when(valueOps.get(KEY + playerId)).thenReturn(null);
+
+        assertFalse(service.markConnected("0042", playerId));
+
+        verify(valueOps).set(KEY + playerId, "CONNECTED", Duration.ofMillis(TTL_MILLIS));
     }
 
     @Test
-    void marksPlayerAsConnected() {
-        service.markConnected(roomCode, playerId);
+    void reportsReconnectOnlyForDisconnectedPresenceAndRefreshesTtl() {
+        when(redis.opsForValue()).thenReturn(valueOps);
+        when(valueOps.get(KEY + playerId)).thenReturn("DISCONNECTED", "CONNECTED");
 
-        verify(valueOps).set("presence:room:0042:player:" + playerId, "CONNECTED");
+        assertTrue(service.markConnected("0042", playerId));
+        assertFalse(service.markConnected("0042", playerId));
+
+        verify(valueOps, times(2)).set(KEY + playerId, "CONNECTED", Duration.ofMillis(TTL_MILLIS));
     }
 
     @Test
-    void marksPlayerAsDisconnected() {
-        service.markDisconnected(roomCode, playerId);
+    void marksDisconnectedOnlyWhenPreviouslyConnectedAndUsesTtl() {
+        when(redis.opsForValue()).thenReturn(valueOps);
+        when(valueOps.get(KEY + playerId)).thenReturn("CONNECTED", "DISCONNECTED");
 
-        verify(valueOps).set("presence:room:0042:player:" + playerId, "DISCONNECTED");
+        assertTrue(service.markDisconnected("0042", playerId));
+        assertFalse(service.markDisconnected("0042", playerId));
+
+        verify(valueOps).set(KEY + playerId, "DISCONNECTED", Duration.ofMillis(TTL_MILLIS));
     }
 
     @Test
-    void reportsConnectedWhenStatusIsConnected() {
-        when(valueOps.get("presence:room:0042:player:" + playerId)).thenReturn("CONNECTED");
+    void activeSessionRefreshesPresenceLease() {
+        when(redis.opsForValue()).thenReturn(valueOps);
 
-        assertTrue(service.isConnected(roomCode, playerId));
+        service.refreshConnected("0042", playerId);
+
+        verify(valueOps).set(KEY + playerId, "CONNECTED", Duration.ofMillis(TTL_MILLIS));
     }
 
     @Test
-    void reportsNotConnectedWhenStatusIsDisconnectedOrMissing() {
-        when(valueOps.get("presence:room:0042:player:" + playerId)).thenReturn("DISCONNECTED");
-        assertFalse(service.isConnected(roomCode, playerId));
+    void expiredOrDisconnectedPresenceIsNotReportedAsConnected() {
+        when(redis.opsForValue()).thenReturn(valueOps);
+        when(valueOps.get(KEY + playerId)).thenReturn("DISCONNECTED");
 
-        when(valueOps.get("presence:room:0042:player:" + playerId)).thenReturn(null);
-        assertFalse(service.isConnected(roomCode, playerId));
+        assertFalse(service.isConnected("0042", playerId));
+        when(valueOps.get(KEY + playerId)).thenReturn((Object) null);
+        assertFalse(service.isConnected("0042", playerId));
+    }
+
+    @Test
+    void rejectsNonPositiveTtl() {
+        assertThrows(IllegalArgumentException.class, () -> new PlayerService(redis, 0));
     }
 }

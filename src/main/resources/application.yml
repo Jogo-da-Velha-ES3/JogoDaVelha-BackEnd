@@ -44,6 +44,9 @@ game:
     ttl: ${GAME_STATE_TTL:1800000}
     update:
       max-retries: ${GAME_STATE_UPDATE_MAX_RETRIES:5}
+  presence:
+    ttl: ${GAME_PRESENCE_TTL:300000}
+    refresh-interval: ${GAME_PRESENCE_REFRESH_INTERVAL:30000}
 
 payments:
   simulated:
