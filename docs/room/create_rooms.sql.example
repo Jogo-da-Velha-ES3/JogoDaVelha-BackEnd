@@ -1,0 +1,14 @@
+-- RASCUNHO INATIVO: não executar diretamente nem mover sem coordenar a versão Flyway.
+-- Pré-requisito: migration da equipe criando users(id varchar(255)).
+CREATE TABLE rooms (
+    id uuid PRIMARY KEY,
+    code varchar(4) NOT NULL CHECK (code ~ '^[0-9]{4}$'),
+    status varchar(16) NOT NULL CHECK (status IN ('WAITING', 'IN_GAME', 'CLOSED')),
+    player1_id varchar(255) NOT NULL REFERENCES users(id),
+    player2_id varchar(255) REFERENCES users(id),
+    CHECK (player2_id IS NULL OR player1_id <> player2_id),
+    CHECK (status <> 'IN_GAME' OR player2_id IS NOT NULL)
+);
+
+CREATE UNIQUE INDEX rooms_active_code_unique
+    ON rooms(code) WHERE status IN ('WAITING', 'IN_GAME');

@@ -1,20 +1,192 @@
 # WebSocket Module
 
-Este módulo contém o gateway de comunicação em tempo real do jogo.
+Este módulo contém o gateway de comunicação em tempo real do jogo utilizando o protocolo STOMP sobre WebSocket.
+
+## Abordagem STOMP
+
+Este projeto utiliza a abordagem STOMP (Simple Text Oriented Messaging Protocol) para comunicação WebSocket, fornecida pelo Spring Boot através do `spring-boot-starter-websocket`. Esta abordagem oferece:
+
+- **Protocolo de mensageria estruturado**: STOMP define um formato de mensagem padronizado com frames (CONNECT, SUBSCRIBE, SEND, MESSAGE)
+- **Suporte nativo do Spring**: Integração completa com Spring Messaging e SimpMessagingTemplate
+- **Destinos flexíveis**: Suporte a tópicos (broadcast) e filas (point-to-point)
+- **Serialização automática**: Conversão automática de objetos Java para JSON e vice-versa
+
+## Configuração
+
+A configuração STOMP é definida em `WebSocketConfig`:
+
+- **Endpoint**: `/ws` - Endpoint WebSocket para conexão STOMP
+- **Broker**: `/topic` (broadcast) e `/queue` (mensagens por usuário, ex.: `/user/queue/errors`)
+- **Application Prefix**: `/app` - Prefixo para mensagens enviadas para handlers do servidor
 
 ## Responsabilidades
 
-- Gerenciamento de conexões WebSocket
-- Processamento de mensagens em tempo real
-- Broadcast de eventos do jogo para clientes conectados
-- Controle de sessões ativas
+- Envio de mensagens em tempo real para clientes conectados
+- Broadcast de eventos do jogo para múltiplos inscritos
+- Comunicação direta com usuários específicos
+- Gerenciamento de destinos de mensagens STOMP
+- Eventos por sala (`/topic/rooms/{code}`) e por partida (`/topic/game/{gameId}`)
 
 ## Componentes
 
-- `WebSocketHandler`: Processa mensagens e gerencia conexões
-- `WebSocketService`: Gerencia sessões e envio de mensagens
-- `GameMessage`: DTO para mensagens do jogo
+- `WebSocketConfig`: Configuração do STOMP endpoint e message broker
+- `WebSocketService`: Service para envio de mensagens via SimpMessagingTemplate
+- `GameMessage`: DTO para mensagens do jogo serializadas em JSON
 
+## Padrões de Uso
+
+### Broadcast para Tópico
+```java
+webSocketService.sendToTopic("/topic/game-updates", gameMessage);
+```
+
+### Enviar para Tópico Específico de Jogo
+```java
+webSocketService.sendToGameTopic(gameId, gameMessage);
+// Envia para /topic/game/{gameId}
+```
+
+### Enviar para Usuário Específico
+```java
+webSocketService.sendToUser(username, "/queue/notifications", notification);
+```
+
+## Cliente STOMP (Exemplo)
+
+```javascript
+const socket = new SockJS('/ws');
+const stompClient = Stomp.over(socket);
+
+stompClient.connect({}, function (frame) {
+    // Subscribe to game updates
+    stompClient.subscribe('/topic/game/' + gameId, function (message) {
+        const gameMessage = JSON.parse(message.body);
+        // Handle game update
+    });
+
+    // Send move to server
+    stompClient.send('/app/game/move', {}, JSON.stringify({
+        gameId: gameId,
+        row: row,
+        col: col
+    }));
+});
+```
+
+## Tópicos
+
+### `/topic/rooms/{code}`
+
+Eventos de uma sala, identificada pelo código de 4 dígitos. O cliente se inscreve depois de criar a sala (host) ou entrar nela.
+
+#### `PLAYER_JOINED`
+
+Enviado quando o 2º jogador entra na sala, para o host exibir o "MATCH FEITO!". É publicado só depois do commit da transação de entrada: tentativas rejeitadas (sala inexistente, cheia, já iniciada, jogador indisponível) não geram mensagem.
+
+| Campo          | Tipo          | Descrição                                         |
+|----------------|---------------|---------------------------------------------------|
+| `type`         | string        | Sempre `PLAYER_JOINED`                            |
+| `payload`      | objeto        | Dados do jogador que entrou e da sala             |
+| `serverTime`   | number (epoch millis) | Instante de publicação definido pelo servidor, em milissegundos desde Unix epoch |
+
+Campos de `payload`:
+
+| Campo          | Tipo              | Descrição                                         |
+|----------------|-------------------|---------------------------------------------------|
+| `roomCode`     | string            | Código da sala                                    |
+| `guestId`      | string (UUID)     | ID de quem entrou                                 |
+| `opponentName` | string            | Username de quem entrou (o adversário do host)    |
+| `hostId`       | string (UUID)     | ID do host, para o cliente decidir se deve reagir |
+| `hostUsername` | string            | Username do host                                  |
+| `guestAvatar`  | string, opcional  | Avatar equipado do convidado (hoje não enviado)   |
+| `hostAvatar`   | string, opcional  | Avatar equipado do host (hoje não enviado)        |
+
+> O avatar é um cosmético do inventário e não é o personagem escolhido no ‘Draft’. O avatar equipado ainda não existe, então `guestAvatar` e `hostAvatar` não são enviados por enquanto (valores nulos são omitidos).
+
+Exemplo:
+
+```json
+{
+  "type": "PLAYER_JOINED",
+  "payload": {
+    "roomCode": "0042",
+    "guestId": "3f2b8c1e-0000-0000-0000-000000000002",
+    "opponentName": "guest",
+    "hostId": "3f2b8c1e-0000-0000-0000-000000000001",
+    "hostUsername": "host"
+  },
+  "serverTime": 1792929600000
+}
+```
+
+Exemplo de inscrição (cliente STOMP):
+
+```javascript
+stompClient.subscribe('/topic/rooms/' + roomCode, function (message) {
+    const event = JSON.parse(message.body);
+    if (event.type === 'PLAYER_JOINED') {
+        const { roomCode, guestId, opponentName, hostId } = event.payload;
+        // mostrar "MATCH FEITO!" com event.opponentName
+    }
+});
+```
+
+> O tópico é broadcast entre participantes, mas cada inscrição exige sessão autenticada e participação ativa na sala correspondente, conferidas pelo interceptor STOMP usando o `Principal`. O cliente do host continua filtrando `PLAYER_JOINED` por `hostId`.
+
+#### `ROOM_SNAPSHOT`
+
+Publicado em `/topic/rooms/{code}` ao conectar, apos a entrada do segundo jogador, em atualizacoes do Draft, depois de jogada/habilidade/timeout que avance o turno, nas transicoes de round e nas mudancas da negociacao de revanche. O listener de `TurnChangedEvent` executa depois do `GameLifecycleService`: rounds encerrados e W.O. sao processados antes de decidir se ha snapshot. Transicoes de round publicam pelo fluxo de sorteio/liberacao do turno; ao encerrar a partida, `MATCH_END` e publicado uma vez e o evento `MatchFinishedEvent` dispara o snapshot final antes da limpeza do estado Redis.
+
+O payload inclui `gameId`, fase, round, placar em `players[].roundsWon`, morte subita, tabuleiro de 16 casas (`owner: null` para vazia e `effects` para efeitos especiais) e turno. `turn.deadline` e timestamp absoluto Unix epoch em milissegundos; `startedAt` e `durationSeconds` refletem a duracao efetiva (10 s, 5 s em morte subita ou reducao por Ampulheta). O envelope segue `{type, payload, serverTime}`.
+
+Durante a tela de resultado, `rematch` e `null` ou `{by:"P1|P2", deadline:<epochMillis>}`. O prazo de 15 segundos e validado pelo servidor. Ao aceitar, o snapshot substitui o resultado antigo pela preparacao nova (`phase:"DRAFT"`, `gameId:null`, `outcome:null`); a sala e os jogadores permanecem os mesmos.
+
+No topico compartilhado `mySlot` e `null`, `myDeck` e `[]` e `drawOptions` e `null`. Cada jogador tambem recebe o `ROOM_SNAPSHOT` individualizado em `/user/queue/room`, com seu `mySlot`, seu `myDeck` e, durante `ROUND_DRAW`, apenas as proprias opcoes pendentes. As tres opcoes nunca sao publicadas no topico nem enviadas ao outro jogador. Vitoria, empate e W.O. sao comunicados por `MATCH_END`, com placar, vencedor, `forfeit` e `reason` (`NORMAL` ou `FORFEIT_TIMEOUT`).
+
+A composicao e o despacho sao medidos com `System.nanoTime()`. Um aviso e registrado quando o processamento no servidor excede 200 ms. A metrica cobre composicao e chamadas ao broker, nao confirma recebimento pelo navegador; nao ha ACK de cliente.
+
+Para sincronizar sob demanda, envie `SEND /app/rooms/{code}/sync` sem corpo. O backend deriva a identidade do `Principal`, valida participacao ativa e responde somente ao solicitante em `/user/queue/room`. Nao ha broadcast durante sync, preservando os dados privados do outro jogador.
+#### `ROOM_CLOSED`
+
+Enviado após o commit quando a sala é encerrada: host saiu enquanto ela estava `WAITING`, sala expirou por inatividade, revanche foi recusada/expirou, um jogador voltou ao lobby ou desconectou definitivamente com negociação pendente. Saídas rejeitadas e repetições não publicam mensagens duplicadas.
+
+| Campo        | Tipo              | Descrição                                     |
+|--------------|-------------------|-----------------------------------------------|
+| `type`       | string            | Sempre `ROOM_CLOSED`                          |
+| `payload`    | objeto            | Dados do fechamento                           |
+| `serverTime` | number (epoch millis) | Instante de publicação definido pelo servidor, em milissegundos desde Unix epoch |
+
+Campos de `payload`:
+
+| Campo      | Tipo          | Descrição                                                       |
+|------------|---------------|-----------------------------------------------------------------|
+| `roomCode` | string        | Código da sala                                                  |
+| `closedBy` | string (UUID) | ID de quem saiu/recusou/desconectou. É `null` quando o prazo expira |
+| `reason`   | string        | `HOST_LEFT`, `EXPIRED`, `REMATCH_DECLINED`, `REMATCH_EXPIRED`, `RETURN_TO_LOBBY` ou `REMATCH_DISCONNECTED` |
+
+Exemplo:
+
+```json
+{
+  "type": "ROOM_CLOSED",
+  "payload": {
+    "roomCode": "0042",
+    "closedBy": "3f2b8c1e-0000-0000-0000-000000000001",
+    "reason": "HOST_LEFT"
+  },
+  "serverTime": 1792843200000
+}
+```
+
+Tratamento no cliente:
+
+```javascript
+if (event.type === 'ROOM_CLOSED') {
+    const { roomCode, closedBy, reason } = event.payload;
+    // encerrar a tela da sala e voltar ao lobby;
+    // reason === 'EXPIRED' -> avisar que a sala expirou por inatividade
+}
+```
 ## Notas
 
 Este módulo atua como gateway de comunicação em tempo real e não persiste dados. Todo o estado persistente deve ser gerenciado pelos módulos service e logic.

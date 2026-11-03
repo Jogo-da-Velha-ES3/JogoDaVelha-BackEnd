@@ -1,14 +1,182 @@
 package com.jogodavelha.auth;
 
+import com.jogodavelha.character.Character;
+import com.jogodavelha.character.CharacterRepository;
+import com.jogodavelha.character.CharacterSymbol;
+import com.jogodavelha.character.UserCharacter;
+import com.jogodavelha.character.UserCharacterRepository;
+import jakarta.validation.Valid;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.validation.annotation.Validated;
+import com.jogodavelha.skill.Skill;
+import com.jogodavelha.skill.SkillRepository;
+import com.jogodavelha.skill.UserSkill;
+import com.jogodavelha.skill.UserSkillRepository;
+import com.jogodavelha.profile.UserStats;
+import com.jogodavelha.profile.UserStatsRepository;
 
 /**
  * Service responsável pela lógica de autenticação.
  * Gerencia validação de credenciais, geração de tokens e operações de autenticação.
  */
 @Service
+@Validated
 public class AuthService {
-    
-    // Lógica de autenticação será implementada aqui
-    // Exemplo: validar credenciais, gerar JWT, gerenciar sessões, etc.
+
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
+    private final CharacterRepository characterRepository;
+    private final UserCharacterRepository userCharacterRepository;
+    private final SkillRepository skillRepository;
+    private final UserSkillRepository userSkillRepository;
+    private final UserStatsRepository userStatsRepository;
+
+    public AuthService(
+            UserRepository userRepository,
+            PasswordEncoder passwordEncoder,
+            JwtService jwtService,
+            CharacterRepository characterRepository,
+            UserCharacterRepository userCharacterRepository,
+            SkillRepository skillRepository,
+            UserSkillRepository userSkillRepository,
+            UserStatsRepository userStatsRepository
+    ) {
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.jwtService = jwtService;
+        this.characterRepository = characterRepository;
+        this.userCharacterRepository = userCharacterRepository;
+        this.skillRepository = skillRepository;
+        this.userSkillRepository = userSkillRepository;
+        this.userStatsRepository = userStatsRepository;
+    }
+
+    /**
+     * Registra um novo usuário no sistema.
+     *
+     * @param request DTO com os dados de registro
+     * @return a entidade User criada (sem expor o passwordHash na resposta na BE-006)
+     * @throws UsernameAlreadyExistsException se o username já existe
+     * @throws EmailAlreadyExistsException se o e-mail já existe
+     * @throws jakarta.validation.ConstraintViolationException se a validação falhar
+     */
+    @Transactional
+    public User register(@Valid RegisterRequest request) {
+        String normalizedUsername = request.username().trim();
+        String normalizedEmail = request.email().trim().toLowerCase();
+
+        if (userRepository.existsByUsernameIgnoreCase(normalizedUsername)) {
+            throw new UsernameAlreadyExistsException("Username já está em uso");
+        }
+
+        if (userRepository.existsByEmail(normalizedEmail)) {
+            throw new EmailAlreadyExistsException("E-mail já está em uso");
+        }
+
+        String passwordHash = passwordEncoder.encode(request.password());
+
+        User user = new User(normalizedUsername, passwordHash, normalizedEmail);
+
+        try {
+            User savedUser = userRepository.save(user);
+
+            userStatsRepository.save(
+                    new UserStats(savedUser)
+            );
+
+            Character xCharacter = characterRepository
+                    .findBySymbol(CharacterSymbol.X)
+                    .orElseThrow(() ->
+                            new IllegalStateException("Personagem X não encontrado"));
+
+            Character oCharacter = characterRepository
+                    .findBySymbol(CharacterSymbol.O)
+                    .orElseThrow(() ->
+                            new IllegalStateException("Personagem O não encontrado"));
+
+            userCharacterRepository.save(
+                    new UserCharacter(savedUser, xCharacter)
+            );
+
+            userCharacterRepository.save(
+                    new UserCharacter(savedUser, oCharacter)
+            );
+
+            Skill bomba = skillRepository
+                    .findByCode("BOMBA")
+                    .orElseThrow(() ->
+                            new IllegalStateException("Habilidade BOMBA não encontrada"));
+
+            Skill escudo = skillRepository
+                    .findByCode("ESCUDO")
+                    .orElseThrow(() ->
+                            new IllegalStateException("Habilidade ESCUDO não encontrada"));
+
+            Skill ampulheta = skillRepository
+                    .findByCode("AMPULHETA")
+                    .orElseThrow(() ->
+                            new IllegalStateException("Habilidade AMPULHETA não encontrada"));
+
+            userSkillRepository.save(
+                    new UserSkill(savedUser, bomba)
+            );
+
+            userSkillRepository.save(
+                    new UserSkill(savedUser, escudo)
+            );
+
+            userSkillRepository.save(
+                    new UserSkill(savedUser, ampulheta)
+            );
+
+            return savedUser;
+
+        } catch (DataIntegrityViolationException e) {
+            if (e.getMessage() != null && e.getMessage().contains("uk_users_username")) {
+                throw new UsernameAlreadyExistsException("Username já está em uso");
+            }
+            if (e.getMessage() != null && e.getMessage().contains("uk_users_email")) {
+                throw new EmailAlreadyExistsException("E-mail já está em uso");
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * Autentica um usuário usando e-mail ou username e senha.
+     *
+     * @param request DTO com as credenciais (identifier = e-mail ou username)
+     * @return LoginResult contendo o token JWT e o usuário autenticado
+     * @throws InvalidCredentialsException se as credenciais forem inválidas
+     * @throws jakarta.validation.ConstraintViolationException se a validação falhar
+     * <p>
+     * NOTA: Esta exceção será mapeada para HTTP 401 (Unauthorized) na BE-006.
+     */
+    @Transactional(readOnly = true)
+    public LoginResult login(@Valid LoginRequest request) {
+        String identifier = request.identifier().trim();
+        String normalizedEmail = identifier.toLowerCase();
+
+        // Tenta buscar por e-mail primeiro
+        User user = userRepository.findByEmail(normalizedEmail)
+                .orElseGet(() -> userRepository.findByUsernameIgnoreCase(identifier)
+                        .orElse(null));
+
+        if (user == null) {
+            // Executa um BCrypt dummy para evitar timing attacks
+            passwordEncoder.matches(request.password(), "$2a$10$dummyhashhashhashhashhashhashhashhashhashhashhashhash");
+            throw new InvalidCredentialsException("Credenciais inválidas");
+        }
+
+        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            throw new InvalidCredentialsException("Credenciais inválidas");
+        }
+
+        String token = jwtService.generateToken(user);
+        return new LoginResult(token, user);
+    }
 }

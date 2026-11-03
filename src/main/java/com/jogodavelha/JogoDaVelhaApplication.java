@@ -1,12 +1,16 @@
 package com.jogodavelha;
 
+import com.jogodavelha.config.JwtProperties;
+import com.jogodavelha.config.CorsProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
 @SpringBootApplication
+@EnableConfigurationProperties({JwtProperties.class, CorsProperties.class})
 public class JogoDaVelhaApplication {
 
-     static void main(String[] args) {
+     public static void main(String[] args) {
         SpringApplication.run(JogoDaVelhaApplication.class, args);
     }
 }
