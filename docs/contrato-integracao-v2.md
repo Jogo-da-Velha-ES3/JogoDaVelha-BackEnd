@@ -1104,7 +1104,7 @@ Validações:
 - `position`: obrigatório, inteiro entre 0 e 15
 
 **Processamento:**
-- O `Principal` autenticado identifica o jogador; qualquer `playerId` recebido no DTO é ignorado.
+- O `Principal` autenticado identifica o jogador. `playerId` não faz parte do DTO nem deve ser enviado.
 - O backend resolve a sala ativa pelo código, valida a associação entre sala e partida ativa e confirma que o jogador pertence à partida.
 - A partida permanece responsável por validar fase, turno, prazo e casa disponível.
 
@@ -1148,7 +1148,7 @@ Validações:
 - `destinationPosition`: opcional (depende da habilidade)
 
 **Processamento:**
-- O `Principal` autenticado identifica o jogador; qualquer `playerId` recebido no DTO é ignorado.
+- O `Principal` autenticado identifica o jogador. `playerId` não faz parte do DTO nem deve ser enviado.
 - O backend resolve e valida a sala, a partida ativa e a associação do jogador antes de executar a habilidade.
 - As validações de fase, turno, prazo, deck e parâmetros continuam sob responsabilidade do serviço de gameplay.
 

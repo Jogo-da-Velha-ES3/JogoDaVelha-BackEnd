@@ -20,9 +20,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class GameplayController {
     @JsonInclude(JsonInclude.Include.ALWAYS)
-    public record MoveRequest(Integer position, UUID playerId) {}
+    public record MoveRequest(Integer position) {}
     @JsonInclude(JsonInclude.Include.ALWAYS)
-    public record SkillRequest(String skillCode, Integer targetPosition, Integer destinationPosition, UUID playerId) {}
+    public record SkillRequest(String skillCode, Integer targetPosition, Integer destinationPosition) {}
 
     private final MoveActionService moves;
     private final SkillActivationService skills;
