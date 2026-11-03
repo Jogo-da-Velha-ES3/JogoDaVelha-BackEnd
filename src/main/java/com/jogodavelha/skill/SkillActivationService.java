@@ -6,8 +6,9 @@ import com.jogodavelha.game.logic.GameStateManager;
 import com.jogodavelha.game.logic.MoveValidationException;
 import com.jogodavelha.game.logic.SkillValidationException;
 import com.jogodavelha.game.service.TurnService;
-import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.util.Optional;
@@ -25,12 +26,15 @@ public class SkillActivationService {
     private final SkillEngine skills;
     private final TurnService turns;
     private final Clock clock;
+    private final ApplicationEventPublisher events;
 
-    public SkillActivationService(GameStateManager states, SkillEngine skills, TurnService turns, Clock clock) {
+    public SkillActivationService(GameStateManager states, SkillEngine skills, TurnService turns, Clock clock,
+                                  ApplicationEventPublisher events) {
         this.states = states;
         this.skills = skills;
         this.turns = turns;
         this.clock = clock;
+        this.events = events;
     }
 
     /** Atualiza o Redis e só então publica/agendada a mudança de turno. */
@@ -94,6 +98,9 @@ public class SkillActivationService {
         if (committed[0] == null || result[0] == null) {
             throw new IllegalStateException("A ativação não produziu um estado persistido.");
         }
+        events.publishEvent(new SkillResolvedEvent(gameId, preparedContext.casterId(), skillCode,
+                preparedContext.targetPosition(), preparedContext.destinationPosition(), result[0]));
+        events.publishEvent(new com.jogodavelha.game.GameplayBoardUpdatedEvent(gameId, committed[0]));
         turns.publishAndSchedule(committed[0], winner[0]);
         return new Activation(committed[0], result[0], winner[0]);
     }

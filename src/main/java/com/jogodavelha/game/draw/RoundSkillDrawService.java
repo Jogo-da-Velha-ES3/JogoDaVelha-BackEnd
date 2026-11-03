@@ -111,7 +111,7 @@ public class RoundSkillDrawService implements RoundSkillDraft {
         schedule(key, draw.deadline());
         websocket.sendToTopic("/topic/rooms/" + draw.roomCode(),
                 event("PHASE_CHANGE", Map.of("phase", "ROUND_DRAW")));
-        snapshots.publish(draw.roomCode());
+        draw.players().keySet().forEach(playerId -> publishDeck(gameId, round, playerId));
         draw.players().forEach((playerId, player) -> {
             if (player.selected() == null) websocket.sendToUser(playerId.toString(), "/queue/room",
                     event("DRAW_OPTIONS", Map.of("options", player.options(), "deadline", draw.deadline())));
@@ -166,7 +166,7 @@ public class RoundSkillDrawService implements RoundSkillDraft {
         try {
             publishDeck(gameId, expected.round(), playerId);
         } finally {
-            if (!complete(new RoundKey(gameId, expected.round()))) snapshots.publish(code);
+            complete(new RoundKey(gameId, expected.round()));
         }
     }
 
@@ -262,9 +262,11 @@ public class RoundSkillDrawService implements RoundSkillDraft {
 
     private void publishDeck(UUID gameId, int round, UUID playerId) {
         states.find(gameId).ifPresent(state -> {
-            if (state.getRoundNumber() != round || !state.getRoundSkillDecks().containsKey(playerId)) return;
-            var fixed = state.getInitialSkillsByPlayer().get(playerId);
-            var deck = state.getRoundSkillDecks().get(playerId).stream().sorted().map(ability ->
+            if (state.getRoundNumber() != round) return;
+            var fixed = state.getInitialSkillsByPlayer().getOrDefault(playerId, Set.of());
+            var current = state.getRoundSkillDecks().getOrDefault(playerId, fixed);
+            if (current.isEmpty()) return;
+            var deck = current.stream().sorted().map(ability ->
                     new RoomSnapshotService.DeckSlot(ability, fixed.contains(ability) ? "INITIAL" : "DRAWN",
                             state.hasUsedSkill(playerId, ability))).toList();
             websocket.sendToUser(playerId.toString(), "/queue/room", event("DECK_UPDATE", Map.of("deck", deck)));

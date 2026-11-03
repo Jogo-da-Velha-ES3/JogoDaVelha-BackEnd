@@ -71,8 +71,9 @@ class DraftEventPublisherTest {
         publisher.onDraftUpdated(DraftUpdated.from(state));
 
         verifyNoInteractions(characters);
-        verify(websocket).sendToTopic(eq("/topic/rooms/0042"), argThat(message ->
-                ((DraftEventPublisher.Message) message).payload().characters().isEmpty()));
+        verify(websocket).sendToTopic(eq("/topic/rooms/0042"), argThat((Object message) ->
+                message instanceof DraftEventPublisher.Message draft
+                        && draft.payload().characters().isEmpty()));
     }
 
     @Test

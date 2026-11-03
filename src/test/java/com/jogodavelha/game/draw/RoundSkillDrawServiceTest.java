@@ -425,14 +425,14 @@ class RoundSkillDrawServiceTest {
     }
 
     @Test
-    void eachManualChoicePublishesOneDeckAndFirstChoicePublishesAnUpdatedSnapshot() {
+    void manualChoicesPublishUpdatedDecksWithoutPublishingGameplaySnapshots() {
         start();
         draws.pick("0042", p1, option(p1), null);
-        verify(snapshots, times(2)).publish("0042");
         draws.pick("0042", p2, option(p2), null);
 
-        verify(websocket, times(1)).sendToUser(eq(p1.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
-        verify(websocket, times(1)).sendToUser(eq(p2.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
+        verify(snapshots, never()).publish(anyString());
+        verify(websocket, times(2)).sendToUser(eq(p1.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
+        verify(websocket, times(2)).sendToUser(eq(p2.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
     }
 
     @Test
@@ -444,8 +444,8 @@ class RoundSkillDrawServiceTest {
 
         draws.expire(gameId, 1, 9_000);
 
-        verify(websocket, times(1)).sendToUser(eq(p1.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
-        verify(websocket, times(1)).sendToUser(eq(p2.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
+        verify(websocket, times(2)).sendToUser(eq(p1.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
+        verify(websocket, times(2)).sendToUser(eq(p2.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
         verify(completed, times(1)).publishEvent(new RoundDrawCompleted(gameId, 1));
     }
 
@@ -471,8 +471,8 @@ class RoundSkillDrawServiceTest {
         assertEquals(3, state.getRoundSkillDecks().get(p2).size());
         assertEquals(0, state.getConsecutiveTimeouts(p1));
         assertEquals(0, state.getConsecutiveTimeouts(p2));
-        verify(websocket, times(1)).sendToUser(eq(p1.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
-        verify(websocket, times(1)).sendToUser(eq(p2.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
+        verify(websocket, times(2)).sendToUser(eq(p1.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
+        verify(websocket, times(2)).sendToUser(eq(p2.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
         verify(completed, times(1)).publishEvent(new RoundDrawCompleted(gameId, 1));
     }
 

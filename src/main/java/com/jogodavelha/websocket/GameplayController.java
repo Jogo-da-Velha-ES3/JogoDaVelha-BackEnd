@@ -1,6 +1,7 @@
  package com.jogodavelha.websocket;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.jogodavelha.game.service.GameplayRoomResolver;
 import com.jogodavelha.game.service.MoveActionService;
 import com.jogodavelha.skill.SkillActivationService;
 import com.jogodavelha.skill.SkillContext;
@@ -24,23 +25,24 @@ public class GameplayController {
 
     private final MoveActionService moves;
     private final SkillActivationService skills;
+    private final GameplayRoomResolver games;
 
-    @MessageMapping("/game/{gameId}/move")
-    public void move(@DestinationVariable UUID gameId, MoveRequest request, Principal principal) {
+    @MessageMapping("/rooms/{code}/move")
+    public void move(@DestinationVariable String code, MoveRequest request, Principal principal) {
         UUID actor = authenticatedUser(principal);
         if (request == null || request.position() == null) {
             throw new IllegalArgumentException("Informe a posição da jogada.");
         }
-        moves.play(gameId, actor, request.position());
+        moves.play(games.resolveActiveGame(code, actor), actor, request.position());
     }
 
-    @MessageMapping("/game/{gameId}/skill")
-    public void activateSkill(@DestinationVariable UUID gameId, SkillRequest request, Principal principal) {
+    @MessageMapping("/rooms/{code}/ability")
+    public void activateSkill(@DestinationVariable String code, SkillRequest request, Principal principal) {
         UUID actor = authenticatedUser(principal);
         if (request == null || request.skillCode() == null || request.skillCode().isBlank()) {
             throw new IllegalArgumentException("Informe o código da habilidade.");
         }
-        skills.activate(gameId, request.skillCode(),
+        skills.activate(games.resolveActiveGame(code, actor), request.skillCode(),
                 new SkillContext(actor, request.targetPosition(), request.destinationPosition()));
     }
 

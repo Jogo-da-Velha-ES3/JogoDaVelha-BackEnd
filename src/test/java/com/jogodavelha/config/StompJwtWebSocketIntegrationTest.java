@@ -128,7 +128,7 @@ class StompJwtWebSocketIntegrationTest {
         var error = errors.poll(250, TimeUnit.MILLISECONDS);
         assertNull(error, error == null ? "" : error.toString());
         verify(playerService, timeout(3000)).markConnected("0042", USER_ID);
-        verify(snapshots, timeout(3000)).publish("0042");
+        verify(snapshots, timeout(3000)).publishTo("0042", USER_ID);
         session.disconnect();
 
         WebSocketStompClient unauthenticatedClient = new WebSocketStompClient(new StandardWebSocketClient());

@@ -104,7 +104,7 @@ Erros STOMP são enviados como `ApiError` para `/user/queue/errors`:
   "message": "Mensagem de erro",
   "status": 400,
   "timestamp": "2026-10-26T10:30:00Z",
-  "path": "/app/game/{gameId}/move",
+  "path": "/app/rooms/{code}/move",
   "fields": null,
   "error": "Bad Request"
 }
@@ -1058,16 +1058,16 @@ Authorization: Bearer <jwt_token>
 
 ---
 
-#### SEND /app/game/{gameId}/move
+#### SEND /app/rooms/{code}/move
 
 **Status:** ✅ Implementado
-**Controller:** `GameplayController.move` (linha 25-32)
+**Controller:** `GameplayController.move`
 **Autenticação:** STOMP Principal obrigatório
 
 **Objetivo:** Realizar uma jogada na partida.
 
 **Parâmetros de rota:**
-- `gameId`: UUID da partida
+- `code`: código de quatro dígitos da sala
 
 **Headers:**
 - `Content-Type: application/json`
@@ -1080,33 +1080,34 @@ Authorization: Bearer <jwt_token>
 ```
 
 Validações:
-- `position`: obrigatório, inteiro entre 0 e 8
+- `position`: obrigatório, inteiro entre 0 e 15
 
 **Processamento:**
-- Validação de autenticação
-- Chamada de `MoveActionService.play`
+- O `Principal` autenticado identifica o jogador; qualquer `playerId` recebido no DTO é ignorado.
+- O backend resolve a sala ativa pelo código, valida a associação entre sala e partida ativa e confirma que o jogador pertence à partida.
+- A partida permanece responsável por validar fase, turno, prazo e casa disponível.
 
 **Resposta/Eventos resultantes:**
 - Não há ACK de mensagem imediato
-- Atualizações publicadas via eventos internos (TurnChangedEvent)
-- Destino público final alinhado com front está pendente (BE-024)
+- `BOARD_UPDATE` é publicado após a jogada persistida; `TURN_START` é publicado para o próximo turno, exceto quando o round ou a partida termina.
+- O destino de saída é `/topic/rooms/{code}` e os eventos usam o envelope padrão `{type,payload,serverTime}`.
 
 **Regras e observações:**
-- A identidade do jogador vem do `Principal` autenticado e não faz parte do corpo
-- DTO interno: `MoveRequest` (linha 19 de `GameplayController.java`)
+- O frontend não envia nem precisa conhecer o `gameId`.
+- O payload oficial contém `position`; a identidade nunca vem livremente no corpo.
 
 ---
 
-#### SEND /app/game/{gameId}/skill
+#### SEND /app/rooms/{code}/ability
 
 **Status:** ✅ Implementado
-**Controller:** `GameplayController.activateSkill` (linha 34-42)
+**Controller:** `GameplayController.activateSkill`
 **Autenticação:** STOMP Principal obrigatório
 
 **Objetivo:** Ativar uma habilidade na partida.
 
 **Parâmetros de rota:**
-- `gameId`: UUID da partida
+- `code`: código de quatro dígitos da sala
 
 **Headers:**
 - `Content-Type: application/json`
@@ -1126,18 +1127,19 @@ Validações:
 - `destinationPosition`: opcional (depende da habilidade)
 
 **Processamento:**
-- Validação de autenticação
-- Chamada de `SkillActivationService.activate`
+- O `Principal` autenticado identifica o jogador; qualquer `playerId` recebido no DTO é ignorado.
+- O backend resolve e valida a sala, a partida ativa e a associação do jogador antes de executar a habilidade.
+- As validações de fase, turno, prazo, deck e parâmetros continuam sob responsabilidade do serviço de gameplay.
 
 **Resposta/Eventos resultantes:**
 - Não há ACK de mensagem imediato
 - Erros enviados para `/user/queue/errors`
-- Atualizações publicadas via eventos internos
+- `ABILITY_RESOLVED` comunica a resolução e `BOARD_UPDATE` comunica o tabuleiro resultante em `/topic/rooms/{code}`.
 
 **Regras e observações:**
-- A identidade do jogador vem do `Principal` autenticado e não faz parte do corpo
-- DTO interno: `SkillRequest` (linha 20 de `GameplayController.java`)
-- Posições opcionais conforme habilidade (ex: Tornado precisa de destinationPosition)
+- Payload: `skillCode`, `targetPosition` e `destinationPosition` quando aplicável.
+- O frontend não envia nem precisa conhecer o `gameId`.
+- Tornado e Troca Rápida aceitam casas vizinhas horizontal, vertical ou diagonal. A adjacência respeita linhas e colunas do tabuleiro 4x4.
 
 ---
 
@@ -1358,17 +1360,21 @@ durante negociação pendente.
 **Status:** ✅ Implementado
 **Publicador:** `RoomSnapshotService.publish` (linha 58-69)
 **Gatilho de publicação:**
-- Conexão à sala (`PlayerConnectionController.connect`)
-- Sincronização solicitada (`PlayerConnectionController.sync`)
+- Conexão à sala (`PlayerConnectionController.connect`): snapshot privado somente para o jogador conectado
+- Sincronização solicitada (`PlayerConnectionController.sync`): snapshot privado somente para o solicitante
+- Reconexão: após o CONNECT autenticado, snapshot privado atualizado para o jogador reconectado
 - Entrada de jogador na sala (`PlayerJoinedRoomEvent` via `RoomSnapshotEventPublisher`)
 - Atualização de Draft (`DraftUpdated` via `RoomSnapshotEventPublisher`)
-- Após jogada, habilidade ou timeout que encerre o turno e mantenha a partida em `PLAYING` (`TurnChangedEvent`)
-- Após mudança de round e liberação de turno (publicado pelo ciclo de vida/sorteio)
 - Encerramento definitivo: após `MATCH_END`, `MatchFinishedEvent` solicita o snapshot final antes da remoção do estado Redis
 
 **Destinatários:**
 - Público: `/topic/rooms/{code}` (snapshot sem campos privados)
 - Privado: `/user/queue/room` (snapshot completo individualizado para cada jogador)
+
+`connect`, `sync` e reconexão usam publicação privada individual. Os eventos de entrada
+na sala, Draft e resultado final mantêm a publicação pública segura e snapshots privados
+para os membros. Ações, mudanças de turno, timeout e início de round usam eventos
+incrementais; não geram snapshots completos a cada ação.
 
 **Formato do envelope:**
 ```json
@@ -1452,15 +1458,14 @@ durante negociação pendente.
 `gameId` identifica a partida atual (nulo antes de sua criação). `turn.deadline` é o prazo absoluto em milissegundos Unix epoch; `turn.startedAt` é o início calculado a partir do prazo menos a duração efetiva. A duração efetiva pode ser 10 segundos, 5 segundos na morte súbita ou reduzida pela Ampulheta.
 
 **Momento de publicação:**
-- Após persistência das mudanças (transação commitada)
-- Após confirmação de Draft
-- Após entrada de jogador
-- Na abertura do sorteio de cada round, após uma escolha enquanto o adversário
-  ainda escolhe, e na liberação do turno após os dois decks estarem definidos (BE-013.1).
+- Após entrada de jogador, atualização de Draft e encerramento definitivo.
+- No CONNECT autenticado e mediante pedido explícito de sincronização, apenas para
+  o jogador correspondente.
+- Não é publicado em cada jogada, habilidade, timeout ou troca de turno.
 
 **Comportamento esperado do Front-End:**
-- Usar `ROOM_SNAPSHOT` como fonte única de verdade para estado da sala
-- Sincronizar interface com snapshot recebido
+- Usar `ROOM_SNAPSHOT` como estado-base e para sincronização/recuperação
+- Aplicar eventos incrementais de gameplay após o snapshot, sem aguardar um snapshot por ação
 - Considerar `mySlot` para identificar posição do usuário
 - Atualizar deck e habilidades com base em `myDeck`
 
@@ -1515,6 +1520,121 @@ Exemplo de resultado por W.O. em `outcome` quando o snapshot é consultado após
 **Privacidade:** o tópico contém somente estado compartilhado; `mySlot` é `null`, `myDeck` é `[]` e `drawOptions` é `null`. Cada jogador recebe separadamente em `/user/queue/room` seu `mySlot`, deck e, enquanto ainda não escolheu, suas próprias três opções de sorteio. O snapshot privado do oponente nunca é enviado ao solicitante.
 
 **Métrica de latência:** `RoomSnapshotService.publish` mede com `System.nanoTime()` a composição e as chamadas de despacho ao broker, incluindo tópico público e filas privadas. Acima de 200 ms registra aviso. Essa medição não confirma entrega nem recebimento pelo navegador (não há ACK de cliente).
+
+---
+
+#### Eventos incrementais de gameplay e ciclo de round
+
+Os eventos de gameplay são publicados em `/topic/rooms/{code}` com o envelope
+`{ "type": "...", "payload": { ... }, "serverTime": <epoch-millis> }`.
+`serverTime`, `startedAt` e `deadline` usam milissegundos desde Unix epoch.
+Os slots são `P1` e `P2`; o frontend não precisa conhecer `gameId`.
+
+##### TURN_START
+
+Publicado uma vez no início de cada turno válido:
+
+```json
+{
+  "type": "TURN_START",
+  "payload": {
+    "player": "P1",
+    "startedAt": 1793102400000,
+    "durationSeconds": 10,
+    "consecutiveTimeouts": { "P1": 0, "P2": 1 },
+    "silenced": { "P1": false, "P2": true }
+  },
+  "serverTime": 1793102400000
+}
+```
+
+##### BOARD_UPDATE
+
+Publicado após jogadas e habilidades persistidas, ao preparar o tabuleiro inicial
+do round e quando um timeout altera o tabuleiro ou efeitos de casas. `board` sempre
+tem as 16 casas de `index` 0 a 15; `owner` é `null`, `P1` ou `P2`, e `effects`
+contém efeitos ativos com `turnsLeft`.
+
+```json
+{
+  "type": "BOARD_UPDATE",
+  "payload": {
+    "round": 1,
+    "board": [
+      { "index": 0, "owner": "P1", "effects": [] },
+      { "index": 1, "owner": null, "effects": [] }
+    ]
+  },
+  "serverTime": 1793102400000
+}
+```
+
+O exemplo abrevia a lista; a implementação sempre publica as 16 casas.
+
+##### ABILITY_RESOLVED
+
+Publicado após uma habilidade válida ser resolvida, tanto para P1 quanto para P2.
+`targetPosition` e `destinationPosition` aparecem quando aplicáveis. `absorbed`
+indica bloqueio por Campo de Força; `noEffect` indica que a habilidade válida não
+teve alvo/efeito aplicável. A resolução continua consumindo a ação conforme as
+regras da habilidade.
+
+```json
+{
+  "type": "ABILITY_RESOLVED",
+  "payload": {
+    "by": "P2",
+    "skillCode": "TORNADO",
+    "targetPosition": 5,
+    "destinationPosition": 10,
+    "absorbed": false,
+    "noEffect": false
+  },
+  "serverTime": 1793102400000
+}
+```
+
+##### TURN_TIMEOUT
+
+Publicado quando o prazo termina, antes da transição do turno ou do encerramento
+por W.O.:
+
+```json
+{
+  "type": "TURN_TIMEOUT",
+  "payload": { "player": "P1", "consecutiveTimeouts": 2 },
+  "serverTime": 1793102410000
+}
+```
+
+##### ROUND_START e PHASE_CHANGE
+
+`ROUND_START` informa `{ "round": 1, "firstPlayer": "P1", "suddenDeath": false }`.
+`PHASE_CHANGE` informa `{ "phase": "...", "round": 1 }` quando aplicável; a
+transição de sala para `MATCHED` pode conter somente `phase`. `WAITING` é informado
+no snapshot inicial; `MATCHED` é publicado após a entrada do segundo jogador;
+`DRAFT` após a primeira atualização do Draft; `VERSUS` antecede o primeiro round;
+`ROUND_DRAW`, `PLAYING`, `ROUND_END` e `RESULT` refletem as transições do ciclo de
+partida. Nenhuma transição de fase é emitida para cada ação.
+
+Para cada round, a ordem de publicação é:
+
+1. `ROUND_START`.
+2. `PHASE_CHANGE` para `ROUND_DRAW`.
+3. `DECK_UPDATE` e `DRAW_OPTIONS` privados para cada jogador.
+4. Escolha dos jogadores ou encerramento automático do prazo do sorteio.
+5. `DECK_UPDATE` privado dos decks alterados.
+6. `BOARD_UPDATE` com o tabuleiro inicial do round.
+7. `PHASE_CHANGE` para `PLAYING`.
+8. Aguardar 2,5 segundos de apresentação; durante esse período, o prazo do turno
+   ainda não está correndo e ações de gameplay não são aceitas.
+9. Iniciar e publicar o primeiro `TURN_START`; só então começa a duração do turno.
+
+Nos turnos seguintes, a ação publicada é seguida pela atualização do tabuleiro e
+pelo `TURN_START` do próximo jogador. Um timeout publica `TURN_TIMEOUT`, um
+`BOARD_UPDATE` apenas quando alterar casas/efeitos, e a transição de turno. O fim
+do round publica `ROUND_END` e `PHASE_CHANGE` para `ROUND_END`; o fim da partida
+publica `PHASE_CHANGE` para `RESULT` e `MATCH_END`.
 
 ---
 
@@ -1826,22 +1946,41 @@ implementados.
 
 ### 6.6 Inicio e Andamento da Partida
 
-1. Depois do Draft inicial e do sorteio, o ciclo de vida libera `PLAYING` e agenda o turno de 10 segundos (5 segundos na morte subita).
-2. Jogador da vez envia `SEND /app/game/{gameId}/move` com posicao ou ativa habilidade em `/app/game/{gameId}/skill`.
-3. O servidor valida e persiste a acao no Redis, entao `TurnService` publica `TurnChangedEvent`.
-4. `GameLifecycleService` executa primeiro (ordem 0), processando timeout/W.O. ou fim de round. O publicador do snapshot executa depois (ordem 1) e so publica se jogo e estado continuarem em `PLAYING`.
-5. `ROOM_SNAPSHOT` e publicado no topico compartilhado e em filas privadas individualizadas.
+1. Depois do Draft inicial, o servidor publica `PHASE_CHANGE` para `VERSUS`,
+   `ROUND_START` e `PHASE_CHANGE` para `ROUND_DRAW`.
+2. O backend envia `DECK_UPDATE` e `DRAW_OPTIONS` apenas nas filas privadas.
+3. Após as escolhas ou o prazo automático, publica os decks atualizados, `BOARD_UPDATE`
+   e `PHASE_CHANGE` para `PLAYING`.
+4. O primeiro turno aguarda 2,5 segundos de apresentação. O prazo de 10 segundos
+   (5 segundos na morte súbita, sujeito à Ampulheta) só começa com `TURN_START`.
+5. O jogador envia `SEND /app/rooms/{code}/move` com `position` ou
+   `SEND /app/rooms/{code}/ability` com `skillCode` e posições aplicáveis.
+6. O servidor valida a sala, a partida ativa, a associação do jogador autenticado,
+   a fase e o turno; persiste a ação e publica eventos incrementais. Não publica
+   `ROOM_SNAPSHOT` a cada ação ou troca de turno.
 
 ### 6.7 Atualizacoes do Tabuleiro
 
-Apos jogada ou habilidade valida, o `ROOM_SNAPSHOT` contem o estado atualizado. `board` tem 16 celulas de indices 0 a 15; `owner` e `null`, `P1` ou `P2`; `effects` inclui efeitos ativos como `ESCUDO`, `CONGELAR` e `REFORCO`. Bloqueios permanecem representados pelo efeito correspondente, preservando as regras do dominio.
+Após jogada ou habilidade persistida, `BOARD_UPDATE` contém as 16 casas, seus
+proprietários por slot e efeitos ativos com duração. `ABILITY_RESOLVED` comunica
+o resultado da habilidade, inclusive bloqueio por Campo de Força e ausência de
+efeito. `TURN_START` inclui jogador, início, duração, timeouts consecutivos e
+silêncio de cada slot. `TURN_TIMEOUT` informa o jogador e seu contador atualizado.
+O snapshot completo continua disponível via CONNECT, sincronização explícita,
+reconexão e mudanças não incrementais de sala/Draft/resultado.
 
 ### 6.8 Encerramento de Rodada e Partida
 
-1. Ao terminar um round, `ROUND_END` e publicado e o ciclo inicia o sorteio do proximo round; o snapshot atualizado e publicado na abertura do sorteio e na liberacao do turno.
-2. Ao encerrar definitivamente, `MATCH_END` e publicado uma unica vez, com placar, `winnerId`, `forfeit` e `reason` (`NORMAL` ou `FORFEIT_TIMEOUT`). O evento identifica vitoria, empate ou W.O.
-3. `MatchFinishedEvent` aciona um `ROOM_SNAPSHOT` final no topico publico e nas filas privadas dos dois jogadores, enquanto o estado Redis ainda existe. O snapshot tem fase `RESULT`, inclui `outcome` final e nao apresenta turno ativo.
-4. Apos a publicacao do snapshot final, o estado Redis e removido. Repeticoes do fluxo limpam o estado sem republicar `MATCH_END` ou o snapshot.
+1. Ao terminar um round, `ROUND_END` e `PHASE_CHANGE` para `ROUND_END` são
+   publicados; o próximo round segue novamente a sequência descrita acima.
+2. Ao encerrar definitivamente, `PHASE_CHANGE` para `RESULT` e `MATCH_END` são
+   publicados uma única vez, com placar, `winnerId`, `forfeit` e `reason`
+   (`NORMAL` ou `FORFEIT_TIMEOUT`).
+3. `MatchFinishedEvent` aciona um `ROOM_SNAPSHOT` final público seguro e snapshots
+   privados para os jogadores enquanto o estado Redis ainda existe. O snapshot
+   tem fase `RESULT`, inclui `outcome` final e não apresenta turno ativo.
+4. Após a publicação do snapshot final, o estado Redis é removido. Repetições do
+   fluxo limpam o estado sem republicar `MATCH_END` ou o snapshot final.
 
 O `Outcome` presente em snapshots de composicao/sincronizacao e no snapshot final identifica `WIN`, `ABSOLUTE_DRAW` ou `WO`, inclui placar `[P1, P2]` e `reason`. O resultado final em tempo real tambem e comunicado pelo evento `MATCH_END`.
 ### 6.9 Desconexão e Reconexão de Jogadores
@@ -1852,7 +1991,8 @@ O `Outcome` presente em snapshots de composicao/sincronizacao e no snapshot fina
 4. `ROOM_SNAPSHOT` publicado com `connected: false` para o jogador
 5. Front-Envia reconecta WebSocket
 6. Front-Envia envia CONNECT com token
-7. Front-Envia envia `SEND /app/rooms/{code}/sync`
+7. Backend envia o snapshot privado atualizado após `/app/rooms/{code}/connect`
+8. Front-Envia pode enviar `SEND /app/rooms/{code}/sync` para pedir nova sincronização explícita
 8. Back-Envia envia snapshot privado completo para `/user/queue/room`
 9. Front-Envia restaura estado com snapshot recebido
 
@@ -1965,7 +2105,7 @@ O `Outcome` presente em snapshots de composicao/sincronizacao e no snapshot fina
 
 **Uso:**
 - Identificador de integração de habilidades
-- Usado em ativação (`SEND /app/game/{gameId}/skill`)
+- Usado em ativação (`SEND /app/rooms/{code}/ability`)
 - Deve pertencer ao inventário do usuário
 
 ### 7.6 Erros de Habilidade
@@ -2225,14 +2365,17 @@ O `Outcome` presente em snapshots de composicao/sincronizacao e no snapshot fina
 - [ ] Processar `DRAFT_UPDATE` e atualizar UI de Draft
 - [ ] Usar `mySlot` para identificar posição do usuário
 - [ ] Usar `myDeck` para mostrar habilidades disponíveis
-- [ ] Atualizar tabuleiro com base em `board` do snapshot
+- [ ] Atualizar tabuleiro inicialmente pelo snapshot e depois por `BOARD_UPDATE`
 
 ### 9.5 Eventos
 
-- [ ] Tratar `ROOM_SNAPSHOT` como fonte única de verdade
+- [ ] Usar `ROOM_SNAPSHOT` como estado-base e para sincronização/reconexão
 - [ ] Atualizar fase da sala com base em `phase`
 - [ ] Atualizar estado de jogadores com base em `players`
-- [ ] Atualizar turno com base em `turn`
+- [ ] Processar `ROUND_START` e `PHASE_CHANGE` na ordem publicada
+- [ ] Atualizar tabuleiro com `BOARD_UPDATE`
+- [ ] Atualizar turno com `TURN_START` e timeout com `TURN_TIMEOUT`
+- [ ] Apresentar resultado de habilidade com `ABILITY_RESOLVED`
 - [ ] Atualizar resultado com base em `outcome`
 - [ ] Mostrar efeitos de células com base em `board[].effects`
 

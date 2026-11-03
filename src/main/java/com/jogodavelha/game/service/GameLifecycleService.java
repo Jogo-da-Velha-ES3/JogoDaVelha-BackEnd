@@ -21,28 +21,36 @@ import com.jogodavelha.game.logic.GameStateManager;
 import com.jogodavelha.room.Room;
 import com.jogodavelha.room.RoomRepository;
 import com.jogodavelha.room.RoomStatus;
-import com.jogodavelha.websocket.RoomSnapshotRequestedEvent;
+import com.jogodavelha.game.GameplayBoardUpdatedEvent;
 import com.jogodavelha.websocket.WebSocketService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
 
 /** Coordinates persistence, Redis round state, turn timers and lifecycle notifications. */
 @Service
 @RequiredArgsConstructor
 public class GameLifecycleService implements RoundLifecycle {
-    private final Set<String> startedRounds = ConcurrentHashMap.newKeySet();
+    private static final long ROUND_PRESENTATION_MILLIS = 2_500;
+    private final Set<RoundKey> startedRounds = ConcurrentHashMap.newKeySet();
+    private final Set<RoundKey> roundStartsPublished = ConcurrentHashMap.newKeySet();
+    private final Map<RoundKey, ScheduledFuture<?>> presentationTimers = new ConcurrentHashMap<>();
     private final Set<UUID> matchEndPublished = ConcurrentHashMap.newKeySet();
     private final GameService games;
     private final GameRepository gameRepository;
@@ -52,6 +60,9 @@ public class GameLifecycleService implements RoundLifecycle {
     private final WebSocketService websocket;
     private final ObjectProvider<RoundSkillDraft> skillDraft;
     private final ApplicationEventPublisher events;
+    private final Clock clock;
+    @Qualifier("turnTaskScheduler")
+    private final TaskScheduler scheduler;
 
     @EventListener
     public void onDraftCompleted(DraftCompleted event) {
@@ -95,9 +106,8 @@ public class GameLifecycleService implements RoundLifecycle {
         state = states.find(game.getId()).orElseThrow();
         if (stateCreated || state.getPhase() == GamePhase.DRAFT) {
             beginRound(game, state);
-        } else if (state.getPhase() == GamePhase.PLAYING) {
+        } else if (state.getPhase() == GamePhase.PLAYING && state.getTurnDeadlineEpochMillis() > 0) {
             turns.schedule(game.getId(), state.getTurnDeadlineEpochMillis());
-            events.publishEvent(new RoomSnapshotRequestedEvent(room.getCode()));
         }
     }
 
@@ -113,6 +123,7 @@ public class GameLifecycleService implements RoundLifecycle {
         }
         int oldRound = before.getCurrentRound();
         turns.cancel(gameId);
+        cancelPresentationTimers(gameId);
         RoundUpdate update = games.applyRoundResult(gameId, roundNumber, result);
         if (!update.applied()) {
             return;
@@ -121,6 +132,7 @@ public class GameLifecycleService implements RoundLifecycle {
         Room room = game.getRoom();
         websocket.sendToTopic(topic(room), MatchLifecycleEvent.of("ROUND_END", Map.of(
                 "gameId", gameId, "round", oldRound, "result", result.name(), "score", game.getScore())));
+        phase(room, "ROUND_END", oldRound);
 
         if (game.getStatus() == GameStatus.FINISHED) {
             finishMatch(game);
@@ -128,7 +140,7 @@ public class GameLifecycleService implements RoundLifecycle {
         }
         long duration = game.getCurrentRound() == Game.MAX_ROUNDS
                 ? GameState.SUDDEN_DEATH_TURN_DURATION_MILLIS : GameState.DEFAULT_TURN_DURATION_MILLIS;
-        long now = System.currentTimeMillis();
+        long now = clock.millis();
         states.update(gameId, current -> {
             current.startRound(game.getCurrentRound(), duration, now);
             current.setPhase(GamePhase.DRAFT);
@@ -172,19 +184,34 @@ public class GameLifecycleService implements RoundLifecycle {
 
     private void beginRound(Game game, GameState state) {
         int round = state.getRoundNumber();
-        states.update(game.getId(), current -> {
-            if (current.getRoundNumber() == round) {
-                current.setPhase(GamePhase.DRAFT);
-            }
-            return current;
-        });
+        RoundKey key = new RoundKey(game.getId(), round);
         RoundSkillDraft draw = skillDraft.getIfAvailable();
         if (draw == null) {
             throw new IllegalStateException(
                     "RoundSkillDraft é obrigatório: o sorteio de habilidades do round não está disponível.");
         }
-        draw.beginRound(game.getId(), state.getRoundNumber(), game.getPlayer1().getId(),
-                game.getPlayer2().getId());
+        if (!roundStartsPublished.add(key)) return;
+        try {
+            if (round == 1) {
+                phase(game.getRoom(), "VERSUS", round);
+            }
+            states.update(game.getId(), current -> {
+                if (current.getRoundNumber() == round) {
+                    current.setPhase(GamePhase.DRAFT);
+                }
+                return current;
+            });
+            GameState roundState = states.find(game.getId()).orElseThrow();
+            websocket.sendToTopic(topic(game.getRoom()), MatchLifecycleEvent.of("ROUND_START", Map.of(
+                    "round", round,
+                    "firstPlayer", slot(roundState, roundState.getCurrentTurnPlayerId()),
+                    "suddenDeath", roundState.isSuddenDeath())));
+            draw.beginRound(game.getId(), state.getRoundNumber(), game.getPlayer1().getId(),
+                    game.getPlayer2().getId());
+        } catch (RuntimeException | Error failure) {
+            roundStartsPublished.remove(key);
+            throw failure;
+        }
     }
 
     @EventListener
@@ -194,7 +221,7 @@ public class GameLifecycleService implements RoundLifecycle {
     }
 
     private void startTurnAfterDraft(UUID gameId, int expectedRound) {
-        String roundKey = gameId + ":" + expectedRound;
+        RoundKey roundKey = new RoundKey(gameId, expectedRound);
         if (!startedRounds.add(roundKey)) {
             return;
         }
@@ -210,22 +237,46 @@ public class GameLifecycleService implements RoundLifecycle {
         }
         long duration = state.isSuddenDeath() ? GameState.SUDDEN_DEATH_TURN_DURATION_MILLIS
                 : GameState.DEFAULT_TURN_DURATION_MILLIS;
-        long now = System.currentTimeMillis();
         states.update(gameId, current -> {
             if (current.getPhase() == GamePhase.DRAFT && current.getRoundNumber() == expectedRound) {
                 current.setPhase(GamePhase.PLAYING);
                 current.setTurnDurationMillis(duration);
-                current.setTurnDeadlineEpochMillis(now + duration);
+                current.setTurnDeadlineEpochMillis(0);
             }
             return current;
         });
         state = states.find(gameId).orElse(null);
-        if (state == null || state.getPhase() != GamePhase.PLAYING) {
+        if (state == null || state.getPhase() != GamePhase.PLAYING || state.getTurnDeadlineEpochMillis() > 0) {
             return;
         }
-        websocket.sendToTopic(topic(game.getRoom()), MatchLifecycleEvent.roundStart(state, game.getScore()));
-        events.publishEvent(new RoomSnapshotRequestedEvent(game.getRoom().getCode()));
-        turns.schedule(gameId, state.getTurnDeadlineEpochMillis());
+        events.publishEvent(new GameplayBoardUpdatedEvent(gameId, state));
+        phase(game.getRoom(), "PLAYING", expectedRound);
+        Instant firstTurnAt = Instant.ofEpochMilli(clock.millis() + ROUND_PRESENTATION_MILLIS);
+        ScheduledFuture<?> timer = scheduler.schedule(() -> startFirstTurn(gameId, expectedRound), firstTurnAt);
+        presentationTimers.put(roundKey, timer);
+    }
+
+    private void startFirstTurn(UUID gameId, int expectedRound) {
+        RoundKey key = new RoundKey(gameId, expectedRound);
+        presentationTimers.remove(key);
+        GameState before = states.find(gameId).orElse(null);
+        if (before == null || before.getPhase() != GamePhase.PLAYING || before.getRoundNumber() != expectedRound
+                || before.getTurnDeadlineEpochMillis() != 0) {
+            return;
+        }
+        long startedAt = clock.millis();
+        states.update(gameId, current -> {
+            if (current.getPhase() == GamePhase.PLAYING && current.getRoundNumber() == expectedRound
+                    && current.getTurnDeadlineEpochMillis() == 0) {
+                current.setTurnDeadlineEpochMillis(startedAt + current.getTurnDurationMillis());
+            }
+            return current;
+        });
+        GameState state = states.find(gameId).orElse(null);
+        if (state != null && state.getPhase() == GamePhase.PLAYING && state.getRoundNumber() == expectedRound
+                && state.getTurnDeadlineEpochMillis() > 0) {
+            turns.publishAndSchedule(state, java.util.Optional.empty());
+        }
     }
 
     private void finishMatch(Game game) {
@@ -239,6 +290,7 @@ public class GameLifecycleService implements RoundLifecycle {
         }
         boolean firstPublication = matchEndPublished.add(game.getId());
         if (firstPublication) {
+            phase(room, "RESULT", game.getCurrentRound());
             websocket.sendToTopic(topic(room), MatchLifecycleEvent.of("MATCH_END", Map.of(
                     "gameId", game.getId(),
                     "score", game.getScore(),
@@ -249,6 +301,7 @@ public class GameLifecycleService implements RoundLifecycle {
             events.publishEvent(new MatchFinishedEvent(game.getId(), room.getCode()));
         }
         states.delete(game.getId());
+        cancelPresentationTimers(game.getId());
     }
 
     private Map<String, Integer> creditedCoins(Game game) {
@@ -299,4 +352,23 @@ public class GameLifecycleService implements RoundLifecycle {
     private String topic(Room room) {
         return "/topic/rooms/" + room.getCode();
     }
+
+    private void phase(Room room, String name, int round) {
+        websocket.sendToTopic(topic(room), MatchLifecycleEvent.of("PHASE_CHANGE",
+                Map.of("phase", name, "round", round)));
+    }
+
+    private String slot(GameState state, UUID playerId) {
+        if (state.getPlayer1Id().equals(playerId)) return "P1";
+        if (state.getPlayer2Id().equals(playerId)) return "P2";
+        throw new IllegalArgumentException("Jogador não pertence à partida.");
+    }
+
+    private void cancelPresentationTimers(UUID gameId) {
+        presentationTimers.forEach((key, timer) -> {
+            if (key.gameId().equals(gameId) && presentationTimers.remove(key, timer)) timer.cancel(false);
+        });
+    }
+
+    private record RoundKey(UUID gameId, int round) { }
 }

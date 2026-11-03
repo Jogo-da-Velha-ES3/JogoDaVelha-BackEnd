@@ -70,6 +70,8 @@ class GameLifecycleServiceTest {
     @Mock private RoomSnapshotService snapshots;
     @Mock private ApplicationEventPublisher applicationEvents;
     @Mock private RoundSkillDraft roundSkillDraft;
+    @Mock private Clock clock;
+    @Mock private TaskScheduler scheduler;
 
     private GameLifecycleService lifecycle;
     private User player1;
@@ -82,8 +84,11 @@ class GameLifecycleServiceTest {
 
     @BeforeEach
     void setUp() throws Exception {
+        lenient().when(clock.millis()).thenReturn(10_000L);
+        lenient().when(scheduler.schedule(any(Runnable.class), any(Instant.class)))
+                .thenReturn(mock(ScheduledFuture.class));
         lifecycle = new GameLifecycleService(games, gameRepository, rooms, states, turns, websocket, skillDraft,
-                applicationEvents);
+                applicationEvents, clock, scheduler);
         player1 = new User("p1", "pass", "p1@test.com");
         player1.setId(UUID.randomUUID());
         player2 = new User("p2", "pass", "p2@test.com");
@@ -154,13 +159,25 @@ class GameLifecycleServiceTest {
         verify(states).create(eq(game.getId()), eq(player1.getId()), eq(player2.getId()),
                 eq(GameState.DEFAULT_TURN_DURATION_MILLIS));
         verify(roundSkillDraft).beginRound(eq(game.getId()), eq(1), eq(player1.getId()), eq(player2.getId()));
-        ArgumentCaptor<MatchLifecycleEvent> event = ArgumentCaptor.forClass(MatchLifecycleEvent.class);
-        verify(websocket).sendToTopic(eq("/topic/rooms/4242"), event.capture());
-        assertEquals("PHASE_CHANGE", event.getValue().type());
-        assertEquals("PLAYING", event.getValue().payload().get("phase"));
-        assertEquals(1, event.getValue().payload().get("round"));
-        verify(turns).schedule(eq(game.getId()), anyLong());
+        ArgumentCaptor<MatchLifecycleEvent> events = ArgumentCaptor.forClass(MatchLifecycleEvent.class);
+        verify(websocket, times(3)).sendToTopic(eq("/topic/rooms/4242"), events.capture());
+        assertEquals(List.of("PHASE_CHANGE", "ROUND_START", "PHASE_CHANGE"),
+                events.getAllValues().stream().map(MatchLifecycleEvent::type).toList());
+        assertEquals("VERSUS", events.getAllValues().getFirst().payload().get("phase"));
+        assertEquals("PLAYING", events.getAllValues().getLast().payload().get("phase"));
+        assertEquals(1, events.getAllValues().getLast().payload().get("round"));
+        verify(turns, never()).schedule(any(), anyLong());
+        assertEquals(0, redisState.get().getTurnDeadlineEpochMillis());
+        ArgumentCaptor<Runnable> presentation = ArgumentCaptor.forClass(Runnable.class);
+        verify(scheduler).schedule(presentation.capture(), eq(Instant.ofEpochMilli(12_500)));
         assertEquals(GamePhase.PLAYING, redisState.get().getPhase());
+
+        when(clock.millis()).thenReturn(12_500L);
+        presentation.getValue().run();
+        presentation.getValue().run();
+        ArgumentCaptor<GameState> firstTurn = ArgumentCaptor.forClass(GameState.class);
+        verify(turns, times(1)).publishAndSchedule(firstTurn.capture(), eq(Optional.empty()));
+        assertEquals(22_500L, firstTurn.getValue().getTurnDeadlineEpochMillis());
     }
 
     @Test
@@ -186,8 +203,15 @@ class GameLifecycleServiceTest {
 
         assertEquals(GamePhase.DRAFT, redisState.get().getPhase());
         verify(turns, never()).schedule(any(), anyLong());
+        ArgumentCaptor<MatchLifecycleEvent> openingEvents = ArgumentCaptor.forClass(MatchLifecycleEvent.class);
+        verify(websocket, times(3)).sendToTopic(eq("/topic/rooms/4242"), openingEvents.capture());
+        assertEquals(List.of("PHASE_CHANGE", "ROUND_START", "PHASE_CHANGE"),
+                openingEvents.getAllValues().stream().map(MatchLifecycleEvent::type).toList());
+        assertEquals("VERSUS", openingEvents.getAllValues().getFirst().payload().get("phase"));
+        assertEquals(1, openingEvents.getAllValues().get(1).payload().get("round"));
+        assertEquals("ROUND_DRAW", openingEvents.getAllValues().getLast().payload().get("phase"));
         lifecycle = new GameLifecycleService(games, gameRepository, rooms, states, turns, websocket, skillDraft,
-                applicationEvents);
+                applicationEvents, clock, scheduler);
         var restarted = new RoundSkillDrawService(states, catalog, rooms, gameRepository, clock,
                 scheduler, websocket, snapshots,
                 event -> lifecycle.onRoundDrawCompleted((RoundDrawCompleted) event), new Random(99));
@@ -200,9 +224,9 @@ class GameLifecycleServiceTest {
         assertEquals(3, redisState.get().getRoundSkillDecks().get(player2.getId()).size());
         assertEquals(0, redisState.get().getConsecutiveTimeouts(player1.getId()));
         assertEquals(0, redisState.get().getConsecutiveTimeouts(player2.getId()));
-        verify(turns).schedule(eq(game.getId()), anyLong());
+        verify(turns, never()).schedule(any(), anyLong());
         restarted.expire(game.getId(), 1, 9_000);
-        verify(turns, times(1)).schedule(eq(game.getId()), anyLong());
+        verify(turns, never()).schedule(any(), anyLong());
 
         when(games.applyRoundResult(game.getId(), 1, RoundResult.PLAYER1_WIN)).thenAnswer(ignored -> {
             game.registerRoundResult(RoundResult.PLAYER1_WIN);
@@ -212,12 +236,12 @@ class GameLifecycleServiceTest {
         assertEquals(GamePhase.DRAFT, redisState.get().getPhase());
         assertEquals(3, redisState.get().getRoundSkillDecks().get(player1.getId()).size());
         assertEquals(3, redisState.get().getRoundSkillDecks().get(player2.getId()).size());
-        verify(turns, times(1)).schedule(eq(game.getId()), anyLong());
+        verify(turns, never()).schedule(any(), anyLong());
         now.set(17_000);
         restarted.expire(game.getId(), 2, 17_000);
         assertEquals(GamePhase.PLAYING, redisState.get().getPhase());
         assertEquals(3, redisState.get().getRoundSkillDecks().get(player1.getId()).size());
-        verify(turns, times(2)).schedule(eq(game.getId()), anyLong());
+        verify(turns, never()).schedule(any(), anyLong());
     }
 
     @Test
@@ -229,7 +253,7 @@ class GameLifecycleServiceTest {
         lifecycle.onDraftCompleted(draftEvent(true));
 
         verify(games).startGame(room, character1Id, character2Id);
-        verify(turns).schedule(eq(game.getId()), anyLong());
+        verify(turns, never()).schedule(any(), anyLong());
     }
 
     @Test
@@ -280,7 +304,8 @@ class GameLifecycleServiceTest {
         lifecycle.onRoundDrawCompleted(new RoundDrawCompleted(game.getId(), 1));
         lifecycle.onRoundDrawCompleted(new RoundDrawCompleted(game.getId(), 1));
 
-        verify(turns, times(1)).schedule(eq(game.getId()), anyLong());
+        verify(turns, never()).schedule(any(), anyLong());
+        verify(scheduler).schedule(any(Runnable.class), eq(Instant.ofEpochMilli(12_500)));
     }
 
     @Test
@@ -407,8 +432,9 @@ class GameLifecycleServiceTest {
         publicationOrder.verify(applicationEvents).publishEvent(new MatchFinishedEvent(game.getId(), room.getCode()));
         publicationOrder.verify(states, times(2)).delete(game.getId());
         ArgumentCaptor<MatchLifecycleEvent> events = ArgumentCaptor.forClass(MatchLifecycleEvent.class);
-        verify(websocket, times(1)).sendToTopic(eq("/topic/rooms/4242"), events.capture());
-        MatchLifecycleEvent matchEnd = events.getValue();
+        verify(websocket, atLeastOnce()).sendToTopic(eq("/topic/rooms/4242"), events.capture());
+        MatchLifecycleEvent matchEnd = events.getAllValues().stream()
+                .filter(event -> "MATCH_END".equals(event.type())).findFirst().orElseThrow();
         assertEquals("MATCH_END", matchEnd.type());
         assertEquals(true, matchEnd.payload().get("forfeit"));
         assertEquals(GameEndReason.FORFEIT_TIMEOUT.name(), matchEnd.payload().get("reason"));

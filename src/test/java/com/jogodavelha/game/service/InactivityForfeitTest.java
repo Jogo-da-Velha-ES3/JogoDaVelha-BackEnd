@@ -75,11 +75,12 @@ class InactivityForfeitTest {
         var applicationEvents = mock(ApplicationEventPublisher.class);
         var lifecycle = new AtomicReference<GameLifecycleService>();
         var engine = new SkillEngine(List.of(new HourglassEffect()), new GameValidator());
-        var turns = new TurnService(states, engine, clock, scheduler,
-                event -> lifecycle.get().onTurnChanged((TurnChangedEvent) event));
+        var turns = new TurnService(states, engine, clock, scheduler, event -> {
+            if (event instanceof TurnChangedEvent changed) lifecycle.get().onTurnChanged(changed);
+        });
         lifecycle.set(new GameLifecycleService(games, repository, rooms, states, turns, websocket,
-                mock(ObjectProvider.class), applicationEvents));
-        var moves = new MoveActionService(states, new MoveValidator(clock), turns, clock);
+                mock(ObjectProvider.class), applicationEvents, clock, mock(TaskScheduler.class)));
+        var moves = new MoveActionService(states, new MoveValidator(clock), turns, clock, applicationEvents);
 
         for (int timeout = 0; timeout < 2; timeout++) {
             now.set(stored.get().getTurnDeadlineEpochMillis());
@@ -134,9 +135,11 @@ class InactivityForfeitTest {
         var engine = new SkillEngine(List.of(new HourglassEffect()), new GameValidator());
         var turns = new TurnService(states, engine, clock, scheduler, ignored -> { });
 
-        if (ability) new SkillActivationService(states, engine, turns, clock)
+        var applicationEvents = mock(ApplicationEventPublisher.class);
+        if (ability) new SkillActivationService(states, engine, turns, clock, applicationEvents)
                 .activate(gameId, "AMPULHETA", new SkillContext(p1, null));
-        else new MoveActionService(states, new MoveValidator(clock), turns, clock).play(gameId, p1, 0);
+        else new MoveActionService(states, new MoveValidator(clock), turns, clock, applicationEvents)
+                .play(gameId, p1, 0);
 
         assertEquals(0, state.getConsecutiveTimeouts(p1));
         assertEquals(1, state.getConsecutiveTimeouts(p2));

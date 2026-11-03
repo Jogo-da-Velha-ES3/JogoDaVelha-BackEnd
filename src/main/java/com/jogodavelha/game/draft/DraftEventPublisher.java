@@ -5,6 +5,7 @@ import com.jogodavelha.character.Character;
 import com.jogodavelha.character.CharacterRepository;
 import com.jogodavelha.character.CharacterSymbol;
 import com.jogodavelha.websocket.WebSocketService;
+import com.jogodavelha.game.MatchLifecycleEvent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -39,6 +40,10 @@ public class DraftEventPublisher {
     // DraftService emite depois do CAS no Redis, fora do callback que pode ser repetido.
     @EventListener
     public void onDraftUpdated(DraftUpdated event) {
+        if (event.version() == 0) {
+            websocket.sendToTopic("/topic/rooms/" + event.roomCode(),
+                    MatchLifecycleEvent.of("PHASE_CHANGE", Map.of("phase", "DRAFT")));
+        }
         var selectedIds = event.players().stream().map(DraftUpdated.PlayerStatus::characterId)
                 .filter(Objects::nonNull).toList();
         var symbols = selectedIds.isEmpty() ? Map.<UUID, CharacterSymbol>of()

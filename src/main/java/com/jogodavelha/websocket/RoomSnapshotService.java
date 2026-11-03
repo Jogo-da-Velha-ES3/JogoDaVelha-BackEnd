@@ -101,6 +101,20 @@ public class RoomSnapshotService {
                 new SnapshotEnvelope("ROOM_SNAPSHOT", snapshot(room, requesterSlot, true, state, serverTime), serverTime));
     }
 
+    public void publishTo(String code, UUID requesterId) {
+        if (code == null || !code.matches("[0-9]{4}")) {
+            throw new IllegalArgumentException("O código da sala deve conter quatro dígitos.");
+        }
+        if (requesterId == null) throw new AccessDeniedException("Identidade autenticada obrigatória.");
+        Room room = activeRoom(code);
+        Slot requesterSlot = slot(room, requesterId);
+        if (requesterSlot == null) throw new AccessDeniedException("Jogador não pertence à sala.");
+
+        long serverTime = System.currentTimeMillis();
+        State state = readState(room);
+        sendPrivate(room, requesterId, requesterSlot, state, serverTime);
+    }
+
     private RoomSnapshot compose(Room room, Slot mySlot, boolean includePrivate, long serverTime) {
         return snapshot(room, mySlot, includePrivate, readState(room), serverTime);
     }
@@ -191,7 +205,7 @@ public class RoomSnapshotService {
         Slot turnSlot = gs == null || gs.getCurrentTurnPlayerId() == null ? null
                 : gs.getCurrentTurnPlayerId().equals(room.getPlayer1().getId()) ? Slot.P1 : Slot.P2;
         Turn turn = game.getStatus() == GameStatus.FINISHED || gs == null
-                || gs.getPhase() != GamePhase.PLAYING || turnSlot == null ? null
+                || gs.getPhase() != GamePhase.PLAYING || gs.getTurnDeadlineEpochMillis() <= 0 || turnSlot == null ? null
                 : new Turn(turnSlot, gs.getTurnDeadlineEpochMillis() - gs.getTurnDurationMillis(),
                 gs.getTurnDeadlineEpochMillis(), (int) (gs.getTurnDurationMillis() / 1000));
         return new MatchSnapshot(game.getCurrentRound(), game.isSuddenDeath(), turn,
@@ -219,7 +233,7 @@ public class RoomSnapshotService {
         return Outcome.win(winner, score, game.getEndReason().name());
     }
 
-    private List<Cell> board(GameState state) {
+    public static List<Cell> boardFor(GameState state) {
         if (state == null || state.getBoard() == null) return emptyBoard();
         return IntStream.range(0, GameState.BOARD_SIZE).mapToObj(index -> {
             char mark = state.getBoard().charAt(index);
@@ -233,6 +247,10 @@ public class RoomSnapshotService {
             if (reinforced != null) effects.add(new CellEffect("REFORCO", reinforced));
             return new Cell(index, owner, List.copyOf(effects));
         }).toList();
+    }
+
+    private List<Cell> board(GameState state) {
+        return boardFor(state);
     }
 
     private static List<Cell> emptyBoard() {

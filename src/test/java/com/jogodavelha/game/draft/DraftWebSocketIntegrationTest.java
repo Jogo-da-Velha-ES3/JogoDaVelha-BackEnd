@@ -204,13 +204,16 @@ class DraftWebSocketIntegrationTest {
         assertTrue(connectionErrors.isEmpty(), "Erros de conexão STOMP: " + connectionErrors);
         assertTrue(transportErrors.isEmpty(), "Erros de transporte: " + transportErrors);
 
+        assertEquals("PHASE_CHANGE", receive(first).path("type").asText());
+        assertEquals("PHASE_CHANGE", receive(second).path("type").asText());
+        assertEquals(receive(first), receive(second));
         drafts.updatePlayer(room, P1, player -> player.withCharacter(X));
         drafts.updatePlayer(room, P1, player -> player.withSkills(List.of("BOMBA", "ESCUDO")));
         drafts.updatePlayer(room, P2, player -> player.withCharacter(O));
         drafts.updatePlayer(room, P2, player -> player.withSkills(List.of("BOMBA", "AMPULHETA")));
 
         JsonNode last = null;
-        for (int index = 0; index < 5; index++) {
+        for (int index = 0; index < 4; index++) {
             last = receive(first);
             assertEquals(last, receive(second));
             assertEquals("DRAFT_UPDATE", last.path("type").asText());
@@ -234,8 +237,9 @@ class DraftWebSocketIntegrationTest {
         awaitSubscriptions();
         UUID room = UUID.randomUUID();
         var state = drafts.start(room, "0042", P1, P2);
-        receive(first);
-        receive(second);
+        assertEquals("PHASE_CHANGE", receive(first).path("type").asText());
+        assertEquals("PHASE_CHANGE", receive(second).path("type").asText());
+        assertEquals(receive(first), receive(second));
         clock.now.set(state.deadlineEpochMillis());
         drafts.expire(room, state.deadlineEpochMillis());
         var result = receive(first);
@@ -261,9 +265,10 @@ class DraftWebSocketIntegrationTest {
         drafts.start(selectionRoomId, "0042", P1, P2);
         drafts.updatePlayer(selectionRoomId, P1, player -> player.withCharacter(X));
         drafts.updatePlayer(selectionRoomId, P2, player -> player.withCharacter(O));
+        assertEquals("PHASE_CHANGE", receive(first).path("type").asText());
+        assertEquals("PHASE_CHANGE", receive(second).path("type").asText());
         for (int index = 0; index < 3; index++) {
-            receive(first);
-            receive(second);
+            assertEquals(receive(first), receive(second));
         }
 
         sendAbilities(sessions.get(0), "{\"abilities\":[\"BOMBA\",\"ESCUDO\"],\"playerId\":\"" + P2 + "\"}");
@@ -292,8 +297,9 @@ class DraftWebSocketIntegrationTest {
         var errors = subscribeErrors(sessions.get(0), P1);
         var opponentErrors = subscribeErrors(sessions.get(1), P2);
         drafts.start(selectionRoomId, "0042", P1, P2);
-        receive(first);
-        receive(second);
+        assertEquals("PHASE_CHANGE", receive(first).path("type").asText());
+        assertEquals("PHASE_CHANGE", receive(second).path("type").asText());
+        assertEquals(receive(first), receive(second));
         assertSelectionError(errors, "{\"abilities\":[\"BOMBA\",\"ESCUDO\"]}", "BAD_REQUEST");
 
         drafts.updatePlayer(selectionRoomId, P1, player -> player.withCharacter(X));
