@@ -1416,3 +1416,45 @@ alteração na sua serialização. Códigos desconhecidos são rejeitados, e doi
 efeitos não podem ser registrados com o mesmo código.
 
 Detalhes e atualizações em `docs/contrato-integracao.md`.
+
+## Testes manuais
+
+### Ferramentas e documentações utilizadas
+
+- **Bruno/Postman:** utilizado para testar as requisições HTTP e as comunicações WebSocket com o protocolo STOMP.
+- **MailHog:** utilizado para simular um servidor SMTP, onde as features de redefinição de senha são testadas localmente. Configuração [aqui](#observação).
+- **Swagger UI:** utilizado para consultar a documentação dos endpoints e obter os modelos JSON utilizados no corpo das requisições.
+- **`contrato-integracao-v2.md`:** utilizado para consultar a documentação dos endpoints e obter os modelos JSON utilizados no corpo das requisições em tempo de desenvolvimento.
+
+### Observação
+
+Necessário modificar o arquivo `applcation.yml` para os seguintes parâmetros:
+
+```yml
+  mail:
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
+            required: false
+```
+
+Essa configuração é necessário para que o **MailHog** receba os e-mails do endpoint `/api/auth/forgot-password`.
+
+### Requisições com erros
+
+#### HTTP
+
+- `POST /api/auth/reset-password`: A requisição retorna `500 Internal Server Error` (`INTERNAL_ERROR`).
+  - **Causa:** `LazyInitializationException` em `PasswordResetService.reset` (linha 59): ao chamar `setPasswordHash`, o `User` associado ao token é um proxy lazy do Hibernate sem sessão ativa.
+  - **Impacto:** não é possível redefinir a senha pelo link de recuperação, e o fluxo `forgot-password` → `reset-password` fica incompleto.
+  - **Correção sugerida:** carregar o `User` dentro da transação de `reset` (por exemplo, `JOIN FETCH` do usuário na consulta do token, ou buscar o usuário pelo id via `UserRepository`).
+
+#### WebSocket (STOMP)
+
+- `SEND /app/rooms/{code}/draft/abilities`: A requisição retorna erro `409 CONFLICT` em `/user/queue/errors` com a mensagem "O Draft desta sala não está disponível." A sala permanece na fase `MATCHED`, com `gameId: null`, mesmo após os dois jogadores entrarem (`POST /api/rooms/{code}/join`).
+  - **Causa provável:** nenhum fluxo do backend chama `DraftService.start`; só classes de teste o chamam. O estado do Draft nunca é criado, então a sala não passa de `MATCHED` para `DRAFT`.
+  - **Impacto:** o fluxo de Draft (seleção de habilidades) e, por consequência, o início da partida não podem ser testados pelo cliente.
+
