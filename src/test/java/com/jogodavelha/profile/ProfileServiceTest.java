@@ -3,6 +3,8 @@ package com.jogodavelha.profile;
 import com.jogodavelha.auth.User;
 import com.jogodavelha.auth.UserRepository;
 import com.jogodavelha.auth.UsernameAlreadyExistsException;
+import com.jogodavelha.avatar.UserEquipment;
+import com.jogodavelha.avatar.UserEquipmentRepository;
 import com.jogodavelha.character.Character;
 import com.jogodavelha.character.CharacterRepository;
 import com.jogodavelha.character.CharacterSymbol;
@@ -42,6 +44,9 @@ class ProfileServiceTest {
     @Mock
     private com.jogodavelha.avatar.AvatarService avatars;
 
+    @Mock
+    private UserEquipmentRepository equipment;
+
     @InjectMocks
     private ProfileService profileService;
 
@@ -62,6 +67,7 @@ class ProfileServiceTest {
         assertEquals(100, response.coinsBalance());
         assertEquals("DEFAULT", response.avatar());
         assertNull(response.preferredCharacter());
+        assertNull(response.equippedCharacter());
     }
 
     @Test
@@ -85,6 +91,46 @@ class ProfileServiceTest {
         ProfileResponse response = profileService.getProfile(userId);
 
         assertEquals("X", response.preferredCharacter());
+    }
+
+    @Test
+    void equippedCharacterIsSeparateFromMostUsedCharacter() {
+        UUID userId = UUID.randomUUID();
+        UUID favoriteId = UUID.randomUUID();
+        UUID equippedId = UUID.randomUUID();
+        User user = new User("testuser", "hash", "test@test.com");
+        user.setId(userId);
+        Character favorite = new Character("X", CharacterSymbol.X, 0);
+        favorite.setId(favoriteId);
+        Character equipped = new Character("O", CharacterSymbol.O, 0);
+        equipped.setId(equippedId);
+        Game game = mock(Game.class);
+        when(game.getPlayer1()).thenReturn(user);
+        when(game.getPlayer1Character()).thenReturn(favorite);
+        UserEquipment selected = new UserEquipment(userId);
+        selected.setCharacterId(equippedId);
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(gameRepository.findFinishedGamesByPlayerId(userId)).thenReturn(List.of(game));
+        when(characterRepository.findById(favoriteId)).thenReturn(Optional.of(favorite));
+        when(characterRepository.findById(equippedId)).thenReturn(Optional.of(equipped));
+        when(equipment.findById(userId)).thenReturn(Optional.of(selected));
+
+        ProfileResponse response = profileService.getProfile(userId);
+
+        assertEquals("X", response.preferredCharacter());
+        assertEquals("O", response.equippedCharacter());
+    }
+
+    @Test
+    void equippedCharacterIsNullWhenNoEquipmentIsRegistered() {
+        UUID userId = UUID.randomUUID();
+        User user = new User("testuser", "hash", "test@test.com");
+        user.setId(userId);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(equipment.findById(userId)).thenReturn(Optional.empty());
+
+        assertNull(profileService.getProfile(userId).equippedCharacter());
     }
 
     @Test

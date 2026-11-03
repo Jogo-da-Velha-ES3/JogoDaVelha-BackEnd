@@ -100,7 +100,7 @@ Erros STOMP são enviados como `ApiError` para `/user/queue/errors`:
 
 ```json
 {
-  "code": "BAD_REQUEST",
+  "code": "ROOM_BAD_REQUEST",
   "message": "Mensagem de erro",
   "status": 400,
   "timestamp": "2026-10-26T10:30:00Z",
@@ -110,7 +110,10 @@ Erros STOMP são enviados como `ApiError` para `/user/queue/errors`:
 }
 ```
 
-Para erros de habilidade, o campo `code` usa valores específicos do domínio (ex: `SKILL_INVALID_TARGET`). Para erros genéricos, usa `HttpStatus.name()` (ex: `BAD_REQUEST`, `CONFLICT`, `INTERNAL_SERVER_ERROR`). Os campos `fields` e `error` estão sempre presentes, mesmo quando nulos.
+Erros de movimento e habilidade preservam os códigos específicos do domínio.
+Erros de sala usam o catálogo compartilhado (`ROOM_BAD_REQUEST`, `ROOM_CONFLICT`,
+`ROOM_NOT_FOUND`, `FORBIDDEN` e `INTERNAL_ERROR`); mensagens internas não são
+expostas. Os campos `fields` e `error` estão sempre presentes, mesmo quando nulos.
 
 ### 2.6 Campos Opcionais, Nulos e Ausentes
 
@@ -554,7 +557,7 @@ Validações: `token` obrigatório; `newPassword` 6-72 caracteres; `confirmPassw
 **Possíveis erros:**
 - 400 ROOM_BAD_REQUEST: Código inválido ou jogador não pertence à sala
 - 404 ROOM_NOT_FOUND: Sala inexistente ou já encerrada
-- 409 ROOM_ALREADY_STARTED: Partida já iniciada (abandono em partida será tratado como W.O. em outra tarefa)
+- 409 ROOM_ALREADY_STARTED: Partida já iniciada; use o destino STOMP `/app/rooms/{code}/leave` para desistir durante a partida
 - 401 UNAUTHORIZED: Token ausente ou inválido
 - 500 INTERNAL_ERROR: Erro interno do servidor
 
@@ -588,7 +591,8 @@ Validações: `token` obrigatório; `newPassword` 6-72 caracteres; `confirmPassw
   "username": "testuser",
   "coinsBalance": 150,
   "avatar": "DEFAULT",
-  "preferredCharacter": "X"
+  "preferredCharacter": "X",
+  "equippedCharacter": "O"
 }
 ```
 
@@ -600,7 +604,8 @@ Validações: `token` obrigatório; `newPassword` 6-72 caracteres; `confirmPassw
 - DTO: `ProfileResponse` (linha 3-9 de `ProfileResponse.java`)
 - Serviço: `ProfileService.getProfile`
 - `avatar`: Código do avatar equipado; `DEFAULT` quando não há seleção (BE-029).
-- `preferredCharacter`: Personagem mais utilizado pelo usuário; null se não houver histórico
+- `preferredCharacter`: Personagem mais utilizado no histórico; null se não houver histórico.
+- `equippedCharacter`: Código público do personagem atualmente equipado em `user_equipment`; null quando não há personagem equipado. É independente de `preferredCharacter`.
 
 ---
 
@@ -796,6 +801,22 @@ Validações:
 **Regras e observações:**
 - DTO: `CoinPackageResponse`
 - O campo `priceInReais` representa o preço exibido ao usuário.
+
+#### POST /api/coins/packages/{packageId}/purchase
+
+**Status:** ✅ Implementado; compra simulada, sem pagamento por cartão.
+**Autenticação:** JWT obrigatório; a identidade vem do usuário autenticado.
+
+Não recebe corpo. A criação do pedido e o crédito do pacote acontecem na mesma
+transação; o endpoint retorna o saldo efetivamente atualizado:
+
+```json
+{ "coinsBalance": 1100 }
+```
+
+Pacotes e valores são os definidos pelo catálogo do backend. Pacote inexistente
+retorna o erro REST já catalogado. Uma nova chamada de compra cria um novo pedido;
+o endpoint não recebe cartão nem cria uma integração de pagamento.
 ---
 
 ### 4.6 Habilidades
@@ -952,7 +973,7 @@ Erros usam o envelope `ApiError` existente:
 | `SHOP_ITEM_NOT_OWNED` | 403 | Equipamento sem posse |
 
 UUID malformado retorna `BAD_REQUEST` (400). JWT ausente ou inválido retorna
-`UNAUTHORIZED` (401). Não há novos destinos ou eventos STOMP nesta tarefa.
+`UNAUTHORIZED` (401).
 
 ---
 
@@ -1204,8 +1225,8 @@ indicada e mantém o deck com três habilidades. Só é aceita uma confirmação
 antes do prazo de 8 segundos. Se o prazo vencer, o backend escolhe automaticamente uma
 opção e uma habilidade do deck a substituir.
 
-Erros são privados, em `/user/queue/errors`: `BAD_REQUEST` (400) para código ou
-habilidade inválidos; `FORBIDDEN` (403) para não participante; `CONFLICT` (409)
+Erros são privados, em `/user/queue/errors`: `ROOM_BAD_REQUEST` (400) para código ou
+habilidade inválidos; `FORBIDDEN` (403) para não participante; `ROOM_CONFLICT` (409)
 para sorteio ausente, encerrado, expirado ou escolha já confirmada. Não há novos
 códigos de erro. O mesmo mapeamento consta no README.
 
@@ -1223,13 +1244,16 @@ códigos de erro. O mesmo mapeamento consta no README.
 - `code`: String de 4 dígitos
 
 **Body da requisição:**
-{ "characterId": "123e4567-e89b-12d3-a456-426614174010" }
+{ "character": "X" }
 
-O `characterId` é o `id` retornado por `GET /api/characters/inventory`. A identidade vem do `Principal`; campos extras como `playerId` são ignorados.
+`character` é o código público do personagem (`X`, `O`, `TRIANGULO`, `QUADRADO`,
+`ESTRELA` ou `CORACAO`). O backend resolve o identificador interno; a identidade
+vem do `Principal`, nunca de um UUID enviado pelo cliente.
 
 **Regras:**
 - Só personagens do inventário do jogador (BE-028).
-- A reserva é atômica: se dois jogadores pedem o mesmo personagem, a primeira confirmação registrada vence; o outro recebe `CONFLICT`.
+- Códigos desconhecidos ou personagens indisponíveis são rejeitados.
+- A reserva é atômica: se dois jogadores pedem o mesmo personagem, a primeira confirmação registrada vence; o outro recebe `ROOM_CONFLICT`.
 - Trocar de personagem libera o anterior imediatamente.
 - Repetir a mesma escolha não gera novo evento.
 - Não é possível alterar o personagem depois de confirmar as duas habilidades, nem após o prazo de 20s.
@@ -1240,11 +1264,23 @@ O `characterId` é o `id` retornado por `GET /api/characters/inventory`. A ident
 - `ROOM_SNAPSHOT` atualizado
 
 **Erros (privados, `/user/queue/errors`):**
-- `BAD_REQUEST` (400): sala ou personagem inválidos, ou personagem que o jogador não possui
+- `ROOM_BAD_REQUEST` (400): sala ou personagem inválidos, ou personagem que o jogador não possui
 - `FORBIDDEN` (403): não participa da sala
-- `CONFLICT` (409): Draft ausente/expirado, personagem já reservado, escolhas já confirmadas
+- `ROOM_CONFLICT` (409): Draft ausente/expirado, personagem já reservado, escolhas já confirmadas
 
 ---
+
+#### SEND /app/rooms/{code}/leave
+
+**Status:** ✅ Implementado
+**Autenticação:** STOMP `Principal` obrigatório
+
+Envie `{}` durante uma partida ativa. O servidor resolve a sala e a partida pelo
+código da sala e identifica o jogador pelo `Principal`; o jogador precisa pertencer
+a ambas. O jogador que desistiu perde por W.O., e o adversário recebe `MATCH_END`
+com as recompensas registradas pelo mesmo fluxo dos demais W.O. O bloqueio da
+partida e a finalização protegem contra premiação duplicada. Não substitui
+`DELETE /api/rooms/{code}/leave`, que continua atendendo apenas saída da sala de espera.
 
 #### SEND /app/rooms/{code}/rematch/request — BE-039
 
@@ -1280,8 +1316,9 @@ negociação, ela é cancelada primeiro. Os membros recebem `ROOM_CLOSED` com
 
 Todos os destinos de revanche usam o código de quatro dígitos, não recebem `playerId`
 e derivam o usuário do `Principal`. Erros são enviados ao solicitante em
-`/user/queue/errors`: `BAD_REQUEST` (400) para código inválido, `FORBIDDEN` (403)
-para usuário fora da sala e `CONFLICT` (409) para fase/resultados inválidos,
+`/user/queue/errors`: `ROOM_BAD_REQUEST` (400) para argumentos inválidos,
+`ROOM_NOT_FOUND` (404) para sala inexistente ou encerrada, `FORBIDDEN` (403)
+para usuário fora da sala e `ROOM_CONFLICT` (409) para fase/resultados inválidos,
 solicitação duplicada, ação fora de ordem ou prazo expirado. O servidor controla e
 valida os 15 segundos em cada operação; aceite, recusa, expiração, desconexão e saída
 para o lobby competem por uma transição atômica no Redis.
@@ -1480,7 +1517,7 @@ incrementais; não geram snapshots completos a cada ação.
   recebendo somente as próprias opções e seu prazo original.
 - No snapshot público, `drawOptions` é sempre `null`, `mySlot` é `null` e `myDeck`
   é `[]`. A fase compartilhada pode ser `ROUND_DRAW`, mas as opções nunca são públicas.
-- `MATCH_END` mantém o envelope `{type,payload,serverTime}` e inclui `reason` com `NORMAL` ou `FORFEIT_TIMEOUT`, além de `winnerId`, `score` e `forfeit`. Este evento comunica vitória, empate e W.O. e é publicado uma única vez. Em seguida, `MatchFinishedEvent` dispara `ROOM_SNAPSHOT` público e individualizado para os dois jogadores, com `phase:"RESULT"` e `outcome` final; somente depois da publicação o servidor remove o estado Redis. Chamadas repetidas de finalização não duplicam `MATCH_END` nem o snapshot final.
+- `MATCH_END` mantém o envelope `{type,payload,serverTime}` e publica `outcome` com slots e `coins` com os valores efetivamente creditados por slot, sem expor UUIDs de jogadores. Inclui `reason` (`NORMAL` ou `FORFEIT_TIMEOUT`) e `forfeit` por compatibilidade. É publicado uma única vez. Em seguida, `MatchFinishedEvent` dispara `ROOM_SNAPSHOT` público e individualizado para os dois jogadores, com `phase:"RESULT"` e `outcome` final; somente depois da publicação o servidor remove o estado Redis. Chamadas repetidas de finalização não duplicam `MATCH_END` nem o snapshot final.
 - Após aceitar a revanche, o snapshot continua usando o envelope padrão e a mesma sala. `gameId` aponta para a nova partida apenas depois que o Draft termina e `GameLifecycleService` cria o novo `Game`; a partida anterior continua no histórico.
 - Na fase `ROUND_DRAW`, `turn` é `null`: os 8 segundos de escolha não são um turno
   e não alteram os contadores de timeout. O Draft inicial concluído não substitui
@@ -1607,6 +1644,47 @@ por W.O.:
 }
 ```
 
+##### ROUND_END
+
+Publicado depois de contabilizar o resultado do round. O placar usa slots da sala;
+`winningLine` só aparece em vitória e contém os índices que determinaram a linha
+vencedora. Em empate, `winner` é `null` e `winningLine` é omitido.
+
+```json
+{
+  "type": "ROUND_END",
+  "payload": {
+    "round": 1,
+    "winner": "P1",
+    "winningLine": [0, 5, 10, 15],
+    "score": { "P1": 1, "P2": 0 }
+  },
+  "serverTime": 1793102410000
+}
+```
+
+##### MATCH_END
+
+O resultado usa somente slots, sem UUIDs de jogadores. `coins` vem do resultado
+persistido da concessão de recompensas; o publicador não recalcula valores.
+
+```json
+{
+  "type": "MATCH_END",
+  "payload": {
+    "outcome": { "kind": "WIN", "winner": "P1", "score": [2, 1] },
+    "coins": { "P1": 50, "P2": 10 },
+    "reason": "NORMAL",
+    "forfeit": false
+  },
+  "serverTime": 1793102410000
+}
+```
+
+`outcome` também pode ser `{ "kind": "ABSOLUTE_DRAW" }` ou
+`{ "kind": "WO", "winner": "P2" }`. Em ambos os casos, `coins` reporta o crédito
+efetivo dos dois slots.
+
 ##### ROUND_START e PHASE_CHANGE
 
 `ROUND_START` informa `{ "round": 1, "firstPlayer": "P1", "suddenDeath": false }`.
@@ -1635,6 +1713,10 @@ pelo `TURN_START` do próximo jogador. Um timeout publica `TURN_TIMEOUT`, um
 `BOARD_UPDATE` apenas quando alterar casas/efeitos, e a transição de turno. O fim
 do round publica `ROUND_END` e `PHASE_CHANGE` para `ROUND_END`; o fim da partida
 publica `PHASE_CHANGE` para `RESULT` e `MATCH_END`.
+
+A regra oficial da MD3 permite encerramento antecipado: depois do segundo round,
+se o placar estiver desigual, a partida termina. O terceiro round só é realizado
+quando o placar estiver empatado; o frontend deve seguir o `MATCH_END` do backend.
 
 ---
 
@@ -1770,11 +1852,17 @@ recebe o evento. Os snapshots privados continuam disponíveis para sincronizaç�
 - `SKILL_ALREADY_USED`: Habilidade já usada no round
 - `SKILL_NOT_IN_DECK`: Habilidade não pertence ao deck do round
 
-**Códigos genéricos:**
-- `BAD_REQUEST`: Requisição inválida
-- `CONFLICT`: Conflito de estado
-- `FORBIDDEN`: Acesso negado
-- `INTERNAL_SERVER_ERROR`: Erro interno
+**Códigos específicos de movimento:** `INVALID_ARGUMENTS`, `INVALID_POSITION`,
+`INVALID_BOARD`, `INVALID_PHASE`, `DRAFT_IN_PROGRESS`, `ROUND_FINISHED`,
+`GAME_FINISHED`, `NOT_YOUR_TURN`, `TURN_EXPIRED`, `POSITION_OCCUPIED` e
+`POSITION_BLOCKED` (HTTP 400).
+
+**Códigos para condições gerais da sala:**
+- `ROOM_BAD_REQUEST` (400): argumentos inválidos
+- `ROOM_NOT_FOUND` (404): sala não encontrada ou encerrada
+- `ROOM_CONFLICT` (409): ação incompatível com o estado atual
+- `FORBIDDEN` (403): jogador não autorizado
+- `INTERNAL_ERROR` (500): erro inesperado, sem detalhes internos
 
 **Handler:** `WebSocketExceptionHandler` (linha 14-54)
 
@@ -2224,10 +2312,22 @@ O `Outcome` presente em snapshots de composicao/sincronizacao e no snapshot fina
 | `SKILL_SILENCED` | 400 | Jogador sob Silêncio | `WebSocketExceptionHandler.handleSkillValidation` |
 | `SKILL_ALREADY_USED` | 400 | Habilidade já usada no round | `WebSocketExceptionHandler.handleSkillValidation` |
 | `SKILL_NOT_IN_DECK` | 400 | Habilidade não no deck do round | `WebSocketExceptionHandler.handleSkillValidation` |
-| `BAD_REQUEST` | 400 | Requisição inválida genérica | `WebSocketExceptionHandler.handleBadRequest` / `handleMoveValidation` |
+| `INVALID_ARGUMENTS` | 400 | Argumentos do movimento inválidos | `WebSocketExceptionHandler.handleMoveValidation` |
+| `INVALID_POSITION` | 400 | Posição fora do tabuleiro | `WebSocketExceptionHandler.handleMoveValidation` |
+| `INVALID_BOARD` | 400 | Estado do tabuleiro inválido | `WebSocketExceptionHandler.handleMoveValidation` |
+| `INVALID_PHASE` | 400 | Fase incompatível com movimento | `WebSocketExceptionHandler.handleMoveValidation` |
+| `DRAFT_IN_PROGRESS` | 400 | Draft ainda em andamento | `WebSocketExceptionHandler.handleMoveValidation` |
+| `ROUND_FINISHED` | 400 | Round encerrado | `WebSocketExceptionHandler.handleMoveValidation` |
+| `GAME_FINISHED` | 400 | Partida encerrada | `WebSocketExceptionHandler.handleMoveValidation` |
+| `NOT_YOUR_TURN` | 400 | Movimento fora da vez | `WebSocketExceptionHandler.handleMoveValidation` |
+| `TURN_EXPIRED` | 400 | Prazo do turno expirado | `WebSocketExceptionHandler.handleMoveValidation` |
+| `POSITION_OCCUPIED` | 400 | Casa ocupada | `WebSocketExceptionHandler.handleMoveValidation` |
+| `POSITION_BLOCKED` | 400 | Casa bloqueada por efeito | `WebSocketExceptionHandler.handleMoveValidation` |
+| `ROOM_BAD_REQUEST` | 400 | Requisição inválida | `WebSocketExceptionHandler.handleBadRequest` |
+| `ROOM_NOT_FOUND` | 404 | Sala inexistente ou encerrada | `WebSocketExceptionHandler.handleRoomNotFound` |
+| `ROOM_CONFLICT` | 409 | Ação incompatível com o estado | `WebSocketExceptionHandler.handleConflict` |
 | `FORBIDDEN` | 403 | Acesso negado | `WebSocketExceptionHandler.handleAccessDenied` |
-| `CONFLICT` | 409 | Conflito de estado | `WebSocketExceptionHandler.handleConflict` |
-| `INTERNAL_SERVER_ERROR` | 500 | Erro interno | `WebSocketExceptionHandler.handleUnexpected` |
+| `INTERNAL_ERROR` | 500 | Erro interno sem detalhes expostos | `WebSocketExceptionHandler.handleUnexpected` |
 
 ### 8.4 Condições que Provocam Erros
 
@@ -2453,36 +2553,28 @@ Durante a auditoria, as seguintes verificações foram executadas:
 
 ### 10.3 Limitações da Auditoria
 
-- **Testes não executados:** Testes foram listados mas não executados
-- **Integração real não testada:** Apenas análise estática de código
-- **Endpoint de gameplay broadcast:** Destino público final pendente de alinhamento com front (BE-024)
-- **Validação BE-024:** 603 testes passaram, incluindo testes unitários de snapshots/ciclo de vida e testes STOMP existentes; `mvn clean verify` concluiu com sucesso.
-- **Integração real de snapshot após ação de gameplay não verificada com dois clientes STOMP:** Os testes STOMP existentes cobrem autenticação, associação ao tópico e privacidade do sorteio; o broadcast de gameplay é validado nos testes de serviço/event listener.
-- O gameplay usa `/topic/rooms/{code}` com `ROOM_SNAPSHOT`, alinhado ao contrato V2 nesta implementação.
-- **Draft de personagens:** Fluxo de seleção de personagens não detalhado (pode estar em outra parte do código)
-- **Loja:** Catálogo, compra e equipamento implementados na BE-029; imagens e catálogo de avatares pagos ainda dependem de definição com o front.
+- A validação desta revisão foi executada por testes automatizados; deploy e integração com serviços externos não fazem parte desta verificação.
+- Catálogo, preços e compra simulada de Coins são os definidos pelo backend; o endpoint não processa cartões.
+- A seleção de personagem no Draft recebe o código público e resolve o identificador interno no servidor.
 
 ### 10.4 Pontos Pendentes de Confirmação
 
-- X e O são atribuídos a todo jogador por padrão (RN-LOJ-01)?
-- Destino público de atualizações de gameplay (BE-024)
-- Detalhes de implementação de W.O. em partida
-- Fluxo completo de seleção de personagens no Draft
+- Itens visuais e imagens dos personagens/avatares continuam sob definição do frontend.
 
 ### 10.5 Compatibilidade com Front-End
 
 - Todos os contratos REST documentados estão implementados
 - Todos os destinos de entrada (SEND) e assinatura (SUBSCRIBE) documentados estão implementados
-- Os destinos de saída existem, mas os eventos de gameplay publicados ainda não têm contrato público final alinhado (BE-024)
+- Eventos incrementais de gameplay publicados em `/topic/rooms/{code}` seguem os payloads descritos nesta versão
 - DTOs documentados correspondem exatamente ao código
 - Enums documentados correspondem exatamente ao código
 - Erros documentados correspondem aos handlers implementados
 
 **Incompatibilidades identificadas:**
-- O contrato público final dos eventos de atualização de gameplay ainda está pendente (BE-024); a compatibilidade integral dos eventos de saída segue em aberto.
+- Nenhuma divergência conhecida nos contratos cobertos por esta etapa.
 
 **Bloqueadores de integração:**
-- Destino e formato públicos finais para eventos de atualização de gameplay pendentes (BE-024), o que pode impactar sincronização de jogadas em tempo real.
+- Nenhum bloqueador de contrato conhecido nesta etapa.
 
 ---
 

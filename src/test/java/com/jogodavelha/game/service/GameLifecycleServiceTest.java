@@ -345,15 +345,18 @@ class GameLifecycleServiceTest {
                 .filter(e -> "MATCH_END".equals(e.type()))
                 .findFirst()
                 .orElseThrow();
-        assertEquals(game.getId(), matchEnd.payload().get("gameId"));
-        assertEquals(new Score(2, 0), matchEnd.payload().get("score"));
-        assertEquals(player1.getId().toString(), matchEnd.payload().get("winnerId"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> outcome = (Map<String, Object>) matchEnd.payload().get("outcome");
+        assertEquals("WIN", outcome.get("kind"));
+        assertEquals("P1", outcome.get("winner"));
+        assertEquals(List.of(2, 0), outcome.get("score"));
         assertEquals(false, matchEnd.payload().get("forfeit"));
         assertEquals(GameEndReason.NORMAL.name(), matchEnd.payload().get("reason"));
         @SuppressWarnings("unchecked")
-        Map<String, Integer> coins = (Map<String, Integer>) matchEnd.payload().get("coinsCredited");
-        assertEquals(GameService.COINS_WIN, coins.get(player1.getId().toString()));
-        assertEquals(GameService.COINS_LOSS, coins.get(player2.getId().toString()));
+        Map<String, Integer> coins = (Map<String, Integer>) matchEnd.payload().get("coins");
+        assertEquals(GameService.COINS_WIN, coins.get("P1"));
+        assertEquals(GameService.COINS_LOSS, coins.get("P2"));
+        assertFalse(matchEnd.payload().containsKey("winnerId"));
         assertTrue(matchEnd.serverTime() > 0);
     }
 
@@ -401,8 +404,78 @@ class GameLifecycleServiceTest {
                 .filter(e -> "ROUND_END".equals(e.type()))
                 .findFirst()
                 .orElseThrow();
-        assertEquals("DRAW", roundEnd.payload().get("result"));
         assertEquals(1, roundEnd.payload().get("round"));
+        assertNull(roundEnd.payload().get("winner"));
+        assertFalse(roundEnd.payload().containsKey("winningLine"));
+        assertEquals(Map.of("P1", 0, "P2", 0), roundEnd.payload().get("score"));
+    }
+
+    @Test
+    void victoryRoundEndPublishesTheWinningLineAndUpdatedSlotScore() {
+        when(gameRepository.findById(game.getId())).thenReturn(Optional.of(game));
+        seedPlayingState(1, false);
+        redisState.get().setWinningLine(List.of(0, 5, 10, 15));
+        when(games.applyRoundResult(game.getId(), 1, RoundResult.PLAYER1_WIN)).thenAnswer(invocation -> {
+            game.registerRoundResult(RoundResult.PLAYER1_WIN);
+            return new RoundUpdate(game, true);
+        });
+
+        lifecycle.finishRound(game.getId(), 1, RoundResult.PLAYER1_WIN);
+
+        ArgumentCaptor<MatchLifecycleEvent> event = ArgumentCaptor.forClass(MatchLifecycleEvent.class);
+        verify(websocket, atLeastOnce()).sendToTopic(eq("/topic/rooms/4242"), event.capture());
+        MatchLifecycleEvent roundEnd = event.getAllValues().stream()
+                .filter(value -> "ROUND_END".equals(value.type())).findFirst().orElseThrow();
+        assertEquals("P1", roundEnd.payload().get("winner"));
+        assertEquals(List.of(0, 5, 10, 15), roundEnd.payload().get("winningLine"));
+        assertEquals(Map.of("P1", 1, "P2", 0), roundEnd.payload().get("score"));
+    }
+
+    @Test
+    void playerTwoVictoryAndAbsoluteDrawUseSlotBasedMatchResults() throws Exception {
+        game.registerRoundResult(RoundResult.PLAYER2_WIN);
+        when(gameRepository.findById(game.getId())).thenReturn(Optional.of(game));
+        seedPlayingState(2, false);
+        when(games.applyRoundResult(game.getId(), 2, RoundResult.PLAYER2_WIN)).thenAnswer(invocation -> {
+            game.registerRoundResult(RoundResult.PLAYER2_WIN);
+            game.setRewardResult(new RewardResult(GameService.COINS_LOSS, GameService.COINS_WIN));
+            return new RoundUpdate(game, true);
+        });
+
+        lifecycle.finishRound(game.getId(), 2, RoundResult.PLAYER2_WIN);
+
+        ArgumentCaptor<MatchLifecycleEvent> events = ArgumentCaptor.forClass(MatchLifecycleEvent.class);
+        verify(websocket, atLeastOnce()).sendToTopic(eq("/topic/rooms/4242"), events.capture());
+        MatchLifecycleEvent matchEnd = events.getAllValues().stream()
+                .filter(value -> "MATCH_END".equals(value.type())).findFirst().orElseThrow();
+        assertEquals(Map.of("kind", "WIN", "winner", "P2", "score", List.of(0, 2)),
+                matchEnd.payload().get("outcome"));
+        assertEquals(Map.of("P1", GameService.COINS_LOSS, "P2", GameService.COINS_WIN),
+                matchEnd.payload().get("coins"));
+
+        Game drawGame = new Game(room, player1);
+        drawGame.setPlayer2(player2);
+        setId(drawGame, UUID.randomUUID());
+        drawGame.registerRoundResult(RoundResult.DRAW);
+        drawGame.registerRoundResult(RoundResult.DRAW);
+        when(gameRepository.findById(drawGame.getId())).thenReturn(Optional.of(drawGame));
+        redisState.set(GameState.createInitial(drawGame.getId(), player1.getId(), player2.getId(),
+                GameState.DEFAULT_TURN_DURATION_MILLIS, new SecureRandom()));
+        redisState.get().startRound(3, GameState.SUDDEN_DEATH_TURN_DURATION_MILLIS, 10_000);
+        when(games.applyRoundResult(drawGame.getId(), 3, RoundResult.DRAW)).thenAnswer(invocation -> {
+            drawGame.registerRoundResult(RoundResult.DRAW);
+            drawGame.setRewardResult(new RewardResult(GameService.COINS_DRAW, GameService.COINS_DRAW));
+            return new RoundUpdate(drawGame, true);
+        });
+
+        lifecycle.finishRound(drawGame.getId(), 3, RoundResult.DRAW);
+
+        verify(websocket, atLeastOnce()).sendToTopic(eq("/topic/rooms/4242"), events.capture());
+        MatchLifecycleEvent drawEnd = events.getAllValues().stream()
+                .filter(value -> "MATCH_END".equals(value.type())).reduce((first, second) -> second).orElseThrow();
+        assertEquals(Map.of("kind", "ABSOLUTE_DRAW"), drawEnd.payload().get("outcome"));
+        assertEquals(Map.of("P1", GameService.COINS_DRAW, "P2", GameService.COINS_DRAW),
+                drawEnd.payload().get("coins"));
     }
 
     @Test
@@ -438,11 +511,15 @@ class GameLifecycleServiceTest {
         assertEquals("MATCH_END", matchEnd.type());
         assertEquals(true, matchEnd.payload().get("forfeit"));
         assertEquals(GameEndReason.FORFEIT_TIMEOUT.name(), matchEnd.payload().get("reason"));
-        assertEquals(player2.getId().toString(), matchEnd.payload().get("winnerId"));
         @SuppressWarnings("unchecked")
-        Map<String, Integer> coins = (Map<String, Integer>) matchEnd.payload().get("coinsCredited");
-        assertEquals(GameService.COINS_FORFEIT_WIN, coins.get(player2.getId().toString()));
-        assertFalse(coins.containsKey(player1.getId().toString()));
+        Map<String, Object> outcome = (Map<String, Object>) matchEnd.payload().get("outcome");
+        assertEquals(Map.of("kind", "WO", "winner", "P2"), outcome);
+        @SuppressWarnings("unchecked")
+        Map<String, Integer> coins = (Map<String, Integer>) matchEnd.payload().get("coins");
+        assertEquals(GameService.COINS_FORFEIT_WIN, coins.get("P2"));
+        assertEquals(0, coins.get("P1"));
+        assertFalse(matchEnd.payload().toString().contains(player1.getId().toString()));
+        assertFalse(matchEnd.payload().toString().contains(player2.getId().toString()));
         assertEquals(GameEndReason.FORFEIT_TIMEOUT, game.getEndReason());
         assertEquals(RoomStatus.IN_GAME, room.getStatus());
         verify(applicationEvents, times(1)).publishEvent(new MatchFinishedEvent(game.getId(), room.getCode()));
@@ -463,6 +540,26 @@ class GameLifecycleServiceTest {
                 argThat(event -> event instanceof MatchLifecycleEvent m && "MATCH_END".equals(m.type())));
         verify(states, atLeastOnce()).delete(game.getId());
         verify(applicationEvents, times(1)).publishEvent(new MatchFinishedEvent(game.getId(), room.getCode()));
+    }
+
+    @Test
+    void voluntaryForfeitUsesTheSameFinalizationAndRewardResult() {
+        game.forfeit(player1);
+        game.setRewardResult(new RewardResult(0, GameService.COINS_FORFEIT_WIN));
+        game.markRewardsGranted();
+        when(games.forfeit(game.getId(), player1.getId())).thenReturn(game);
+        when(rooms.findById(room.getId())).thenReturn(Optional.of(room));
+        seedPlayingState(1, false);
+
+        lifecycle.forfeitActiveGame(game.getId(), player1.getId());
+
+        verify(games).forfeit(game.getId(), player1.getId());
+        ArgumentCaptor<MatchLifecycleEvent> events = ArgumentCaptor.forClass(MatchLifecycleEvent.class);
+        verify(websocket, atLeastOnce()).sendToTopic(eq("/topic/rooms/4242"), events.capture());
+        MatchLifecycleEvent matchEnd = events.getAllValues().stream()
+                .filter(event -> "MATCH_END".equals(event.type())).findFirst().orElseThrow();
+        assertEquals(Map.of("kind", "WO", "winner", "P2"), matchEnd.payload().get("outcome"));
+        assertEquals(Map.of("P1", 0, "P2", GameService.COINS_FORFEIT_WIN), matchEnd.payload().get("coins"));
     }
 
     private DraftCompleted draftEvent(boolean automatic) {

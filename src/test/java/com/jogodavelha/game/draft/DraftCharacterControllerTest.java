@@ -37,8 +37,8 @@ class DraftCharacterControllerTest {
         UUID playerId = UUID.randomUUID();
         Principal principal = playerId::toString;
 
-        controller.select("0042", new DraftCharacterController.Request("abc"), principal);
+        controller.select("0042", new DraftCharacterController.Request("X"), principal);
 
-        verify(service).select("0042", playerId, "abc");
+        verify(service).select("0042", playerId, "X");
     }
 }

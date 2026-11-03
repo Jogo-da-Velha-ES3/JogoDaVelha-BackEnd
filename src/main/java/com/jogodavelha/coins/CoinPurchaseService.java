@@ -24,7 +24,7 @@ public class CoinPurchaseService {
     }
 
     @Transactional
-    public void purchase(
+    public Integer purchase(
             UUID userId,
             UUID packageId
     ) {
@@ -54,5 +54,6 @@ public class CoinPurchaseService {
                 user,
                 coinPackage
         );
+        return user.getCoinsBalance();
     }
 }

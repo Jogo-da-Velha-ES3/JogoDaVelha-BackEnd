@@ -2,6 +2,7 @@
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.jogodavelha.game.service.GameplayRoomResolver;
+import com.jogodavelha.game.service.GameLifecycleService;
 import com.jogodavelha.game.service.MoveActionService;
 import com.jogodavelha.skill.SkillActivationService;
 import com.jogodavelha.skill.SkillContext;
@@ -26,6 +27,7 @@ public class GameplayController {
     private final MoveActionService moves;
     private final SkillActivationService skills;
     private final GameplayRoomResolver games;
+    private final GameLifecycleService lifecycle;
 
     @MessageMapping("/rooms/{code}/move")
     public void move(@DestinationVariable String code, MoveRequest request, Principal principal) {
@@ -44,6 +46,12 @@ public class GameplayController {
         }
         skills.activate(games.resolveActiveGame(code, actor), request.skillCode(),
                 new SkillContext(actor, request.targetPosition(), request.destinationPosition()));
+    }
+
+    @MessageMapping("/rooms/{code}/leave")
+    public void leave(@DestinationVariable String code, Principal principal) {
+        UUID actor = authenticatedUser(principal);
+        lifecycle.forfeitActiveGame(games.resolveActiveGame(code, actor), actor);
     }
 
     private UUID authenticatedUser(Principal principal) {

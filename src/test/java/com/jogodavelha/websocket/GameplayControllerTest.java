@@ -18,7 +18,8 @@ class GameplayControllerTest {
     @Test void principalIsUsedAndPayloadIdentityIsIgnored() {
         MoveActionService moves = mock(MoveActionService.class);
         GameplayRoomResolver resolver = mock(GameplayRoomResolver.class);
-        GameplayController controller = new GameplayController(moves, mock(SkillActivationService.class), resolver);
+        GameplayController controller = new GameplayController(moves, mock(SkillActivationService.class), resolver,
+                mock(com.jogodavelha.game.service.GameLifecycleService.class));
         UUID game = UUID.randomUUID(), authenticated = UUID.randomUUID();
         when(resolver.resolveActiveGame("0042", authenticated)).thenReturn(game);
         controller.move("0042", new GameplayController.MoveRequest(3, UUID.randomUUID()), () -> authenticated.toString());
@@ -28,7 +29,7 @@ class GameplayControllerTest {
 
     @Test void missingPrincipalIsForbidden() {
         GameplayController controller = new GameplayController(mock(MoveActionService.class), mock(SkillActivationService.class),
-                mock(GameplayRoomResolver.class));
+                mock(GameplayRoomResolver.class), mock(com.jogodavelha.game.service.GameLifecycleService.class));
         assertThrows(AccessDeniedException.class, () -> controller.move("0042",
                 new GameplayController.MoveRequest(1, UUID.randomUUID()), null));
     }
@@ -36,7 +37,8 @@ class GameplayControllerTest {
     @Test void skillBuildsContextFromPrincipal() {
         SkillActivationService skills = mock(SkillActivationService.class);
         GameplayRoomResolver resolver = mock(GameplayRoomResolver.class);
-        GameplayController controller = new GameplayController(mock(MoveActionService.class), skills, resolver);
+        GameplayController controller = new GameplayController(mock(MoveActionService.class), skills, resolver,
+                mock(com.jogodavelha.game.service.GameLifecycleService.class));
         UUID game = UUID.randomUUID(), authenticated = UUID.randomUUID();
         when(resolver.resolveActiveGame("0042", authenticated)).thenReturn(game);
         controller.activateSkill("0042", new GameplayController.SkillRequest("BOMBA", 2, null, UUID.randomUUID()),
@@ -59,5 +61,24 @@ class GameplayControllerTest {
         assertEquals(List.of("skillCode", "targetPosition", "destinationPosition"),
                 java.util.Arrays.stream(GameplayController.SkillRequest.class.getRecordComponents())
                         .map(java.lang.reflect.RecordComponent::getName).filter(name -> !name.equals("playerId")).toList());
+    }
+
+    @Test
+    void leaveUsesAuthenticatedPlayerAndRoomCode() throws Exception {
+        GameplayRoomResolver resolver = mock(GameplayRoomResolver.class);
+        com.jogodavelha.game.service.GameLifecycleService lifecycle =
+                mock(com.jogodavelha.game.service.GameLifecycleService.class);
+        GameplayController controller = new GameplayController(mock(MoveActionService.class),
+                mock(SkillActivationService.class), resolver, lifecycle);
+        UUID actor = UUID.randomUUID();
+        UUID game = UUID.randomUUID();
+        when(resolver.resolveActiveGame("0042", actor)).thenReturn(game);
+
+        controller.leave("0042", actor::toString);
+
+        verify(resolver).resolveActiveGame("0042", actor);
+        verify(lifecycle).forfeitActiveGame(game, actor);
+        assertArrayEquals(new String[]{"/rooms/{code}/leave"}, GameplayController.class
+                .getMethod("leave", String.class, Principal.class).getAnnotation(MessageMapping.class).value());
     }
 }

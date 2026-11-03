@@ -2,6 +2,7 @@ package com.jogodavelha.game.service;
 
 import com.jogodavelha.game.Game;
 import com.jogodavelha.game.GameEndReason;
+import com.jogodavelha.game.GameOutcome;
 import com.jogodavelha.game.MatchFinishedEvent;
 import com.jogodavelha.game.GameNotFoundException;
 import com.jogodavelha.game.GameRepository;
@@ -21,6 +22,7 @@ import com.jogodavelha.game.logic.GameStateManager;
 import com.jogodavelha.room.Room;
 import com.jogodavelha.room.RoomRepository;
 import com.jogodavelha.room.RoomStatus;
+import com.jogodavelha.auth.User;
 import com.jogodavelha.game.GameplayBoardUpdatedEvent;
 import com.jogodavelha.websocket.WebSocketService;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -130,8 +133,17 @@ public class GameLifecycleService implements RoundLifecycle {
         }
         Game game = update.game();
         Room room = game.getRoom();
-        websocket.sendToTopic(topic(room), MatchLifecycleEvent.of("ROUND_END", Map.of(
-                "gameId", gameId, "round", oldRound, "result", result.name(), "score", game.getScore())));
+        GameState completedState = states.find(gameId).orElse(null);
+        Map<String, Object> roundEnd = new LinkedHashMap<>();
+        roundEnd.put("round", oldRound);
+        roundEnd.put("winner", result == RoundResult.DRAW ? null
+                : slot(room, result == RoundResult.PLAYER1_WIN ? game.getPlayer1() : game.getPlayer2()));
+        if (result != RoundResult.DRAW && completedState != null
+                && completedState.getWinningLine() != null && !completedState.getWinningLine().isEmpty()) {
+            roundEnd.put("winningLine", List.copyOf(completedState.getWinningLine()));
+        }
+        roundEnd.put("score", scoreBySlot(game, room));
+        websocket.sendToTopic(topic(room), MatchLifecycleEvent.of("ROUND_END", roundEnd));
         phase(room, "ROUND_END", oldRound);
 
         if (game.getStatus() == GameStatus.FINISHED) {
@@ -220,6 +232,11 @@ public class GameLifecycleService implements RoundLifecycle {
         startTurnAfterDraft(event.gameId(), event.round());
     }
 
+    public void forfeitActiveGame(UUID gameId, UUID loserId) {
+        Game game = games.forfeit(gameId, loserId);
+        finishMatch(game);
+    }
+
     private void startTurnAfterDraft(UUID gameId, int expectedRound) {
         RoundKey roundKey = new RoundKey(gameId, expectedRound);
         if (!startedRounds.add(roundKey)) {
@@ -291,54 +308,46 @@ public class GameLifecycleService implements RoundLifecycle {
         boolean firstPublication = matchEndPublished.add(game.getId());
         if (firstPublication) {
             phase(room, "RESULT", game.getCurrentRound());
-            websocket.sendToTopic(topic(room), MatchLifecycleEvent.of("MATCH_END", Map.of(
-                    "gameId", game.getId(),
-                    "score", game.getScore(),
-                    "winnerId", game.getWinner() == null ? "" : game.getWinner().getId().toString(),
-                    "forfeit", game.getEndReason() == GameEndReason.FORFEIT_TIMEOUT,
-                    "reason", game.getEndReason().name(),
-                    "coinsCredited", creditedCoins(game))));
+            RewardResult reward = game.getRewardResult();
+            if (reward == null) {
+                matchEndPublished.remove(game.getId());
+                throw new IllegalStateException("Resultado de recompensas da partida indisponível.");
+            }
+            Map<String, Object> outcome = new LinkedHashMap<>();
+            if (game.getEndReason() == GameEndReason.FORFEIT_TIMEOUT) {
+                outcome.put("kind", "WO");
+                outcome.put("winner", slot(room, game.getWinner()));
+            } else if (game.getOutcome() == GameOutcome.DRAW) {
+                outcome.put("kind", "ABSOLUTE_DRAW");
+            } else {
+                outcome.put("kind", "WIN");
+                outcome.put("winner", slot(room, game.getWinner()));
+                outcome.put("score", java.util.List.of(game.getScore().player1(), game.getScore().player2()));
+            }
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("outcome", outcome);
+            result.put("coins", Map.of(
+                    slot(room, game.getPlayer1()), reward.player1Reward(),
+                    slot(room, game.getPlayer2()), reward.player2Reward()));
+            result.put("reason", game.getEndReason().name());
+            result.put("forfeit", game.getEndReason() == GameEndReason.FORFEIT_TIMEOUT);
+            websocket.sendToTopic(topic(room), MatchLifecycleEvent.of("MATCH_END", result));
             events.publishEvent(new MatchFinishedEvent(game.getId(), room.getCode()));
         }
         states.delete(game.getId());
         cancelPresentationTimers(game.getId());
     }
 
-    private Map<String, Integer> creditedCoins(Game game) {
-        RewardResult reward = game.getRewardResult();
-        if (reward != null) {
-            return coinsMap(game, reward);
-        }
-        if (!game.isRewardsGranted()) {
-            return Map.of();
-        }
-        if (game.getEndReason() == GameEndReason.FORFEIT_TIMEOUT) {
-            boolean firstWins = game.getWinner().getId().equals(game.getPlayer1().getId());
-            return coinsMap(game, new RewardResult(firstWins ? GameService.COINS_FORFEIT_WIN : 0,
-                    firstWins ? 0 : GameService.COINS_FORFEIT_WIN));
-        }
-        return switch (game.getOutcome()) {
-            case DRAW -> Map.of(
-                    game.getPlayer1().getId().toString(), GameService.COINS_DRAW,
-                    game.getPlayer2().getId().toString(), GameService.COINS_DRAW);
-            case PLAYER1_WIN -> Map.of(
-                    game.getPlayer1().getId().toString(), GameService.COINS_WIN,
-                    game.getPlayer2().getId().toString(), GameService.COINS_LOSS);
-            case PLAYER2_WIN -> Map.of(
-                    game.getPlayer2().getId().toString(), GameService.COINS_WIN,
-                    game.getPlayer1().getId().toString(), GameService.COINS_LOSS);
-        };
+    private Map<String, Integer> scoreBySlot(Game game, Room room) {
+        return Map.of(slot(room, game.getPlayer1()), game.getScore().player1(),
+                slot(room, game.getPlayer2()), game.getScore().player2());
     }
 
-    private static Map<String, Integer> coinsMap(Game game, RewardResult reward) {
-        Map<String, Integer> coins = new LinkedHashMap<>();
-        if (reward.player1Reward() > 0) {
-            coins.put(game.getPlayer1().getId().toString(), reward.player1Reward());
-        }
-        if (reward.player2Reward() > 0) {
-            coins.put(game.getPlayer2().getId().toString(), reward.player2Reward());
-        }
-        return Map.copyOf(coins);
+    private String slot(Room room, User player) {
+        if (player == null) throw new IllegalStateException("Jogador do resultado indisponível.");
+        if (room.getPlayer1().getId().equals(player.getId())) return "P1";
+        if (room.getPlayer2() != null && room.getPlayer2().getId().equals(player.getId())) return "P2";
+        throw new IllegalStateException("Jogador do resultado não pertence à sala.");
     }
 
     private static DraftCompleted.Selection selectionFor(DraftCompleted event, UUID playerId) {

@@ -270,21 +270,25 @@ class RoomSnapshotServiceTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void persistedForfeitRestoresOutcomeAndThirtyZeroCoinsWithoutTheTransientRewardResult(boolean hostLoses) throws Exception {
+    void persistedForfeitRestoresOutcomeAndThePersistedRewardResult(boolean hostLoses) throws Exception {
         var fixture = activeRoom(false);
         UUID gameId = UUID.randomUUID();
         var game = new Game(fixture.room(), fixture.host());
         game.setPlayer2(fixture.guest());
         setId(game, gameId);
         game.forfeit(hostLoses ? fixture.host() : fixture.guest());
+        game.setRewardResult(new com.jogodavelha.game.RewardResult(hostLoses ? 0 : 30,
+                hostLoses ? 30 : 0));
         when(games.findTopByRoomIdAndStatusOrderByFinishedAtDesc(fixture.room().getId(), GameStatus.FINISHED))
                 .thenReturn(Optional.of(game));
 
-        assertNull(snapshots.compose("0042", fixture.host().getId()).coins());
+        var unmarkedSnapshot = snapshots.compose("0042", fixture.host().getId());
+        assertEquals(Map.of(RoomSnapshotService.Slot.P1, hostLoses ? 0 : 30,
+                RoomSnapshotService.Slot.P2, hostLoses ? 30 : 0), unmarkedSnapshot.coins());
         game.markRewardsGranted();
         var result = snapshots.compose("0042", fixture.host().getId());
 
-        assertNull(game.getRewardResult());
+        assertNotNull(game.getRewardResult());
         assertEquals(RoomSnapshotService.RoomPhase.RESULT, result.phase());
         assertEquals("WO", result.outcome().kind());
         assertEquals(hostLoses ? RoomSnapshotService.Slot.P2 : RoomSnapshotService.Slot.P1, result.outcome().winner());

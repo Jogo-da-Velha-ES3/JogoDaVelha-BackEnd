@@ -300,7 +300,7 @@ class DraftWebSocketIntegrationTest {
         assertEquals("PHASE_CHANGE", receive(first).path("type").asText());
         assertEquals("PHASE_CHANGE", receive(second).path("type").asText());
         assertEquals(receive(first), receive(second));
-        assertSelectionError(errors, "{\"abilities\":[\"BOMBA\",\"ESCUDO\"]}", "BAD_REQUEST");
+        assertSelectionError(errors, "{\"abilities\":[\"BOMBA\",\"ESCUDO\"]}", "ROOM_BAD_REQUEST");
 
         drafts.updatePlayer(selectionRoomId, P1, player -> player.withCharacter(X));
         receive(first);
@@ -308,10 +308,10 @@ class DraftWebSocketIntegrationTest {
         for (String json : List.of("{\"abilities\":[\"BOMBA\"]}",
                 "{\"abilities\":[\"BOMBA\",\"BOMBA\"]}", "{\"abilities\":null}",
                 "{\"abilities\":[\"BOMBA\",\"SILENCIO\"]}")) {
-            assertSelectionError(errors, json, "BAD_REQUEST");
+            assertSelectionError(errors, json, "ROOM_BAD_REQUEST");
         }
         clock.now.set(draftStates.find(selectionRoomId).orElseThrow().deadlineEpochMillis());
-        assertSelectionError(errors, "{\"abilities\":[\"BOMBA\",\"ESCUDO\"]}", "CONFLICT");
+        assertSelectionError(errors, "{\"abilities\":[\"BOMBA\",\"ESCUDO\"]}", "ROOM_CONFLICT");
         when(rooms.findActiveMembership(eq("0042"), anyList(), eq(P1))).thenReturn(Optional.empty());
         assertSelectionError(errors, "{\"abilities\":[\"BOMBA\",\"ESCUDO\"]}", "FORBIDDEN");
         assertNull(first.poll(200, TimeUnit.MILLISECONDS));
@@ -326,7 +326,7 @@ class DraftWebSocketIntegrationTest {
 
         sendAbilities(sessions.get(0), "{\"abilities\":[\"BOMBA\",\"ESCUDO\"]}");
 
-        assertEquals("CONFLICT", receive(errors).path("code").asText());
+        assertEquals("ROOM_CONFLICT", receive(errors).path("code").asText());
         assertTrue(draftStates.find(selectionRoomId).isEmpty());
         assertNull(publicEvents.poll(200, TimeUnit.MILLISECONDS));
     }

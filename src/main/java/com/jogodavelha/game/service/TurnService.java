@@ -7,6 +7,7 @@ import com.jogodavelha.game.logic.GamePhase;
 import com.jogodavelha.game.logic.GameState;
 import com.jogodavelha.game.logic.GameStateManager;
 import com.jogodavelha.game.logic.GameStateNotFoundException;
+import com.jogodavelha.game.logic.GameValidator;
 import com.jogodavelha.skill.SkillEngine;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -60,11 +61,15 @@ public class TurnService {
      * @return símbolo vencedor, se houver (a vez não é passada e a fase vira ROUND_FINISHED)
      */
     public Optional<Character> endAction(GameState state, UUID actorId, long nowMillis) {
+        var frozenPositions = state.frozenSet();
         Optional<Character> winner = skillEngine.endAction(state, actorId);
         if (winner.isPresent()) {
+            state.setWinningLine(GameValidator.findWinningLine(state.getBoard(), winner.get(), frozenPositions)
+                    .orElseThrow(() -> new IllegalStateException("A vitória não possui uma linha válida.")));
             state.setPhase(GamePhase.ROUND_FINISHED);
             return winner;
         }
+        state.setWinningLine(java.util.List.of());
         UUID next = state.getOpponentId(actorId);
         long duration = state.effectiveTurnDuration(next, baseDuration(state));
         state.setCurrentTurnPlayerId(next);
