@@ -55,6 +55,7 @@ import org.springframework.messaging.simp.stomp.StompFrameHandler;
 import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.messaging.simp.stomp.StompSession;
 import org.springframework.messaging.simp.stomp.StompSessionHandlerAdapter;
+import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.socket.WebSocketHttpHeaders;
@@ -136,6 +137,7 @@ class RoomSnapshotStompIT {
     @Autowired JwtService jwtService;
     @Autowired ObjectMapper objectMapper;
     @Autowired InMemoryGameStateManager gameStates;
+    @Autowired RoomSnapshotService snapshots;
     @Autowired RoomRepository rooms;
     @Autowired GameRepository games;
     @Autowired PlayerService playerService;
@@ -204,7 +206,7 @@ class RoomSnapshotStompIT {
     void bothStompClientsReceiveTheUpdatedMoveSnapshotWithoutPrivateDrawOptions() throws Exception {
         Client p1 = connectAndSubscribe(P1);
         Client p2 = connectAndSubscribe(P2);
-        awaitSubscriptions();
+        awaitSubscriptions(p1, p2);
 
         StompHeaders moveHeaders = new StompHeaders();
         moveHeaders.setDestination("/app/game/" + GAME_ID + "/move");
@@ -220,10 +222,37 @@ class RoomSnapshotStompIT {
     }
 
     @Test
+    void latePrivateSubscriptionCanRecoverThroughUserScopedSync() throws Exception {
+        Client p1 = connectAndSubscribePublic(P1);
+        Client p2 = connectAndSubscribePublic(P2);
+        awaitPublicSubscriptions();
+
+        assertEquals(0, privateSubscriptionCount(p1));
+        assertEquals(0, privateSubscriptionCount(p2));
+
+        events.publishEvent(new RoomSnapshotRequestedEvent(ROOM_CODE));
+
+        assertTrue(snapshotPayload(receive(p1.publicSnapshots())).get("mySlot").isNull());
+        assertTrue(snapshotPayload(receive(p2.publicSnapshots())).get("mySlot").isNull());
+        assertNull(p1.privateSnapshots().poll(100, TimeUnit.MILLISECONDS));
+        assertNull(p2.privateSnapshots().poll(100, TimeUnit.MILLISECONDS));
+
+        subscribePrivate(p1);
+        subscribePrivate(p2);
+        awaitSubscriptions(p1, p2);
+
+        snapshots.sync(ROOM_CODE, P1);
+        snapshots.sync(ROOM_CODE, P2);
+
+        assertEquals("P1", snapshotPayload(receive(p1.privateSnapshots())).path("mySlot").asText());
+        assertEquals("P2", snapshotPayload(receive(p2.privateSnapshots())).path("mySlot").asText());
+    }
+
+    @Test
     void bothStompClientsReceiveForfeitResultSnapshotWhileRedisStateStillExists() throws Exception {
         Client p1 = connectAndSubscribe(P1);
         Client p2 = connectAndSubscribe(P2);
-        awaitSubscriptions();
+        awaitSubscriptions(p1, p2);
 
         when(game.getStatus()).thenReturn(GameStatus.FINISHED);
         when(game.getWinner()).thenReturn(user(P2, "player-two"));
@@ -241,6 +270,19 @@ class RoomSnapshotStompIT {
     }
 
     private Client connectAndSubscribe(UUID playerId) throws Exception {
+        Client client = connect(playerId);
+        client.session().subscribe(TOPIC, jsonHandler(client.publicSnapshots()));
+        subscribePrivate(client);
+        return client;
+    }
+
+    private Client connectAndSubscribePublic(UUID playerId) throws Exception {
+        Client client = connect(playerId);
+        client.session().subscribe(TOPIC, jsonHandler(client.publicSnapshots()));
+        return client;
+    }
+
+    private Client connect(UUID playerId) throws Exception {
         WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
         clients.add(client);
         StompHeaders connectHeaders = new StompHeaders();
@@ -252,9 +294,11 @@ class RoomSnapshotStompIT {
 
         BlockingQueue<JsonNode> publicSnapshots = new LinkedBlockingQueue<>();
         BlockingQueue<JsonNode> privateSnapshots = new LinkedBlockingQueue<>();
-        session.subscribe(TOPIC, jsonHandler(publicSnapshots));
-        session.subscribe("/user/queue/room", jsonHandler(privateSnapshots));
-        return new Client(session, publicSnapshots, privateSnapshots);
+        return new Client(playerId, session, publicSnapshots, privateSnapshots);
+    }
+
+    private void subscribePrivate(Client client) {
+        client.session().subscribe("/user/queue/room", jsonHandler(client.privateSnapshots()));
     }
 
     private StompFrameHandler jsonHandler(BlockingQueue<JsonNode> received) {
@@ -270,20 +314,42 @@ class RoomSnapshotStompIT {
         };
     }
 
-    private void awaitSubscriptions() {
+    private void awaitPublicSubscriptions() {
         await().atMost(Duration.ofSeconds(5)).until(() -> {
             SimpleBrokerMessageHandler broker = applicationContext.getBean(SimpleBrokerMessageHandler.class);
-            return subscriptionCount(broker) == 2;
+            return subscriptionCount(broker, TOPIC) == 2;
+        });
+    }
+
+    private void awaitSubscriptions(Client... clients) {
+        await().atMost(Duration.ofSeconds(5)).until(() -> {
+            SimpleBrokerMessageHandler broker = applicationContext.getBean(SimpleBrokerMessageHandler.class);
+            return subscriptionCount(broker, TOPIC) == clients.length
+                    && java.util.Arrays.stream(clients)
+                    .allMatch(client -> privateSubscriptionCount(broker, client) == 1);
         });
     }
 
     @Autowired org.springframework.context.ApplicationContext applicationContext;
 
-    private int subscriptionCount(SimpleBrokerMessageHandler broker) {
+    private int privateSubscriptionCount(Client client) {
+        SimpleBrokerMessageHandler broker = applicationContext.getBean(SimpleBrokerMessageHandler.class);
+        return privateSubscriptionCount(broker, client);
+    }
+
+    private int privateSubscriptionCount(SimpleBrokerMessageHandler broker, Client client) {
+        var user = applicationContext.getBean(SimpUserRegistry.class).getUser(client.playerId().toString());
+        if (user == null) return 0;
+        return user.getSessions().stream()
+                .mapToInt(session -> subscriptionCount(broker, "/queue/room-user" + session.getId()))
+                .sum();
+    }
+
+    private int subscriptionCount(SimpleBrokerMessageHandler broker, String destination) {
         var message = MessageBuilder.withPayload(new byte[0])
                 .setHeader(SimpMessageHeaderAccessor.MESSAGE_TYPE_HEADER,
                         org.springframework.messaging.simp.SimpMessageType.MESSAGE)
-                .setHeader(SimpMessageHeaderAccessor.DESTINATION_HEADER, TOPIC)
+                .setHeader(SimpMessageHeaderAccessor.DESTINATION_HEADER, destination)
                 .build();
         return broker.getSubscriptionRegistry().findSubscriptions(message).size();
     }
@@ -357,7 +423,7 @@ class RoomSnapshotStompIT {
         return user;
     }
 
-    private record Client(StompSession session, BlockingQueue<JsonNode> publicSnapshots,
+    private record Client(UUID playerId, StompSession session, BlockingQueue<JsonNode> publicSnapshots,
                           BlockingQueue<JsonNode> privateSnapshots) { }
 
     static class InMemoryGameStateManager extends GameStateManager {
