@@ -145,7 +145,9 @@ No topico compartilhado `mySlot` e `null`, `myDeck` e `[]` e `drawOptions` e `nu
 
 A composicao e o despacho sao medidos com `System.nanoTime()`. Um aviso e registrado quando o processamento no servidor excede 200 ms. A metrica cobre composicao e chamadas ao broker, nao confirma recebimento pelo navegador; nao ha ACK de cliente.
 
-Para sincronizar sob demanda, envie `SEND /app/rooms/{code}/sync` sem corpo. O backend deriva a identidade do `Principal`, valida participacao ativa e responde somente ao solicitante em `/user/queue/room`. Nao ha broadcast durante sync, preservando os dados privados do outro jogador.
+**Handshake inicial obrigatorio:** o broker simples nao armazena mensagens para inscricoes futuras. Inscreva-se em `/topic/rooms/{code}` e `/user/queue/room` antes de enviar `/app/rooms/{code}/connect`, que publica snapshots imediatamente. Em seguida, envie `SEND /app/rooms/{code}/sync` sem corpo e aguarde o `ROOM_SNAPSHOT` individual em `/user/queue/room` antes de considerar a sessao sincronizada. Se o snapshot nao chegar, repita o `sync`; so depois da resposta continue o fluxo da sala. Isso tambem recupera qualquer snapshot publicado antes de a inscricao privada estar pronta.
+
+O backend deriva a identidade do `Principal`, valida participacao ativa e responde somente ao solicitante durante `sync`, preservando os dados privados do outro jogador.
 #### `ROOM_CLOSED`
 
 Enviado após o commit quando a sala é encerrada: host saiu enquanto ela estava `WAITING`, sala expirou por inatividade, revanche foi recusada/expirou, um jogador voltou ao lobby ou desconectou definitivamente com negociação pendente. Saídas rejeitadas e repetições não publicam mensagens duplicadas.

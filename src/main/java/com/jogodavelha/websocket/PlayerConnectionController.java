@@ -53,7 +53,7 @@ public class PlayerConnectionController {
         if (result.reconnected()) {
             presenceEvents.reconnected(entry);
         }
-        snapshots.publish(code);
+        snapshots.publishTo(code, playerId);
     }
 
     @MessageMapping("/rooms/{code}/sync")

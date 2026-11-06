@@ -35,7 +35,8 @@ class MoveActionServiceTest {
         }).when(states).update(eq(game), any());
         when(turns.endPlayerAction(any(), any(), anyLong())).thenReturn(Optional.empty());
         service = new MoveActionService(states, new MoveValidator(Clock.fixed(Instant.ofEpochMilli(1000), ZoneOffset.UTC)),
-                turns, Clock.fixed(Instant.ofEpochMilli(1000), ZoneOffset.UTC));
+                turns, Clock.fixed(Instant.ofEpochMilli(1000), ZoneOffset.UTC),
+                mock(org.springframework.context.ApplicationEventPublisher.class));
     }
 
     @Test void validMoveUpdatesStateAndEndsActionOnce() {

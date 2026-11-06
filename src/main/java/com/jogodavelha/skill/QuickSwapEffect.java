@@ -10,7 +10,6 @@ import static com.jogodavelha.game.logic.SkillValidationException.Code.SKILL_INV
 
 @Component
 public class QuickSwapEffect implements SkillEffect {
-    private static final int BOARD_WIDTH = 4;
 
     @Override
     public String skillCode() {
@@ -23,21 +22,16 @@ public class QuickSwapEffect implements SkillEffect {
         int source = context.targetPosition();
         Integer destination = context.destinationPosition();
         if (destination == null && IntStream.range(0, GameState.BOARD_SIZE)
-                .noneMatch(position -> isAdjacent(source, position)
+                .noneMatch(position -> BoardAdjacency.isAdjacent(source, position)
                         && OffensiveEffectSupport.isAvailableDestination(state, context, position))) {
             return false;
         }
         if (!OffensiveEffectSupport.isAvailableDestination(state, context, destination)
-                || !isAdjacent(source, destination)) {
+                || !BoardAdjacency.isAdjacent(source, destination)) {
             throw new SkillValidationException(SKILL_INVALID_DESTINATION,
-                    "O destino deve ser uma casa vizinha na horizontal ou vertical, vazia e sem bloqueio por Escudo.");
+                    "O destino deve ser uma casa vizinha na horizontal, vertical ou diagonal, vazia e sem bloqueio por Escudo.");
         }
         return true;
-    }
-
-    private static boolean isAdjacent(int source, int destination) {
-        return Math.abs(source / BOARD_WIDTH - destination / BOARD_WIDTH)
-                + Math.abs(source % BOARD_WIDTH - destination % BOARD_WIDTH) == 1;
     }
 
     @Override

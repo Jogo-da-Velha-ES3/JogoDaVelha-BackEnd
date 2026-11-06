@@ -2,6 +2,7 @@ package com.jogodavelha.game.draft;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
@@ -15,7 +16,7 @@ import java.util.UUID;
 public class DraftCharacterController {
     @JsonInclude(JsonInclude.Include.ALWAYS)
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Request(String characterId) { }
+    public record Request(@JsonProperty("character") String character) { }
 
     private final DraftCharacterService characters;
 
@@ -35,6 +36,6 @@ public class DraftCharacterController {
             throw new AccessDeniedException("Identidade STOMP inválida.", exception);
         }
         if (request == null) throw new IllegalArgumentException("Informe o personagem.");
-        characters.select(code, playerId, request.characterId());
+        characters.select(code, playerId, request.character());
     }
 }

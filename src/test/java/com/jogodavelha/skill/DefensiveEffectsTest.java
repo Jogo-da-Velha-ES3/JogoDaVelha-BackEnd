@@ -119,7 +119,7 @@ class DefensiveEffectsTest {
         var target = assertThrows(SkillValidationException.class,
                 () -> engine.useSkill(state, "BOMBA", new SkillContext(p1, 0)));
         var destination = assertThrows(SkillValidationException.class,
-                () -> engine.useSkill(state, "TORNADO", new SkillContext(p1, 5, 10)));
+                () -> engine.useSkill(state, "TORNADO", new SkillContext(p1, 5, 15)));
         assertEquals(SKILL_INVALID_TARGET, target.getCode());
         assertEquals(SKILL_INVALID_DESTINATION, destination.getCode());
         assertEquals(before, state);
@@ -161,10 +161,10 @@ class DefensiveEffectsTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {1, 4, 6, 9})
-    void quickSwapMovesOwnPieceAndKeepsItsEffects(int destination) {
+    @ValueSource(ints = {1, 4, 6, 9, 0, 2, 8, 10})
+    void quickSwapMovesOwnPieceToAdjacentSquareAndKeepsItsEffects(int destination) {
         GameState state = state();
-        state.setBoard("O----X----------");
+        state.setBoard("-----X---------O");
         state.getFrozenPositions().put(5, 1);
         state.getReinforcedPositions().put(5, 2);
 
@@ -173,7 +173,7 @@ class DefensiveEffectsTest {
 
         assertEquals('-', state.getBoard().charAt(5));
         assertEquals('X', state.getBoard().charAt(destination));
-        assertEquals('O', state.getBoard().charAt(0));
+        assertEquals('O', state.getBoard().charAt(15));
         assertEquals(Map.of(destination, 1), state.getFrozenPositions());
         assertEquals(Map.of(destination, 2), state.getReinforcedPositions());
     }
@@ -192,7 +192,7 @@ class DefensiveEffectsTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"3, 4", "4, 3", "5, 10", "5, 15", "5, 5", "5, -1", "5, 16"})
+    @CsvSource({"3, 4", "4, 3", "5, 15", "5, 5", "5, -1", "5, 16"})
     void quickSwapRejectsDiagonalsRowWrappingAndInvalidDestinations(int source, int destination) {
         GameState state = state();
         char[] board = GameState.EMPTY_BOARD.toCharArray();
@@ -209,7 +209,10 @@ class DefensiveEffectsTest {
     @Test
     void quickSwapRejectsOccupiedAndShieldedDestinationsAndDetectsNoAvailableNeighbor() {
         GameState state = state();
-        state.setBoard("OX--OXO--O------");
+        char[] fullNeighborhood = GameState.EMPTY_BOARD.toCharArray();
+        fullNeighborhood[5] = 'X';
+        for (int position : new int[]{0, 1, 2, 4, 6, 8, 9, 10}) fullNeighborhood[position] = 'O';
+        state.setBoard(new String(fullNeighborhood));
         GameState before = copy(state);
         var occupied = assertThrows(SkillValidationException.class,
                 () -> engine.useSkill(state, "TROCA_RAPIDA", new SkillContext(p1, 5, 1)));
@@ -218,7 +221,7 @@ class DefensiveEffectsTest {
                 engine.useSkill(state, "TROCA_RAPIDA", new SkillContext(p1, 5)));
         assertEquals(before, state);
 
-        state.setBoard("O----X----------");
+        state.setBoard("-----X---------O");
         state.getShieldedPositions().put(6, new GameState.ShieldEffect(p2, 2));
         before = copy(state);
         var blocked = assertThrows(SkillValidationException.class,

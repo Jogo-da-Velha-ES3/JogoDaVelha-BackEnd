@@ -218,6 +218,7 @@ class RoundSkillDrawServiceTest {
         start();
         now.set(9_000);
         draws.expire(gameId, 1, 9_000);
+        String previousDrawn = state().getRoundDraw().players().get(p1).selected();
         states.update(gameId, state -> {
             state.recordSkillUse(p1, "BOMBA");
             state.recordTimeout(p1);
@@ -237,7 +238,46 @@ class RoundSkillDrawServiceTest {
         draws.expire(gameId, 2, 17_000);
         assertEquals(3, state().getRoundSkillDecks().get(p1).size());
         assertEquals(2, state().getRoundSkillDecks().get(p1).stream().filter(previous::contains).count());
+        // A escolha automática troca a sorteada anterior e mantém as duas iniciais [RN-DRAFT-02]
+        assertTrue(state().getRoundSkillDecks().get(p1).containsAll(Set.of("BOMBA", "ESCUDO")));
+        assertFalse(state().getRoundSkillDecks().get(p1).contains(previousDrawn));
         verify(completed).publishEvent(new RoundDrawCompleted(gameId, 2));
+    }
+
+    @Test
+    void laterDrawWithoutAbilityToRemoveReplacesThePreviousDrawnSkill() {
+        start();
+        draws.pick("0042", p1, option(p1), null);
+        draws.pick("0042", p2, option(p2), null);
+        String previousDrawn = state().getRoundDraw().players().get(p1).selected();
+        var p2Deck = Set.copyOf(state().getRoundSkillDecks().get(p2));
+        states.update(gameId, state -> { state.startRound(2, 10_000, 9_100); state.setPhase(GamePhase.DRAFT); return state; });
+        now.set(10_000);
+        draws.beginRound(gameId, 2, p1, p2);
+        String add = option(p1);
+
+        draws.pick("0042", p1, add, null);
+
+        assertEquals(Set.of("BOMBA", "ESCUDO", add), state().getRoundSkillDecks().get(p1));
+        assertFalse(state().getRoundSkillDecks().get(p1).contains(previousDrawn));
+        assertEquals(p2Deck, state().getRoundSkillDecks().get(p2));
+    }
+
+    @Test
+    void skillUseRepublishesOnlyTheOwnersDeckWithTheSkillMarkedAsUsed() {
+        start();
+        draws.pick("0042", p1, option(p1), null);
+        draws.pick("0042", p2, option(p2), null);
+        states.update(gameId, state -> { state.recordSkillUse(p1, "BOMBA"); return state; });
+        clearInvocations(websocket);
+
+        draws.onSkillResolved(new com.jogodavelha.skill.SkillResolvedEvent(gameId, p1, "BOMBA", 3, null,
+                com.jogodavelha.skill.SkillResult.APPLIED));
+
+        verify(websocket).sendToUser(eq(p1.toString()), eq("/queue/room"), argThat(value ->
+                isDeckUpdate(value) && ((MatchLifecycleEvent) value).payload().get("deck") instanceof List<?> deck
+                        && deck.contains(new RoomSnapshotService.DeckSlot("BOMBA", "INITIAL", true))));
+        verify(websocket, never()).sendToUser(eq(p2.toString()), anyString(), any());
     }
 
     @Test
@@ -254,7 +294,6 @@ class RoundSkillDrawServiceTest {
         assertTrue(Collections.disjoint(p1Deck, options));
         String add = options.getFirst();
         String remove = p1Deck.stream().sorted().findFirst().orElseThrow();
-        assertThrows(IllegalArgumentException.class, () -> draws.pick("0042", p1, add, null));
         assertThrows(IllegalArgumentException.class, () -> draws.pick("0042", p1, add, "NAO_ESTÁ_NO_DECK"));
         assertNull(state().getRoundDraw().players().get(p1).selected());
         draws.pick("0042", p1, add, remove);
@@ -425,14 +464,14 @@ class RoundSkillDrawServiceTest {
     }
 
     @Test
-    void eachManualChoicePublishesOneDeckAndFirstChoicePublishesAnUpdatedSnapshot() {
+    void manualChoicesPublishUpdatedDecksWithoutPublishingGameplaySnapshots() {
         start();
         draws.pick("0042", p1, option(p1), null);
-        verify(snapshots, times(2)).publish("0042");
         draws.pick("0042", p2, option(p2), null);
 
-        verify(websocket, times(1)).sendToUser(eq(p1.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
-        verify(websocket, times(1)).sendToUser(eq(p2.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
+        verify(snapshots, never()).publish(anyString());
+        verify(websocket, times(2)).sendToUser(eq(p1.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
+        verify(websocket, times(2)).sendToUser(eq(p2.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
     }
 
     @Test
@@ -444,8 +483,8 @@ class RoundSkillDrawServiceTest {
 
         draws.expire(gameId, 1, 9_000);
 
-        verify(websocket, times(1)).sendToUser(eq(p1.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
-        verify(websocket, times(1)).sendToUser(eq(p2.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
+        verify(websocket, times(2)).sendToUser(eq(p1.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
+        verify(websocket, times(2)).sendToUser(eq(p2.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
         verify(completed, times(1)).publishEvent(new RoundDrawCompleted(gameId, 1));
     }
 
@@ -471,8 +510,8 @@ class RoundSkillDrawServiceTest {
         assertEquals(3, state.getRoundSkillDecks().get(p2).size());
         assertEquals(0, state.getConsecutiveTimeouts(p1));
         assertEquals(0, state.getConsecutiveTimeouts(p2));
-        verify(websocket, times(1)).sendToUser(eq(p1.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
-        verify(websocket, times(1)).sendToUser(eq(p2.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
+        verify(websocket, times(2)).sendToUser(eq(p1.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
+        verify(websocket, times(2)).sendToUser(eq(p2.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
         verify(completed, times(1)).publishEvent(new RoundDrawCompleted(gameId, 1));
     }
 

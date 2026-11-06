@@ -1,8 +1,10 @@
 package com.jogodavelha.game.service;
 
+import com.jogodavelha.game.GameplayBoardUpdatedEvent;
 import com.jogodavelha.game.logic.GameState;
 import com.jogodavelha.game.logic.GameStateManager;
 import com.jogodavelha.game.logic.MoveValidator;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
@@ -19,12 +21,15 @@ public class MoveActionService {
     private final MoveValidator moves;
     private final TurnService turns;
     private final Clock clock;
+    private final ApplicationEventPublisher events;
 
-    public MoveActionService(GameStateManager states, MoveValidator moves, TurnService turns, Clock clock) {
+    public MoveActionService(GameStateManager states, MoveValidator moves, TurnService turns, Clock clock,
+                             ApplicationEventPublisher events) {
         this.states = states;
         this.moves = moves;
         this.turns = turns;
         this.clock = clock;
+        this.events = events;
     }
 
     public Result play(UUID gameId, UUID playerId, int position) {
@@ -49,6 +54,7 @@ public class MoveActionService {
             return state;
         });
         // Must remain outside update: its mutator can be retried after a CAS conflict.
+        events.publishEvent(new GameplayBoardUpdatedEvent(gameId, committed[0]));
         turns.publishAndSchedule(committed[0], winner[0]);
         return new Result(committed[0], winner[0]);
     }

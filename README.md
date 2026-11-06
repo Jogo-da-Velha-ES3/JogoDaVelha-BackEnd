@@ -29,6 +29,26 @@ todos; este código também é o fallback para quem não equipou avatar. Outros
 códigos, imagens e preços de avatares ainda precisam ser definidos com o front.
 O backend retorna o código do avatar, não uma URL de imagem.
 
+## Perfil, Coins e gameplay STOMP
+
+`GET /api/profile` retorna `preferredCharacter` (estatística do histórico) e
+`equippedCharacter` (código público selecionado em `user_equipment`; `null` quando
+não há equipamento de personagem). A compra simulada
+`POST /api/coins/packages/{packageId}/purchase` retorna HTTP 200 com
+`{"coinsBalance": <saldo atualizado>}`. Pedido e crédito são transacionais;
+cada nova chamada representa uma nova compra. Não há pagamento por cartão.
+
+No Draft, a seleção de personagem usa o código público:
+`SEND /app/rooms/{code}/draft/character` com `{"character":"X"}`. Para desistir de
+uma partida ativa, envie `{}` para `SEND /app/rooms/{code}/leave`; o `Principal`
+autenticado identifica o jogador e a desistência encerra a partida por W.O. A
+rota REST de saída permanece restrita à sala de espera.
+
+Erros STOMP são enviados em `/user/queue/errors` como `ApiError`. Validações de
+movimento e habilidade preservam os códigos específicos do domínio; erros de sala
+usam os códigos existentes `ROOM_BAD_REQUEST`, `ROOM_CONFLICT`, `ROOM_NOT_FOUND`,
+`FORBIDDEN` e `INTERNAL_ERROR`.
+
 Erros da loja seguem `ApiError`:
 
 | Código | HTTP | Uso |
@@ -1203,15 +1223,17 @@ futuros. Esse histórico é individual por jogador. As opções ficam
 no `GameState` do Redis e chegam somente ao dono em `/user/queue/room`, no evento
 `DRAW_OPTIONS`, com `{options, deadline}`. O prazo é de 8 segundos.
 
-Envie `SEND /app/rooms/{code}/draw/pick` com `{"ability":"TORNADO"}` no primeiro
-round. A partir do segundo, envie também `abilityToRemove`, por exemplo
-`{"ability":"TORNADO","abilityToRemove":"ESCUDO"}`. A identidade vem do JWT do
-CONNECT; a habilidade adicionada precisa estar entre as opções e a removida no deck
-atual do jogador. Confirmar bloqueia novas escolhas. Ao expirar, o servidor escolhe
-automaticamente uma opção e uma habilidade a substituir; isso não conta como turno nem
-como timeout do W.O.
+Envie `SEND /app/rooms/{code}/draw/pick` com `{"ability":"TORNADO"}`. A partir do
+segundo round, a escolhida entra no lugar da habilidade sorteada no round anterior e
+as duas fixas continuam [RN-DRAFT-02]; o campo opcional `abilityToRemove` (ex:
+`{"ability":"TORNADO","abilityToRemove":"ESCUDO"}`) escolhe outra habilidade do deck
+para sair. A identidade vem do JWT do CONNECT; a habilidade adicionada precisa estar
+entre as opções e a removida, no deck atual do jogador. Confirmar bloqueia novas
+escolhas. Ao expirar, o servidor escolhe automaticamente uma opção, que também
+substitui a sorteada anterior; isso não conta como turno nem como timeout do W.O.
 
-`DECK_UPDATE` envia ao dono `{deck:[{ability, source, usedThisRound}]}`. O deck
+`DECK_UPDATE` envia ao dono `{deck:[{ability, source, usedThisRound}]}`, depois de cada
+escolha e de cada habilidade usada no round. O deck
 contém as duas fixas e a escolhida. Somente após ambos terem deck, o evento interno
 `RoundDrawCompleted` libera o início do turno. Cada round refaz o sorteio e limpa o
 consumo das habilidades, preservando as duas fixas e os contadores de timeout.
@@ -1372,8 +1394,8 @@ Códigos REST disponíveis:
 | `NOT_FOUND`               |  404 | Rota ou recurso não encontrado                               |
 | `METHOD_NOT_ALLOWED`      |  405 | Método HTTP não permitido                                    |
 | `BAD_REQUEST`             |  400 | Parâmetro HTTP inválido ou ausente                           |
-| `ROOM_BAD_REQUEST`        |  400 | Erro temporário de sala; será tipado na BE-009.1             |
-| `ROOM_CONFLICT`           |  409 | Conflito temporário de sala; será tipado na BE-009.1         |
+| `ROOM_BAD_REQUEST`        |  400 | Código de sala ou requisição inválidos                      |
+| `ROOM_CONFLICT`           |  409 | Ação incompatível com o estado atual da sala                 |
 | `UNAUTHORIZED`            |  401 | Autenticação ausente ou token inválido                       |
 | `FORBIDDEN`               |  403 | Usuário sem autorização para o recurso                       |
 | `INTERNAL_ERROR`          |  500 | Erro inesperado do servidor                                  |
@@ -1389,18 +1411,32 @@ Erros de habilidade no STOMP (BE-014.1 e BE-014.2), enviados ao autor em `/user/
 | `SKILL_INVALID_TARGET` | 400 | Jogador ausente ou alvo inválido para a habilidade (posição, ocupação, proprietário ou bloqueio) |
 | `SKILL_INVALID_DESTINATION` | 400 | Destino do Tornado ou Troca Rápida ausente quando há opção, fora do tabuleiro, ocupado, bloqueado por Escudo ou não adjacente |
 | `SKILL_SILENCED` | 400 | Jogador sob Silêncio tenta ativar uma habilidade |
-| `BAD_REQUEST` | 400 | Ação de jogo fora da fase permitida, fora da vez ou após o prazo |
+| `INVALID_PHASE` | 400 | Movimento em fase incompatível |
+| `DRAFT_IN_PROGRESS` | 400 | Movimento enquanto o Draft ainda está em andamento |
+| `ROUND_FINISHED` | 400 | Movimento após o encerramento do round |
+| `GAME_FINISHED` | 400 | Movimento após o encerramento da partida |
+| `NOT_YOUR_TURN` | 400 | Movimento fora da vez do jogador |
+| `TURN_EXPIRED` | 400 | Movimento após o prazo do turno |
+| `INVALID_POSITION` | 400 | Posição fora do tabuleiro |
+| `POSITION_OCCUPIED` | 400 | Casa já ocupada |
+| `POSITION_BLOCKED` | 400 | Casa bloqueada por efeito |
+| `INVALID_ARGUMENTS` | 400 | Argumentos do movimento inválidos |
+| `INVALID_BOARD` | 400 | Estado do tabuleiro inválido |
 | `SKILL_ALREADY_USED` | 400 | Jogador tenta reutilizar o mesmo código de habilidade no round atual |
 | `SKILL_NOT_IN_DECK` | 400 | Habilidade não está no deck selecionado para o round atual |
+| `ROOM_BAD_REQUEST` | 400 | Requisição STOMP inválida |
+| `ROOM_NOT_FOUND` | 404 | Sala não encontrada ou encerrada |
+| `ROOM_CONFLICT` | 409 | Ação incompatível com o estado atual da sala |
+| `FORBIDDEN` | 403 | Jogador não autorizado para a ação |
+| `INTERNAL_ERROR` | 500 | Erro inesperado, sem detalhes internos no payload |
 
-Esses códigos preservam o erro de domínio no `ApiError`, sem `fields` ou `error`.
-Não há endpoint REST de habilidade nem handler público de ativação; a exposição STOMP
-continua pertencendo à BE-023. `NO_VALID_TARGET` e
-`BLOCKED_BY_FORCE_FIELD` são resultados da ação, não erros. Sua inclusão em
-`ABILITY_RESOLVED` está proposta no contrato; o segundo indica uso sem efeito
-com consumo do Campo de Força do oponente.
+Os códigos de movimento e habilidade preservam os erros de domínio no `ApiError`.
+Erros de sala usam o catálogo compartilhado, e falhas inesperadas não expõem
+detalhes internos. `NO_VALID_TARGET` e `BLOCKED_BY_FORCE_FIELD` são resultados
+da ação, não erros; são representados em `ABILITY_RESOLVED` como `noEffect` e
+`absorbed`, respectivamente.
 
-Detalhes e atualizações em `docs/contrato-integracao.md`.
+Detalhes e atualizações em `docs/contrato-integracao-v2.md`.
 
 ## Códigos de habilidade
 
@@ -1415,4 +1451,4 @@ nunca `skill.getName()`. Por exemplo, o identificador é `BURACO_NEGRO`, não
 alteração na sua serialização. Códigos desconhecidos são rejeitados, e dois
 efeitos não podem ser registrados com o mesmo código.
 
-Detalhes e atualizações em `docs/contrato-integracao.md`.
+Detalhes e atualizações em `docs/contrato-integracao-v2.md`.

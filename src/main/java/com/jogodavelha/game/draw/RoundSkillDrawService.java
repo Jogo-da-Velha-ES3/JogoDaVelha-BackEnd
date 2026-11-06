@@ -12,6 +12,7 @@ import com.jogodavelha.room.RoomCodeAllocator;
 import com.jogodavelha.room.RoomRepository;
 import com.jogodavelha.skill.Skill;
 import com.jogodavelha.skill.SkillRepository;
+import com.jogodavelha.skill.SkillResolvedEvent;
 import com.jogodavelha.websocket.RoomSnapshotService;
 import com.jogodavelha.websocket.WebSocketService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -111,7 +112,7 @@ public class RoundSkillDrawService implements RoundSkillDraft {
         schedule(key, draw.deadline());
         websocket.sendToTopic("/topic/rooms/" + draw.roomCode(),
                 event("PHASE_CHANGE", Map.of("phase", "ROUND_DRAW")));
-        snapshots.publish(draw.roomCode());
+        draw.players().keySet().forEach(playerId -> publishDeck(gameId, round, playerId));
         draw.players().forEach((playerId, player) -> {
             if (player.selected() == null) websocket.sendToUser(playerId.toString(), "/queue/room",
                     event("DRAW_OPTIONS", Map.of("options", player.options(), "deadline", draw.deadline())));
@@ -147,26 +148,26 @@ public class RoundSkillDrawService implements RoundSkillDraft {
         GameState before = states.find(gameId).orElseThrow(() -> new IllegalStateException("Sorteio indisponível."));
         RoundDrawState expected = before.getRoundDraw();
         if (expected == null) throw new IllegalStateException("Não há sorteio ativo nesta sala.");
-        if (expected.round() > 1 && (abilityToRemove == null || abilityToRemove.isBlank())) {
-            throw new IllegalArgumentException("Escolha qual habilidade do deck deseja remover.");
-        }
         if (expected.round() == 1 && abilityToRemove != null) {
             throw new IllegalArgumentException("Não há habilidade para remover no primeiro round.");
         }
+        boolean defaultReplacement = abilityToRemove == null || abilityToRemove.isBlank();
         states.update(gameId, current -> {
             RoundDrawState draw = current.getRoundDraw();
             // Reconfere o prazo em cada tentativa, como o Draft inicial.
             if (current.getPhase() != GamePhase.DRAFT || draw == null || draw.round() != expected.round()
                     || clock.millis() >= draw.deadline()) throw new IllegalStateException("Prazo do sorteio encerrado.");
             current.setRoundDraw(draw.select(playerId, ability));
-            applyDeck(current, playerId, expected.round(), ability, abilityToRemove);
+            // Sem indicação, a nova carta entra no lugar da sorteada no round anterior [RN-DRAFT-02].
+            String replaced = defaultReplacement ? replacement(current, playerId, expected.round()) : abilityToRemove;
+            applyDeck(current, playerId, expected.round(), ability, replaced);
             current.recordChosenDrawSkill(playerId, ability);
             return current;
         });
         try {
             publishDeck(gameId, expected.round(), playerId);
         } finally {
-            if (!complete(new RoundKey(gameId, expected.round()))) snapshots.publish(code);
+            complete(new RoundKey(gameId, expected.round()));
         }
     }
 
@@ -186,7 +187,7 @@ public class RoundSkillDrawService implements RoundSkillDraft {
         state.getRoundDraw().players().forEach((player, draw) -> {
             if (draw.selected() == null) {
                 automatic.put(player, draw.options().get(random.nextInt(draw.options().size())));
-                replacements.put(player, replacement(state, player, round, currentDeck(state, player)));
+                replacements.put(player, replacement(state, player, round));
             }
         });
         Set<UUID> selected;
@@ -240,11 +241,14 @@ public class RoundSkillDrawService implements RoundSkillDraft {
         return new HashSet<>(current);
     }
 
-    private String replacement(GameState state, UUID playerId, int round, Set<String> deck) {
+    /** A habilidade sorteada no round anterior: é ela que sai, e as duas iniciais ficam [RN-DRAFT-02]. */
+    private String replacement(GameState state, UUID playerId, int round) {
         if (round == 1) return null;
-        if (deck.size() != 3) throw new IllegalStateException("O deck atual deve conter três habilidades.");
-        List<String> candidates = deck.stream().sorted().toList();
-        return candidates.get(random.nextInt(candidates.size()));
+        Set<String> drawn = currentDeck(state, playerId);
+        if (drawn.size() != 3) throw new IllegalStateException("O deck atual deve conter três habilidades.");
+        drawn.removeAll(state.getInitialSkillsByPlayer().getOrDefault(playerId, Set.of()));
+        if (drawn.size() != 1) throw new IllegalStateException("O deck atual não possui uma habilidade sorteada.");
+        return drawn.iterator().next();
     }
 
     private void applyDeck(GameState state, UUID playerId, int round, String selected, String replaced) {
@@ -260,11 +264,20 @@ public class RoundSkillDrawService implements RoundSkillDraft {
         state.setRoundSkillDeck(playerId, deck);
     }
 
+    /** Habilidade usada: o dono recebe o deck com ela marcada, para a carta não parecer disponível. */
+    @EventListener
+    public void onSkillResolved(SkillResolvedEvent event) {
+        states.find(event.gameId()).ifPresent(state ->
+                publishDeck(event.gameId(), state.getRoundNumber(), event.playerId()));
+    }
+
     private void publishDeck(UUID gameId, int round, UUID playerId) {
         states.find(gameId).ifPresent(state -> {
-            if (state.getRoundNumber() != round || !state.getRoundSkillDecks().containsKey(playerId)) return;
-            var fixed = state.getInitialSkillsByPlayer().get(playerId);
-            var deck = state.getRoundSkillDecks().get(playerId).stream().sorted().map(ability ->
+            if (state.getRoundNumber() != round) return;
+            var fixed = state.getInitialSkillsByPlayer().getOrDefault(playerId, Set.of());
+            var current = state.getRoundSkillDecks().getOrDefault(playerId, fixed);
+            if (current.isEmpty()) return;
+            var deck = current.stream().sorted().map(ability ->
                     new RoomSnapshotService.DeckSlot(ability, fixed.contains(ability) ? "INITIAL" : "DRAWN",
                             state.hasUsedSkill(playerId, ability))).toList();
             websocket.sendToUser(playerId.toString(), "/queue/room", event("DECK_UPDATE", Map.of("deck", deck)));

@@ -2,7 +2,9 @@ package com.jogodavelha.websocket;
 
 import com.jogodavelha.room.PlayerJoinedRoomEvent;
 import com.jogodavelha.room.RoomClosedEvent;
+import com.jogodavelha.game.MatchLifecycleEvent;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -13,6 +15,7 @@ public class RoomEventPublisher {
     private final WebSocketService webSocketService;
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Order(0)
     public void onPlayerJoined(PlayerJoinedRoomEvent event) {
         webSocketService.sendToTopic(
                 "/topic/rooms/" + event.roomCode(),
@@ -29,6 +32,10 @@ public class RoomEventPublisher {
                         ),
                         System.currentTimeMillis()
                 )
+        );
+        webSocketService.sendToTopic(
+                "/topic/rooms/" + event.roomCode(),
+                MatchLifecycleEvent.of("PHASE_CHANGE", java.util.Map.of("phase", "MATCHED"))
         );
     }
 

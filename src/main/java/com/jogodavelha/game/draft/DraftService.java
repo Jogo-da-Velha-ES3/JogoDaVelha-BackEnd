@@ -1,10 +1,13 @@
 package com.jogodavelha.game.draft;
 
+import com.jogodavelha.room.RoomClosedEvent;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.security.SecureRandom;
 import java.time.Clock;
@@ -108,6 +111,15 @@ public class DraftService {
     public void cancel(UUID roomId) {
         ScheduledFuture<?> timer = timers.remove(roomId);
         if (timer != null) timer.cancel(false);
+    }
+
+    /** Sala encerrada (ex: alguém saiu na Preparação): o Draft dela não termina nem cria partida. */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onRoomClosed(RoomClosedEvent event) {
+        if (event.roomId() == null) return;
+        cancel(event.roomId());
+        states.find(event.roomId()).filter(draft -> !draft.completed())
+                .ifPresent(draft -> states.delete(event.roomId()));
     }
 
     private void schedule(DraftState state) {

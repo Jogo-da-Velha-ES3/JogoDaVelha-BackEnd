@@ -1,10 +1,13 @@
 package com.jogodavelha.game.service;
 
 import com.jogodavelha.game.TurnChangedEvent;
+import com.jogodavelha.game.TurnTimedOutEvent;
+import com.jogodavelha.game.GameplayBoardUpdatedEvent;
 import com.jogodavelha.game.logic.GamePhase;
 import com.jogodavelha.game.logic.GameState;
 import com.jogodavelha.game.logic.GameStateManager;
 import com.jogodavelha.game.logic.GameStateNotFoundException;
+import com.jogodavelha.game.logic.GameValidator;
 import com.jogodavelha.skill.SkillEngine;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -58,11 +61,15 @@ public class TurnService {
      * @return símbolo vencedor, se houver (a vez não é passada e a fase vira ROUND_FINISHED)
      */
     public Optional<Character> endAction(GameState state, UUID actorId, long nowMillis) {
+        var frozenPositions = state.frozenSet();
         Optional<Character> winner = skillEngine.endAction(state, actorId);
         if (winner.isPresent()) {
+            state.setWinningLine(GameValidator.findWinningLine(state.getBoard(), winner.get(), frozenPositions)
+                    .orElseThrow(() -> new IllegalStateException("A vitória não possui uma linha válida.")));
             state.setPhase(GamePhase.ROUND_FINISHED);
             return winner;
         }
+        state.setWinningLine(java.util.List.of());
         UUID next = state.getOpponentId(actorId);
         long duration = state.effectiveTurnDuration(next, baseDuration(state));
         state.setCurrentTurnPlayerId(next);
@@ -112,6 +119,8 @@ public class TurnService {
         GameState[] snapshot = new GameState[1];
         Optional<Character>[] winner = holder();
         UUID[] timedOut = new UUID[1];
+        int[] consecutiveTimeouts = new int[1];
+        boolean[] boardChanged = new boolean[1];
         try {
             stateManager.update(gameId, state -> {
                 snapshot[0] = null; // o mutator pode reexecutar em conflito de versão
@@ -120,7 +129,12 @@ public class TurnService {
                     return state; // turno já resolvido: no-op
                 }
                 UUID player = state.getCurrentTurnPlayerId();
+                String previousBoard = state.getBoard();
+                var previousShields = new java.util.HashMap<>(state.getShieldedPositions());
+                var previousFrozen = new java.util.HashMap<>(state.getFrozenPositions());
+                var previousReinforced = new java.util.HashMap<>(state.getReinforcedPositions());
                 state.recordTimeout(player);
+                consecutiveTimeouts[0] = state.getConsecutiveTimeouts(player);
                 if (state.getConsecutiveTimeouts(player) >= 3) {
                     state.setPhase(GamePhase.FINISHED);
                     winner[0] = Optional.empty();
@@ -128,6 +142,10 @@ public class TurnService {
                     winner[0] = endAction(state, player, now);
                 }
                 timedOut[0] = player;
+                boardChanged[0] = !previousBoard.equals(state.getBoard())
+                        || !previousShields.equals(state.getShieldedPositions())
+                        || !previousFrozen.equals(state.getFrozenPositions())
+                        || !previousReinforced.equals(state.getReinforcedPositions());
                 snapshot[0] = state;
                 return state;
             });
@@ -139,9 +157,14 @@ public class TurnService {
             return;
         }
         try {
-            events.publishEvent(toEvent(snapshot[0], winner[0], timedOut[0]));
+            events.publishEvent(new TurnTimedOutEvent(gameId, timedOut[0], consecutiveTimeouts[0]));
+            if (boardChanged[0]) events.publishEvent(new GameplayBoardUpdatedEvent(gameId, snapshot[0]));
         } finally {
-            reschedule(snapshot[0]);
+            try {
+                events.publishEvent(toEvent(snapshot[0], winner[0], timedOut[0]));
+            } finally {
+                reschedule(snapshot[0]);
+            }
         }
     }
 

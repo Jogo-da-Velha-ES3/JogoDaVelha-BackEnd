@@ -1,6 +1,8 @@
  package com.jogodavelha.websocket;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.jogodavelha.game.service.GameplayRoomResolver;
+import com.jogodavelha.game.service.RoomLeaveService;
 import com.jogodavelha.game.service.MoveActionService;
 import com.jogodavelha.skill.SkillActivationService;
 import com.jogodavelha.skill.SkillContext;
@@ -18,30 +20,38 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class GameplayController {
     @JsonInclude(JsonInclude.Include.ALWAYS)
-    public record MoveRequest(Integer position, UUID playerId) {}
+    public record MoveRequest(Integer position) {}
     @JsonInclude(JsonInclude.Include.ALWAYS)
-    public record SkillRequest(String skillCode, Integer targetPosition, Integer destinationPosition, UUID playerId) {}
+    public record SkillRequest(String skillCode, Integer targetPosition, Integer destinationPosition) {}
 
     private final MoveActionService moves;
     private final SkillActivationService skills;
+    private final GameplayRoomResolver games;
+    private final RoomLeaveService leaves;
 
-    @MessageMapping("/game/{gameId}/move")
-    public void move(@DestinationVariable UUID gameId, MoveRequest request, Principal principal) {
+    @MessageMapping("/rooms/{code}/move")
+    public void move(@DestinationVariable String code, MoveRequest request, Principal principal) {
         UUID actor = authenticatedUser(principal);
         if (request == null || request.position() == null) {
             throw new IllegalArgumentException("Informe a posição da jogada.");
         }
-        moves.play(gameId, actor, request.position());
+        moves.play(games.resolveActiveGame(code, actor), actor, request.position());
     }
 
-    @MessageMapping("/game/{gameId}/skill")
-    public void activateSkill(@DestinationVariable UUID gameId, SkillRequest request, Principal principal) {
+    @MessageMapping("/rooms/{code}/ability")
+    public void activateSkill(@DestinationVariable String code, SkillRequest request, Principal principal) {
         UUID actor = authenticatedUser(principal);
         if (request == null || request.skillCode() == null || request.skillCode().isBlank()) {
             throw new IllegalArgumentException("Informe o código da habilidade.");
         }
-        skills.activate(gameId, request.skillCode(),
+        skills.activate(games.resolveActiveGame(code, actor), request.skillCode(),
                 new SkillContext(actor, request.targetPosition(), request.destinationPosition()));
+    }
+
+    /** Sair da sala em qualquer fase; o servidor decide o efeito pela fase (ver RoomLeaveService). */
+    @MessageMapping("/rooms/{code}/leave")
+    public void leave(@DestinationVariable String code, Principal principal) {
+        leaves.leave(code, authenticatedUser(principal));
     }
 
     private UUID authenticatedUser(Principal principal) {

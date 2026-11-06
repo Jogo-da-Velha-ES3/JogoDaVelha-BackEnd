@@ -46,7 +46,8 @@ class SkillActivationServiceTest {
         effect = new FakeEffect();
         engine = new SkillEngine(List.of(effect), new GameValidator());
         Clock clock = Clock.fixed(Instant.ofEpochMilli(1_000), ZoneOffset.UTC);
-        activations = new SkillActivationService(states, engine, turns, clock);
+        activations = new SkillActivationService(states, engine, turns, clock,
+                mock(org.springframework.context.ApplicationEventPublisher.class));
         when(turns.endPlayerAction(any(), any(), anyLong())).thenReturn(Optional.empty());
     }
 
