@@ -1223,15 +1223,17 @@ futuros. Esse histórico é individual por jogador. As opções ficam
 no `GameState` do Redis e chegam somente ao dono em `/user/queue/room`, no evento
 `DRAW_OPTIONS`, com `{options, deadline}`. O prazo é de 8 segundos.
 
-Envie `SEND /app/rooms/{code}/draw/pick` com `{"ability":"TORNADO"}` no primeiro
-round. A partir do segundo, envie também `abilityToRemove`, por exemplo
-`{"ability":"TORNADO","abilityToRemove":"ESCUDO"}`. A identidade vem do JWT do
-CONNECT; a habilidade adicionada precisa estar entre as opções e a removida no deck
-atual do jogador. Confirmar bloqueia novas escolhas. Ao expirar, o servidor escolhe
-automaticamente uma opção e uma habilidade a substituir; isso não conta como turno nem
-como timeout do W.O.
+Envie `SEND /app/rooms/{code}/draw/pick` com `{"ability":"TORNADO"}`. A partir do
+segundo round, a escolhida entra no lugar da habilidade sorteada no round anterior e
+as duas fixas continuam [RN-DRAFT-02]; o campo opcional `abilityToRemove` (ex:
+`{"ability":"TORNADO","abilityToRemove":"ESCUDO"}`) escolhe outra habilidade do deck
+para sair. A identidade vem do JWT do CONNECT; a habilidade adicionada precisa estar
+entre as opções e a removida, no deck atual do jogador. Confirmar bloqueia novas
+escolhas. Ao expirar, o servidor escolhe automaticamente uma opção, que também
+substitui a sorteada anterior; isso não conta como turno nem como timeout do W.O.
 
-`DECK_UPDATE` envia ao dono `{deck:[{ability, source, usedThisRound}]}`. O deck
+`DECK_UPDATE` envia ao dono `{deck:[{ability, source, usedThisRound}]}`, depois de cada
+escolha e de cada habilidade usada no round. O deck
 contém as duas fixas e a escolhida. Somente após ambos terem deck, o evento interno
 `RoundDrawCompleted` libera o início do turno. Cada round refaz o sorteio e limpa o
 consumo das habilidades, preservando as duas fixas e os contadores de timeout.

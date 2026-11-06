@@ -77,7 +77,7 @@ public class DraftEventPublisher {
                 "/topic/rooms/" + event.roomCode(),
                 new Message(
                         "DRAFT_UPDATE",
-                        new Progress(event.deadlineEpochMillis(), selected, ready, nicknames),
+                        new Progress(event.deadlineEpochMillis(), selected, ready, nicknames, event.version()),
                         clock.millis()
                 )
         );
@@ -89,7 +89,9 @@ public class DraftEventPublisher {
             long deadline,
             Map<String, CharacterSymbol> characters,
             Map<String, Boolean> ready,
-            Map<String, String> nicknames
+            Map<String, String> nicknames,
+            /** Cresce a cada mudança do Draft: o front descarta um aviso que chegue fora de ordem. */
+            long version
     ) {
         public Progress {
             characters = Map.copyOf(characters);

@@ -341,6 +341,23 @@ class RoomSnapshotServiceTest {
     }
 
     @Test
+    void roundOneBeforeTheDrawIsTheVersusScreen() throws Exception {
+        RoomFixture fixture = activeRoom(false);
+        UUID gameId = UUID.randomUUID();
+        Game game = new Game(fixture.room(), fixture.host());
+        game.setPlayer2(fixture.guest());
+        setId(game, gameId);
+        when(games.findByRoomIdAndStatus(fixture.room().getId(), GameStatus.IN_PROGRESS)).thenReturn(Optional.of(game));
+        GameState state = GameState.builder().gameId(gameId).board(GameState.EMPTY_BOARD)
+                .player1Id(fixture.host().getId()).player2Id(fixture.guest().getId())
+                .roundNumber(1).phase(GamePhase.DRAFT).build();
+        when(gameStates.find(gameId)).thenReturn(Optional.of(state));
+
+        assertEquals(RoomSnapshotService.RoomPhase.VERSUS,
+                snapshots.compose("0042", fixture.host().getId()).phase());
+    }
+
+    @Test
     void reconnectRestoresOnlyTheViewersPendingOptionsAndPublicSnapshotHidesBothDraws() throws Exception {
         RoomFixture fixture = activeRoom(false);
         UUID p1 = fixture.host().getId(), p2 = fixture.guest().getId(), gameId = UUID.randomUUID();

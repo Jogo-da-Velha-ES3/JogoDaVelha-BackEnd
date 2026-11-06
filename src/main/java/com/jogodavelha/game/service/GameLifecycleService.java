@@ -50,10 +50,15 @@ import java.util.concurrent.ScheduledFuture;
 @Service
 @RequiredArgsConstructor
 public class GameLifecycleService implements RoundLifecycle {
-    private static final long ROUND_PRESENTATION_MILLIS = 2_500;
+    /** Tela de Confronto (VS) antes do round 1. */
+    static final long VERSUS_MILLIS = 3_000;
+    /** Anúncio do fim do round antes do próximo round ou do resultado. */
+    static final long ROUND_END_MILLIS = 2_500;
+    /** Apresentação do round antes do primeiro TURN_START. */
+    static final long ROUND_PRESENTATION_MILLIS = 2_500;
     private final Set<RoundKey> startedRounds = ConcurrentHashMap.newKeySet();
     private final Set<RoundKey> roundStartsPublished = ConcurrentHashMap.newKeySet();
-    private final Map<RoundKey, ScheduledFuture<?>> presentationTimers = new ConcurrentHashMap<>();
+    private final Map<LifecyclePauseElapsed, ScheduledFuture<?>> pauses = new ConcurrentHashMap<>();
     private final Set<UUID> matchEndPublished = ConcurrentHashMap.newKeySet();
     private final GameService games;
     private final GameRepository gameRepository;
@@ -121,7 +126,9 @@ public class GameLifecycleService implements RoundLifecycle {
     public void finishRound(UUID gameId, int roundNumber, RoundResult result) {
         Game before = gameRepository.findById(gameId).orElseThrow(() -> new GameNotFoundException(gameId));
         if (before.getStatus() == GameStatus.FINISHED) {
-            finishMatch(before); // Retry notifications/Redis cleanup after a prior post-commit failure.
+            // O resultado sai quando a pausa do fim do round acabar; sem pausa pendente, é uma nova
+            // tentativa depois de uma falha na publicação.
+            if (!hasPendingPause(gameId, LifecyclePauseElapsed.Step.ROUND_END)) finishMatch(before);
             return;
         }
         if (before.getCurrentRound() != roundNumber) {
@@ -129,7 +136,7 @@ public class GameLifecycleService implements RoundLifecycle {
         }
         int oldRound = before.getCurrentRound();
         turns.cancel(gameId);
-        cancelPresentationTimers(gameId);
+        cancelPauses(gameId);
         RoundUpdate update = games.applyRoundResult(gameId, roundNumber, result);
         if (!update.applied()) {
             return;
@@ -148,17 +155,42 @@ public class GameLifecycleService implements RoundLifecycle {
         roundEnd.put("score", scoreBySlot(game, room));
         websocket.sendToTopic(topic(room), MatchLifecycleEvent.of("ROUND_END", roundEnd));
         phase(room, "ROUND_END", oldRound);
+        // O próximo round (ou o resultado) só começa depois do anúncio do fim do round.
+        pause(gameId, oldRound, LifecyclePauseElapsed.Step.ROUND_END, ROUND_END_MILLIS);
+    }
 
+    /** Fim de uma pausa do ciclo: segue para a próxima etapa, se a partida ainda estiver nela. */
+    @EventListener
+    @Transactional
+    public void onPauseElapsed(LifecyclePauseElapsed pause) {
+        pauses.remove(pause);
+        switch (pause.step()) {
+            case VERSUS -> openRound(pause.gameId(), pause.round());
+            case ROUND_END -> continueAfterRoundEnd(pause.gameId(), pause.round());
+            case PRESENTATION -> startFirstTurn(pause.gameId(), pause.round());
+        }
+    }
+
+    private void continueAfterRoundEnd(UUID gameId, int finishedRound) {
+        Game game = gameRepository.findById(gameId).orElse(null);
+        if (game == null) return;
         if (game.getStatus() == GameStatus.FINISHED) {
             finishMatch(game);
             return;
+        }
+        GameState finished = states.find(gameId).orElse(null);
+        if (finished == null || finished.getRoundNumber() != finishedRound
+                || game.getCurrentRound() != finishedRound + 1) {
+            return; // A partida já avançou ou foi encerrada durante a pausa.
         }
         long duration = game.getCurrentRound() == Game.MAX_ROUNDS
                 ? GameState.SUDDEN_DEATH_TURN_DURATION_MILLIS : GameState.DEFAULT_TURN_DURATION_MILLIS;
         long now = clock.millis();
         states.update(gameId, current -> {
-            current.startRound(game.getCurrentRound(), duration, now);
-            current.setPhase(GamePhase.DRAFT);
+            if (current.getRoundNumber() == finishedRound) {
+                current.startRound(game.getCurrentRound(), duration, now);
+                current.setPhase(GamePhase.DRAFT);
+            }
             return current;
         });
         GameState state = states.find(gameId).orElseThrow();
@@ -208,26 +240,48 @@ public class GameLifecycleService implements RoundLifecycle {
         }
         if (!roundStartsPublished.add(key)) return;
         try {
-            if (round == 1) {
-                phase(game.getRoom(), "VERSUS", round);
-            }
             states.update(game.getId(), current -> {
                 if (current.getRoundNumber() == round) {
                     current.setPhase(GamePhase.DRAFT);
                 }
                 return current;
             });
-            GameState roundState = states.find(game.getId()).orElseThrow();
-            websocket.sendToTopic(topic(game.getRoom()), MatchLifecycleEvent.of("ROUND_START", Map.of(
-                    "round", round,
-                    "firstPlayer", slot(roundState, roundState.getCurrentTurnPlayerId()),
-                    "suddenDeath", roundState.isSuddenDeath())));
-            draw.beginRound(game.getId(), state.getRoundNumber(), game.getPlayer1().getId(),
-                    game.getPlayer2().getId());
+            if (round == 1) {
+                // O round 1 (e o sorteio de 8s) só abre depois da tela de Confronto.
+                phase(game.getRoom(), "VERSUS", round);
+                pause(game.getId(), round, LifecyclePauseElapsed.Step.VERSUS, VERSUS_MILLIS);
+                return;
+            }
+            openRound(game, round, draw);
         } catch (RuntimeException | Error failure) {
             roundStartsPublished.remove(key);
             throw failure;
         }
+    }
+
+    private void openRound(UUID gameId, int round) {
+        Game game = gameRepository.findById(gameId).orElse(null);
+        GameState state = states.find(gameId).orElse(null);
+        if (game == null || game.getStatus() != GameStatus.IN_PROGRESS || state == null
+                || state.getRoundNumber() != round || state.getPhase() != GamePhase.DRAFT) {
+            return; // Encerrada (ex: desistência) durante a pausa.
+        }
+        RoundSkillDraft draw = skillDraft.getIfAvailable();
+        if (draw == null) {
+            throw new IllegalStateException(
+                    "RoundSkillDraft é obrigatório: o sorteio de habilidades do round não está disponível.");
+        }
+        openRound(game, round, draw);
+    }
+
+    /** Anuncia o round e abre o sorteio da habilidade. */
+    private void openRound(Game game, int round, RoundSkillDraft draw) {
+        GameState roundState = states.find(game.getId()).orElseThrow();
+        websocket.sendToTopic(topic(game.getRoom()), MatchLifecycleEvent.of("ROUND_START", Map.of(
+                "round", round,
+                "firstPlayer", slot(roundState, roundState.getCurrentTurnPlayerId()),
+                "suddenDeath", roundState.isSuddenDeath())));
+        draw.beginRound(game.getId(), round, game.getPlayer1().getId(), game.getPlayer2().getId());
     }
 
     @EventListener
@@ -273,14 +327,10 @@ public class GameLifecycleService implements RoundLifecycle {
         }
         events.publishEvent(new GameplayBoardUpdatedEvent(gameId, state));
         phase(game.getRoom(), "PLAYING", expectedRound);
-        Instant firstTurnAt = Instant.ofEpochMilli(clock.millis() + ROUND_PRESENTATION_MILLIS);
-        ScheduledFuture<?> timer = scheduler.schedule(() -> startFirstTurn(gameId, expectedRound), firstTurnAt);
-        presentationTimers.put(roundKey, timer);
+        pause(gameId, expectedRound, LifecyclePauseElapsed.Step.PRESENTATION, ROUND_PRESENTATION_MILLIS);
     }
 
     private void startFirstTurn(UUID gameId, int expectedRound) {
-        RoundKey key = new RoundKey(gameId, expectedRound);
-        presentationTimers.remove(key);
         GameState before = states.find(gameId).orElse(null);
         if (before == null || before.getPhase() != GamePhase.PLAYING || before.getRoundNumber() != expectedRound
                 || before.getTurnDeadlineEpochMillis() != 0) {
@@ -312,7 +362,6 @@ public class GameLifecycleService implements RoundLifecycle {
         }
         boolean firstPublication = matchEndPublished.add(game.getId());
         if (firstPublication) {
-            phase(room, "RESULT", game.getCurrentRound());
             RewardResult reward = game.getRewardResult();
             if (reward == null) {
                 matchEndPublished.remove(game.getId());
@@ -336,11 +385,13 @@ public class GameLifecycleService implements RoundLifecycle {
                     slot(room, game.getPlayer2()), reward.player2Reward()));
             result.put("reason", game.getEndReason().name());
             result.put("forfeit", game.getEndReason() == GameEndReason.FORFEIT_TIMEOUT);
+            // O resultado chega antes da troca de fase: a tela de Resultado já abre com ele.
             websocket.sendToTopic(topic(room), MatchLifecycleEvent.of("MATCH_END", result));
+            phase(room, "RESULT", game.getCurrentRound());
             events.publishEvent(new MatchFinishedEvent(game.getId(), room.getCode()));
         }
         states.delete(game.getId());
-        cancelPresentationTimers(game.getId());
+        cancelPauses(game.getId());
     }
 
     private Map<String, Integer> scoreBySlot(Game game, Room room) {
@@ -378,9 +429,22 @@ public class GameLifecycleService implements RoundLifecycle {
         throw new IllegalArgumentException("Jogador não pertence à partida.");
     }
 
-    private void cancelPresentationTimers(UUID gameId) {
-        presentationTimers.forEach((key, timer) -> {
-            if (key.gameId().equals(gameId) && presentationTimers.remove(key, timer)) timer.cancel(false);
+    /** Agenda o fim da pausa; a etapa seguinte roda em {@link #onPauseElapsed}, numa transação. */
+    private void pause(UUID gameId, int round, LifecyclePauseElapsed.Step step, long millis) {
+        LifecyclePauseElapsed pause = new LifecyclePauseElapsed(gameId, round, step);
+        ScheduledFuture<?> timer = scheduler.schedule(() -> events.publishEvent(pause),
+                Instant.ofEpochMilli(clock.millis() + millis));
+        ScheduledFuture<?> previous = pauses.put(pause, timer);
+        if (previous != null) previous.cancel(false);
+    }
+
+    private boolean hasPendingPause(UUID gameId, LifecyclePauseElapsed.Step step) {
+        return pauses.keySet().stream().anyMatch(pause -> pause.gameId().equals(gameId) && pause.step() == step);
+    }
+
+    private void cancelPauses(UUID gameId) {
+        pauses.forEach((pause, timer) -> {
+            if (pause.gameId().equals(gameId) && pauses.remove(pause, timer)) timer.cancel(false);
         });
     }
 

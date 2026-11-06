@@ -557,7 +557,7 @@ Validações: `token` obrigatório; `newPassword` 6-72 caracteres; `confirmPassw
 **Possíveis erros:**
 - 400 ROOM_BAD_REQUEST: Código inválido ou jogador não pertence à sala
 - 404 ROOM_NOT_FOUND: Sala inexistente ou já encerrada
-- 409 ROOM_ALREADY_STARTED: Partida já iniciada; use o destino STOMP `/app/rooms/{code}/leave` para desistir durante a partida
+- 409 ROOM_ALREADY_STARTED: a sala já saiu da espera; use o destino STOMP `/app/rooms/{code}/leave`, que trata a saída em qualquer fase (Preparação, partida e Resultado)
 - 401 UNAUTHORIZED: Token ausente ou inválido
 - 500 INTERNAL_ERROR: Erro interno do servidor
 
@@ -1214,16 +1214,17 @@ identidade, como `playerId`, são ignorados.
 Envie com `content-type: application/json`:
 
 ```json
-{ "ability": "TORNADO", "abilityToRemove": "ESCUDO" }
+{ "ability": "TORNADO" }
 ```
 
 O código da sala tem quatro dígitos e o jogador precisa participar dela. A habilidade
-`ability` deve ser uma das três opções recebidas para aquele round. A partir do segundo
-round, `abilityToRemove` é obrigatório e deve pertencer ao deck atual do jogador; no
-primeiro round, omita esse campo. A escolha manual substitui exatamente a habilidade
-indicada e mantém o deck com três habilidades. Só é aceita uma confirmação por jogador,
-antes do prazo de 8 segundos. Se o prazo vencer, o backend escolhe automaticamente uma
-opção e uma habilidade do deck a substituir.
+`ability` deve ser uma das três opções recebidas para aquele round. O deck do round é
+sempre as duas habilidades iniciais mais uma sorteada [RN-DRAFT-02]: a partir do segundo
+round, a nova escolha entra no lugar da habilidade sorteada no round anterior. O campo
+opcional `abilityToRemove` escolhe outra habilidade do deck atual para sair; no primeiro
+round, omita esse campo. Só é aceita uma confirmação por jogador, antes do prazo de 8
+segundos. Se o prazo vencer, o backend escolhe automaticamente uma das opções, que também
+entra no lugar da sorteada anterior.
 
 Erros são privados, em `/user/queue/errors`: `ROOM_BAD_REQUEST` (400) para código ou
 habilidade inválidos; `FORBIDDEN` (403) para não participante; `ROOM_CONFLICT` (409)
@@ -1275,12 +1276,19 @@ vem do `Principal`, nunca de um UUID enviado pelo cliente.
 **Status:** ✅ Implementado
 **Autenticação:** STOMP `Principal` obrigatório
 
-Envie `{}` durante uma partida ativa. O servidor resolve a sala e a partida pelo
-código da sala e identifica o jogador pelo `Principal`; o jogador precisa pertencer
-a ambas. O jogador que desistiu perde por W.O., e o adversário recebe `MATCH_END`
-com as recompensas registradas pelo mesmo fluxo dos demais W.O. O bloqueio da
-partida e a finalização protegem contra premiação duplicada. Não substitui
-`DELETE /api/rooms/{code}/leave`, que continua atendendo apenas saída da sala de espera.
+Envie `{}` para sair da sala **em qualquer fase**. O servidor identifica o jogador pelo
+`Principal` (ele precisa pertencer à sala) e decide o efeito pela fase
+(`RoomLeaveService`):
+
+| Fase | Efeito |
+| --- | --- |
+| Sala de Espera (`WAITING`) | o host encerra a sala: `ROOM_CLOSED` com `HOST_LEFT` |
+| MATCH FEITO e Preparação (`MATCHED`, `DRAFT`, inclusive a Preparação de uma revanche aceita) | a sala é encerrada sem partida e sem Coins; o Draft é descartado: `ROOM_CLOSED` com `PLAYER_LEFT` |
+| Partida em andamento (`VERSUS` a `ROUND_END`) | desistência: quem saiu perde por W.O. e os dois recebem `MATCH_END` (`outcome.kind: "WO"`), com as recompensas do mesmo fluxo dos demais W.O. |
+| Resultado (`RESULT`) | o mesmo que `/lobby`: `ROOM_CLOSED` com `RETURN_TO_LOBBY` |
+
+O bloqueio da partida e a finalização protegem contra premiação duplicada. O REST
+`POST /api/rooms/{code}/leave` continua atendendo só a Sala de Espera.
 
 #### SEND /app/rooms/{code}/rematch/request — BE-039
 
@@ -1345,7 +1353,14 @@ durante negociação pendente.
 
 **Eventos recebidos:**
 - `ROOM_SNAPSHOT`: Snapshot público da sala (sem campos privados)
+- `PLAYER_JOINED` e `PHASE_CHANGE`
 - `DRAFT_UPDATE`: Atualizações do Draft
+- `ROUND_START`, `BOARD_UPDATE`, `TURN_START`, `ABILITY_RESOLVED`, `TURN_TIMEOUT`,
+  `ROUND_END` e `MATCH_END` (eventos incrementais da partida, seção 5.4)
+- `ROOM_CLOSED`
+
+Os eventos privados (`DRAW_OPTIONS`, `DECK_UPDATE`, `PLAYER_DISCONNECTED`,
+`PLAYER_RECONNECTED` e o snapshot individual) chegam só em `/user/queue/room`.
 
 **Regras e observações:**
 - Padrão de destino: `/topic/rooms/[0-9]{4}`
@@ -1695,9 +1710,22 @@ no snapshot inicial; `MATCHED` é publicado após a entrada do segundo jogador;
 `ROUND_DRAW`, `PLAYING`, `ROUND_END` e `RESULT` refletem as transições do ciclo de
 partida. Nenhuma transição de fase é emitida para cada ação.
 
+O servidor segura três telas de transição, para que o front as mostre sem consumir
+prazo de jogador:
+
+| Pausa | Duração | Entre |
+| --- | ---: | --- |
+| "MATCH FEITO!" | 3 s | `PHASE_CHANGE` para `MATCHED` e o início do Draft (`PHASE_CHANGE` para `DRAFT`; os 20 s começam aqui) |
+| Confronto (VS) | 3 s | `PHASE_CHANGE` para `VERSUS` e o `ROUND_START` do round 1 |
+| Fim do round | 2,5 s | `ROUND_END` + `PHASE_CHANGE` para `ROUND_END` e o próximo `ROUND_START` (ou o `MATCH_END`) |
+
+Durante a pausa do VS, o snapshot informa a fase `VERSUS`; durante a do fim do round,
+`ROUND_END` (ou `RESULT`, se a partida já foi decidida). Uma desistência durante a pausa
+encerra a partida e cancela a etapa seguinte.
+
 Para cada round, a ordem de publicação é:
 
-1. `ROUND_START`.
+1. `ROUND_START` (no round 1, 3 s depois do `PHASE_CHANGE` para `VERSUS`).
 2. `PHASE_CHANGE` para `ROUND_DRAW`.
 3. `DECK_UPDATE` e `DRAW_OPTIONS` privados para cada jogador.
 4. Escolha dos jogadores ou encerramento automático do prazo do sorteio.
@@ -1711,8 +1739,9 @@ Para cada round, a ordem de publicação é:
 Nos turnos seguintes, a ação publicada é seguida pela atualização do tabuleiro e
 pelo `TURN_START` do próximo jogador. Um timeout publica `TURN_TIMEOUT`, um
 `BOARD_UPDATE` apenas quando alterar casas/efeitos, e a transição de turno. O fim
-do round publica `ROUND_END` e `PHASE_CHANGE` para `ROUND_END`; o fim da partida
-publica `PHASE_CHANGE` para `RESULT` e `MATCH_END`.
+do round publica `ROUND_END` e `PHASE_CHANGE` para `ROUND_END` e aguarda 2,5 s; o fim
+da partida publica `MATCH_END` e, em seguida, `PHASE_CHANGE` para `RESULT`. O W.O.
+(por tempo ou desistência) não tem a pausa do fim do round: o `MATCH_END` sai na hora.
 
 A regra oficial da MD3 permite encerramento antecipado: depois do segundo round,
 se o placar estiver desigual, a partida termina. O terceiro round só é realizado
@@ -1728,7 +1757,8 @@ quando o placar estiver empatado; o frontend deve seguir o `MATCH_END` do backen
 
 Evento existente, publicado após o commit quando uma sala é encerrada. Além dos
 motivos existentes `HOST_LEFT` e `EXPIRED`, a BE-039 usa `REMATCH_DECLINED`,
-`REMATCH_EXPIRED`, `RETURN_TO_LOBBY` e `REMATCH_DISCONNECTED`. `closedBy` contém o
+`REMATCH_EXPIRED`, `RETURN_TO_LOBBY` e `REMATCH_DISCONNECTED`, e a saída antes da
+partida (MATCH FEITO ou Preparação) usa `PLAYER_LEFT`. `closedBy` contém o
 UUID do jogador que recusou, saiu ou se desconectou; é `null` quando o prazo expirou.
 O envelope e o payload existentes não foram alterados:
 
@@ -1775,9 +1805,14 @@ considerada definitiva enquanto existir outra sessão do mesmo jogador na mesma 
   "deadline": 1729934660000,
   "characters": { "P1": "X" },
   "ready": { "P1": false, "P2": false },
-  "nicknames": { "P1": "ana" }
+  "nicknames": { "P1": "ana" },
+  "version": 3
 }
 ```
+`version` cresce a cada mudança do Draft. Com os dois jogadores escolhendo ao mesmo
+tempo, os avisos podem chegar fora de ordem: o front descarta um `DRAFT_UPDATE` com
+`version` menor do que o último aplicado. Cada Draft (inclusive o de uma revanche) começa
+de novo em `0`.
 `nicknames` (acréscimo compatível, BE-011): username de quem já reservou personagem,
 por slot. Só há entrada para quem já escolheu; o front usa isso para mostrar o bloqueio
 com o nome de quem reservou. `ready` indica a confirmação das duas habilidades iniciais:
@@ -1816,8 +1851,9 @@ compradas e excluindo todo o deck atual e todas as habilidades já escolhidas pe
 próprio jogador na partida (as iniciais e as escolhidas em sorteios anteriores,
 mesmo se substituídas). Opções oferecidas e não escolhidas podem aparecer em sorteios
 futuros. O histórico é independente por jogador. No primeiro round, o deck tem as
-duas habilidades iniciais e a escolhida é adicionada. Nos rounds seguintes, uma das
-três habilidades atuais é removida aleatoriamente e a escolhida é adicionada.
+duas habilidades iniciais e a escolhida é adicionada. Nos rounds seguintes, a escolhida
+entra no lugar da habilidade sorteada no round anterior (ou da indicada em
+`abilityToRemove`), e as duas iniciais continuam no deck.
 `deadline` e `serverTime` são epoch millis.
 
 ```json
@@ -1837,7 +1873,9 @@ três habilidades atuais é removida aleatoriamente e a escolhida é adicionada.
 Cada escolha salva publica um `DECK_UPDATE` ao dono com exatamente três habilidades.
 A segunda escolha não reenvia
 os decks já publicados. Na expiração, somente quem recebeu uma escolha automática
-recebe o evento. Os snapshots privados continuam disponíveis para sincronização.
+recebe o evento. Durante o round, cada habilidade usada publica um novo `DECK_UPDATE`
+ao dono, com `usedThisRound: true` nela (o adversário não recebe). Os snapshots privados
+continuam disponíveis para sincronização.
 
 ### 5.5 Mensagens de Erro STOMP
 
@@ -2034,8 +2072,9 @@ implementados.
 
 ### 6.6 Inicio e Andamento da Partida
 
-1. Depois do Draft inicial, o servidor publica `PHASE_CHANGE` para `VERSUS`,
-   `ROUND_START` e `PHASE_CHANGE` para `ROUND_DRAW`.
+1. Depois do Draft inicial, o servidor publica `PHASE_CHANGE` para `VERSUS`, aguarda
+   os 3 segundos da tela de Confronto e publica `ROUND_START` e `PHASE_CHANGE` para
+   `ROUND_DRAW`.
 2. O backend envia `DECK_UPDATE` e `DRAW_OPTIONS` apenas nas filas privadas.
 3. Após as escolhas ou o prazo automático, publica os decks atualizados, `BOARD_UPDATE`
    e `PHASE_CHANGE` para `PLAYING`.
@@ -2060,10 +2099,11 @@ reconexão e mudanças não incrementais de sala/Draft/resultado.
 ### 6.8 Encerramento de Rodada e Partida
 
 1. Ao terminar um round, `ROUND_END` e `PHASE_CHANGE` para `ROUND_END` são
-   publicados; o próximo round segue novamente a sequência descrita acima.
-2. Ao encerrar definitivamente, `PHASE_CHANGE` para `RESULT` e `MATCH_END` são
-   publicados uma única vez, com placar, `winnerId`, `forfeit` e `reason`
-   (`NORMAL` ou `FORFEIT_TIMEOUT`).
+   publicados; depois de 2,5 segundos, o próximo round segue novamente a sequência
+   descrita acima.
+2. Ao encerrar definitivamente (depois dessa mesma pausa, exceto no W.O.), `MATCH_END`
+   e, em seguida, `PHASE_CHANGE` para `RESULT` são publicados uma única vez, com
+   `outcome` por slot, `coins`, `forfeit` e `reason` (`NORMAL` ou `FORFEIT_TIMEOUT`).
 3. `MatchFinishedEvent` aciona um `ROOM_SNAPSHOT` final público seguro e snapshots
    privados para os jogadores enquanto o estado Redis ainda existe. O snapshot
    tem fase `RESULT`, inclui `outcome` final e não apresenta turno ativo.

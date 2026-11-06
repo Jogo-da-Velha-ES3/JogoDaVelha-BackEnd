@@ -265,7 +265,9 @@ public class RoomSnapshotService {
         GameState gameState = state.gameStateOptional().orElse(null);
         if (gameState != null) {
             return switch (gameState.getPhase()) {
-                case DRAFT -> gameState.getRoundDraw() != null ? RoomPhase.ROUND_DRAW : RoomPhase.DRAFT;
+                // Sem sorteio aberto no round 1, a partida está na tela de Confronto (VS).
+                case DRAFT -> gameState.getRoundDraw() != null ? RoomPhase.ROUND_DRAW
+                        : gameState.getRoundNumber() == 1 ? RoomPhase.VERSUS : RoomPhase.ROUND_DRAW;
                 case PLAYING -> RoomPhase.PLAYING;
                 case ROUND_FINISHED -> RoomPhase.ROUND_END;
                 case FINISHED -> RoomPhase.RESULT;

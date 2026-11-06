@@ -218,7 +218,8 @@ class DraftWebSocketIntegrationTest {
             assertEquals(last, receive(second));
             assertEquals("DRAFT_UPDATE", last.path("type").asText());
             assertEquals(state.deadlineEpochMillis(), last.path("payload").path("deadline").asLong());
-            assertEquals(4, last.path("payload").size());
+            assertEquals(5, last.path("payload").size());
+            assertTrue(last.path("payload").has("version"));
             assertFalse(last.toString().contains("BOMBA"));
             assertFalse(last.toString().contains("eligible"));
         }

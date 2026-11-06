@@ -2,7 +2,7 @@
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.jogodavelha.game.service.GameplayRoomResolver;
-import com.jogodavelha.game.service.GameLifecycleService;
+import com.jogodavelha.game.service.RoomLeaveService;
 import com.jogodavelha.game.service.MoveActionService;
 import com.jogodavelha.skill.SkillActivationService;
 import com.jogodavelha.skill.SkillContext;
@@ -27,7 +27,7 @@ public class GameplayController {
     private final MoveActionService moves;
     private final SkillActivationService skills;
     private final GameplayRoomResolver games;
-    private final GameLifecycleService lifecycle;
+    private final RoomLeaveService leaves;
 
     @MessageMapping("/rooms/{code}/move")
     public void move(@DestinationVariable String code, MoveRequest request, Principal principal) {
@@ -48,10 +48,10 @@ public class GameplayController {
                 new SkillContext(actor, request.targetPosition(), request.destinationPosition()));
     }
 
+    /** Sair da sala em qualquer fase; o servidor decide o efeito pela fase (ver RoomLeaveService). */
     @MessageMapping("/rooms/{code}/leave")
     public void leave(@DestinationVariable String code, Principal principal) {
-        UUID actor = authenticatedUser(principal);
-        lifecycle.forfeitActiveGame(games.resolveActiveGame(code, actor), actor);
+        leaves.leave(code, authenticatedUser(principal));
     }
 
     private UUID authenticatedUser(Principal principal) {

@@ -6,6 +6,8 @@ import java.util.UUID;
 public record RoomClosedEvent(String roomCode, UUID roomId, UUID closedBy, String reason) {
 
     public static final String HOST_LEFT = "HOST_LEFT";
+    /** Um jogador saiu depois do MATCH FEITO e antes de a partida começar (Preparação). */
+    public static final String PLAYER_LEFT = "PLAYER_LEFT";
     public static final String EXPIRED = "EXPIRED";
     public static final String REMATCH_DECLINED = "REMATCH_DECLINED";
     public static final String REMATCH_EXPIRED = "REMATCH_EXPIRED";
