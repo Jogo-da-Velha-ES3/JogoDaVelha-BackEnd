@@ -67,7 +67,10 @@ public class GameLifecycleService implements RoundLifecycle {
     @Qualifier("turnTaskScheduler")
     private final TaskScheduler scheduler;
 
+    // As reações do ciclo chegam pela thread do STOMP ou do timer, sem transação, e leem relações
+    // LAZY da partida (sala, jogadores). Sem @Transactional: LazyInitializationException.
     @EventListener
+    @Transactional
     public void onDraftCompleted(DraftCompleted event) {
         Room room = rooms.findById(event.roomId())
                 .orElseThrow(() -> new IllegalStateException("Sala do Draft não encontrada."));
@@ -165,6 +168,7 @@ public class GameLifecycleService implements RoundLifecycle {
     /** Adapter from the existing turn/gameplay event into the lifecycle boundary. */
     @EventListener
     @Order(0)
+    @Transactional
     public void onTurnChanged(TurnChangedEvent event) {
         if (event.timedOutPlayerId() != null) {
             Game game = gameRepository.findById(event.gameId()).orElse(null);
@@ -232,6 +236,7 @@ public class GameLifecycleService implements RoundLifecycle {
         startTurnAfterDraft(event.gameId(), event.round());
     }
 
+    @Transactional
     public void forfeitActiveGame(UUID gameId, UUID loserId) {
         Game game = games.forfeit(gameId, loserId);
         finishMatch(game);
