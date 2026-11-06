@@ -148,7 +148,10 @@ public class RoomSnapshotService {
         Game active = games.findByRoomIdAndStatus(room.getId(), GameStatus.IN_PROGRESS).orElse(null);
         Game finished = games.findTopByRoomIdAndStatusOrderByFinishedAtDesc(room.getId(), GameStatus.FINISHED)
                 .orElse(null);
-        boolean preparingNewMatch = active == null && draft != null
+        // Só um Draft ainda aberto é a Preparação de uma revanche. O Draft concluído é o da partida
+        // que acabou (o estado fica no Redis): numa partida rápida, o prazo de 20s dele ainda vale
+        // depois do fim e escondia o resultado (fase DRAFT, sem outcome).
+        boolean preparingNewMatch = active == null && draft != null && !draft.completed()
                 && (finished == null || finished.getFinishedAt() == null
                 || draft.deadlineEpochMillis() > finished.getFinishedAt().toEpochMilli());
         Game game = active != null ? active : preparingNewMatch ? null : finished;

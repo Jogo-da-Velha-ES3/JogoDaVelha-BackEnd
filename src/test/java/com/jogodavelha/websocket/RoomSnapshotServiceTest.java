@@ -341,6 +341,35 @@ class RoomSnapshotServiceTest {
     }
 
     @Test
+    void completedDraftOfAQuickMatchDoesNotHideTheResult() throws Exception {
+        RoomFixture fixture = activeRoom(false);
+        Game finished = finishedGame(fixture);
+        var eligible = new DraftEligibilityProvider.EligibleItems(
+                List.of(UUID.randomUUID(), UUID.randomUUID()), List.of("BOMBA", "ESCUDO"));
+        // A partida terminou antes do prazo de 20s do próprio Draft (ex: desistência logo no início)
+        DraftState draft = new DraftState(fixture.room().getId(), "0042",
+                finished.getFinishedAt().toEpochMilli() + 10_000, 4,
+                DraftState.Player.initial(fixture.host().getId(), eligible),
+                DraftState.Player.initial(fixture.guest().getId(), eligible))
+                .autoComplete(List.of(0.1, 0.2, 0.3, 0.4, 0.5, 0.6));
+        var x = new com.jogodavelha.character.Character("X", com.jogodavelha.character.CharacterSymbol.X, 0);
+        x.setId(draft.player1().characterId());
+        var o = new com.jogodavelha.character.Character("O", com.jogodavelha.character.CharacterSymbol.O, 0);
+        o.setId(draft.player2().characterId());
+        when(characters.findAllById(any())).thenReturn(List.of(x, o));
+        when(games.findTopByRoomIdAndStatusOrderByFinishedAtDesc(fixture.room().getId(), GameStatus.FINISHED))
+                .thenReturn(Optional.of(finished));
+        when(drafts.find(fixture.room().getId())).thenReturn(Optional.of(draft));
+
+        var snapshot = snapshots.compose("0042", fixture.host().getId());
+
+        assertTrue(draft.completed());
+        assertEquals(RoomSnapshotService.RoomPhase.RESULT, snapshot.phase());
+        assertEquals(finished.getId(), snapshot.gameId());
+        assertNotNull(snapshot.outcome());
+    }
+
+    @Test
     void roundOneBeforeTheDrawIsTheVersusScreen() throws Exception {
         RoomFixture fixture = activeRoom(false);
         UUID gameId = UUID.randomUUID();
