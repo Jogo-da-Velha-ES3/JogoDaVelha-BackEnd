@@ -1223,14 +1223,16 @@ futuros. Esse histórico é individual por jogador. As opções ficam
 no `GameState` do Redis e chegam somente ao dono em `/user/queue/room`, no evento
 `DRAW_OPTIONS`, com `{options, deadline}`. O prazo é de 8 segundos.
 
-Envie `SEND /app/rooms/{code}/draw/pick` com `{"ability":"TORNADO"}`. A partir do
-segundo round, a escolhida entra no lugar da habilidade sorteada no round anterior e
-as duas fixas continuam [RN-DRAFT-02]; o campo opcional `abilityToRemove` (ex:
-`{"ability":"TORNADO","abilityToRemove":"ESCUDO"}`) escolhe outra habilidade do deck
-para sair. A identidade vem do JWT do CONNECT; a habilidade adicionada precisa estar
-entre as opções e a removida, no deck atual do jogador. Confirmar bloqueia novas
-escolhas. Ao expirar, o servidor escolhe automaticamente uma opção, que também
-substitui a sorteada anterior; isso não conta como turno nem como timeout do W.O.
+Envie `SEND /app/rooms/{code}/draw/pick` com `{"ability":"TORNADO"}`. No primeiro
+round a escolhida é adicionada ao deck, que fica com as duas fixas mais uma sorteada
+[RN-DRAFT-02]. A partir do segundo round, `abilityToRemove` é obrigatório (ex:
+`{"ability":"TORNADO","abilityToRemove":"ESCUDO"}`) e indica qual habilidade do deck
+atual sai; omiti-lo é rejeitado. A identidade vem do JWT do CONNECT; a habilidade
+adicionada precisa estar entre as opções e a removida, no deck atual do jogador.
+Confirmar bloqueia novas escolhas. Ao expirar, o servidor sorteia automaticamente
+uma opção somente no primeiro round, que entra no deck; nos rounds seguintes o
+sorteio é pulado e o deck permanece como está, o que não conta como turno nem como
+timeout do W.O.
 
 `DECK_UPDATE` envia ao dono `{deck:[{ability, source, usedThisRound}]}`, depois de cada
 escolha e de cada habilidade usada no round. O deck
@@ -1243,8 +1245,9 @@ o tópico público não contém opções nem decks. A fase exposta ao front dura
 escolha é `ROUND_DRAW`. Não há endpoint REST ou migration nesta tarefa.
 
 Ao iniciar a aplicação, os estados de partida são lidos com `SCAN` e os sorteios
-pendentes são retomados com o mesmo prazo. Se ele já venceu, a escolha automática
-é feita imediatamente. Uma conclusão salva antes de uma queda também é retomada,
+pendentes são retomados com o mesmo prazo. Se ele já venceu, o primeiro round recebe
+a escolha automática e os demais são pulados sem alterar o deck. Uma conclusão
+salva antes de uma queda também é retomada,
 sem depender de callbacks da instância anterior. Cada escolha publica seu deck
 uma vez e atualiza o snapshot; o início do turno publica o snapshot da fase `PLAYING`.
 O contrato oficial deste fluxo está em [Contrato V2](docs/contrato-integracao-v2.md).

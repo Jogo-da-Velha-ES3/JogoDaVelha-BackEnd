@@ -228,6 +228,7 @@ class RoundSkillDrawServiceTest {
         });
         draws.beginRound(gameId, 2, p1, p2);
         var previous = Set.copyOf(state().getRoundSkillDecks().get(p1));
+        var previousP2 = Set.copyOf(state().getRoundSkillDecks().get(p2));
         assertEquals(3, previous.size());
         assertTrue(Collections.disjoint(previous, state().getRoundDraw().players().get(p1).options()));
         draws.expire(gameId, 1, 9_000);
@@ -236,31 +237,92 @@ class RoundSkillDrawServiceTest {
         assertEquals(1, state().getConsecutiveTimeouts(p1));
         now.set(17_000);
         draws.expire(gameId, 2, 17_000);
-        assertEquals(3, state().getRoundSkillDecks().get(p1).size());
-        assertEquals(2, state().getRoundSkillDecks().get(p1).stream().filter(previous::contains).count());
-        // A escolha automática troca a sorteada anterior e mantém as duas iniciais [RN-DRAFT-02]
-        assertTrue(state().getRoundSkillDecks().get(p1).containsAll(Set.of("BOMBA", "ESCUDO")));
-        assertFalse(state().getRoundSkillDecks().get(p1).contains(previousDrawn));
+        // A partir do segundo round o timeout pula o sorteio: o deck fica exatamente como está.
+        assertEquals(previous, state().getRoundSkillDecks().get(p1));
+        assertEquals(previousP2, state().getRoundSkillDecks().get(p2));
+        assertNull(state().getRoundDraw().players().get(p1).selected());
+        assertNull(state().getRoundDraw().players().get(p2).selected());
+        assertTrue(state().getRoundDraw().players().get(p1).skipped());
+        assertTrue(state().getRoundDraw().players().get(p2).skipped());
+        assertTrue(state().getRoundDraw().completed());
+        assertTrue(state().getRoundSkillDecks().get(p1).contains(previousDrawn));
         verify(completed).publishEvent(new RoundDrawCompleted(gameId, 2));
     }
 
     @Test
-    void laterDrawWithoutAbilityToRemoveReplacesThePreviousDrawnSkill() {
+    void laterDrawRequiresAbilityToRemove() {
         start();
         draws.pick("0042", p1, option(p1), null);
         draws.pick("0042", p2, option(p2), null);
         String previousDrawn = state().getRoundDraw().players().get(p1).selected();
-        var p2Deck = Set.copyOf(state().getRoundSkillDecks().get(p2));
+        var p1Deck = Set.copyOf(state().getRoundSkillDecks().get(p1));
         states.update(gameId, state -> { state.startRound(2, 10_000, 9_100); state.setPhase(GamePhase.DRAFT); return state; });
         now.set(10_000);
         draws.beginRound(gameId, 2, p1, p2);
         String add = option(p1);
 
-        draws.pick("0042", p1, add, null);
+        assertThrows(IllegalArgumentException.class, () -> draws.pick("0042", p1, add, null));
+        assertThrows(IllegalArgumentException.class, () -> draws.pick("0042", p1, add, "  "));
+        assertNull(state().getRoundDraw().players().get(p1).selected());
+        assertEquals(p1Deck, state().getRoundSkillDecks().get(p1));
+
+        draws.pick("0042", p1, add, previousDrawn);
 
         assertEquals(Set.of("BOMBA", "ESCUDO", add), state().getRoundSkillDecks().get(p1));
         assertFalse(state().getRoundSkillDecks().get(p1).contains(previousDrawn));
-        assertEquals(p2Deck, state().getRoundSkillDecks().get(p2));
+    }
+
+    @Test
+    void laterRoundTimeoutSkipsTheDrawAndIsIdempotent() {
+        start();
+        draws.pick("0042", p1, option(p1), null);
+        draws.pick("0042", p2, option(p2), null);
+        var p1Deck = Set.copyOf(state().getRoundSkillDecks().get(p1));
+        var p2Deck = Set.copyOf(state().getRoundSkillDecks().get(p2));
+        states.update(gameId, state -> { state.startRound(2, 10_000, 9_100); state.setPhase(GamePhase.DRAFT); return state; });
+        now.set(10_000);
+        draws.beginRound(gameId, 2, p1, p2);
+
+        failNextCas.set(true);
+        now.set(18_000);
+        draws.expire(gameId, 2, 18_000);
+        draws.expire(gameId, 2, 18_000);
+
+        var state = state();
+        assertEquals(p1Deck, state.getRoundSkillDecks().get(p1));
+        assertEquals(p2Deck, state.getRoundSkillDecks().get(p2));
+        assertTrue(state.getRoundDraw().completed());
+        assertNull(state.getRoundDraw().players().get(p1).selected());
+        assertNull(state.getRoundDraw().players().get(p2).selected());
+        verify(completed, times(1)).publishEvent(new RoundDrawCompleted(gameId, 2));
+    }
+
+    @Test
+    void laterRoundTimeoutSkipsOnlyThePlayerWhoDidNotChoose() {
+        start();
+        draws.pick("0042", p1, option(p1), null);
+        draws.pick("0042", p2, option(p2), null);
+        var p1Deck = Set.copyOf(state().getRoundSkillDecks().get(p1));
+        var p2Deck = Set.copyOf(state().getRoundSkillDecks().get(p2));
+        states.update(gameId, state -> { state.startRound(2, 10_000, 9_100); state.setPhase(GamePhase.DRAFT); return state; });
+        now.set(10_000);
+        draws.beginRound(gameId, 2, p1, p2);
+        String add = option(p1);
+        String remove = p1Deck.stream().sorted().findFirst().orElseThrow();
+        draws.pick("0042", p1, add, remove);
+        var p1Updated = Set.copyOf(state().getRoundSkillDecks().get(p1));
+
+        now.set(18_000);
+        draws.expire(gameId, 2, 18_000);
+
+        var state = state();
+        assertEquals(add, state.getRoundDraw().players().get(p1).selected());
+        assertFalse(state.getRoundDraw().players().get(p1).skipped());
+        assertTrue(state.getRoundDraw().players().get(p2).skipped());
+        assertTrue(state.getRoundDraw().completed());
+        assertEquals(p1Updated, state.getRoundSkillDecks().get(p1));
+        assertEquals(p2Deck, state.getRoundSkillDecks().get(p2));
+        verify(completed).publishEvent(new RoundDrawCompleted(gameId, 2));
     }
 
     @Test

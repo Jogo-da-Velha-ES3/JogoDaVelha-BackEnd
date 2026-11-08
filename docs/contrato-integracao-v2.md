@@ -1217,14 +1217,26 @@ Envie com `content-type: application/json`:
 { "ability": "TORNADO" }
 ```
 
+No primeiro round o corpo é apenas `{"ability": "..."}`. A partir do segundo round a
+escolha manual exige também `abilityToRemove`, indicando explicitamente qual habilidade
+do deck atual será substituída:
+
+```json
+{ "ability": "TORNADO", "abilityToRemove": "AMPULHETA" }
+```
+
 O código da sala tem quatro dígitos e o jogador precisa participar dela. A habilidade
 `ability` deve ser uma das três opções recebidas para aquele round. O deck do round é
-sempre as duas habilidades iniciais mais uma sorteada [RN-DRAFT-02]: a partir do segundo
-round, a nova escolha entra no lugar da habilidade sorteada no round anterior. O campo
-opcional `abilityToRemove` escolhe outra habilidade do deck atual para sair; no primeiro
-round, omita esse campo. Só é aceita uma confirmação por jogador, antes do prazo de 8
-segundos. Se o prazo vencer, o backend escolhe automaticamente uma das opções, que também
-entra no lugar da sorteada anterior.
+sempre as duas habilidades iniciais mais uma sorteada [RN-DRAFT-02]: no primeiro round a
+escolhida é adicionada ao deck; a partir do segundo round ela entra no lugar da habilidade
+indicada em `abilityToRemove`, que precisa estar no deck atual. No primeiro round o campo
+`abilityToRemove` deve ser omitido; do segundo em diante ele é obrigatório. Só é aceita
+uma confirmação por jogador, antes do prazo de 8 segundos.
+
+Se o prazo vencer no primeiro round, o backend sorteia automaticamente uma das opções e
+a adiciona ao deck. Se o prazo vencer a partir do segundo round, o sorteio é pulado: o
+deck do jogador permanece exatamente como está, sem adicionar nem remover habilidades, e
+a partida avança normalmente quando ambos os jogadores confirmarem ou expirarem o prazo.
 
 Erros são privados, em `/user/queue/errors`: `ROOM_BAD_REQUEST` (400) para código ou
 habilidade inválidos; `FORBIDDEN` (403) para não participante; `ROOM_CONFLICT` (409)
@@ -1525,11 +1537,12 @@ incrementais; não geram snapshots completos a cada ação.
 - Todos os campos de `RoomSnapshot` são serializados, inclusive quando nulos (`@JsonInclude(ALWAYS)`). No snapshot público, `mySlot` é `null` e `myDeck` é `[]`; eles não são omitidos.
 - No snapshot privado, `mySlot` indica o slot do destinatário e `myDeck` contém o deck daquele jogador. Os demais campos também aparecem quando nulos.
 - Durante `ROUND_DRAW`, o snapshot privado contém `drawOptions:{options,deadline}`
-  apenas para quem ainda não confirmou. Após confirmar, `drawOptions` é `null`
+  apenas para quem ainda não confirmou nem teve o sorteio encerrado pelo prazo.
+  Após confirmar, `drawOptions` é `null`
   e `myDeck` contém o deck atualizado do próprio jogador: no primeiro round são
-  as duas habilidades fixas e a sorteada; nos seguintes reflete a substituição.
-  O adversário continua
-  recebendo somente as próprias opções e seu prazo original.
+  as duas habilidades fixas e a sorteada; nos seguintes reflete a substituição
+  (ou permanece inalterado quando o sorteio é pulado por timeout).
+  O adversário continua recebendo somente as próprias opções e seu prazo original.
 - No snapshot público, `drawOptions` é sempre `null`, `mySlot` é `null` e `myDeck`
   é `[]`. A fase compartilhada pode ser `ROUND_DRAW`, mas as opções nunca são públicas.
 - `MATCH_END` mantém o envelope `{type,payload,serverTime}` e publica `outcome` com slots e `coins` com os valores efetivamente creditados por slot, sem expor UUIDs de jogadores. Inclui `reason` (`NORMAL` ou `FORFEIT_TIMEOUT`) e `forfeit` por compatibilidade. É publicado uma única vez. Em seguida, `MatchFinishedEvent` dispara `ROOM_SNAPSHOT` público e individualizado para os dois jogadores, com `phase:"RESULT"` e `outcome` final; somente depois da publicação o servidor remove o estado Redis. Chamadas repetidas de finalização não duplicam `MATCH_END` nem o snapshot final.
@@ -1728,7 +1741,9 @@ Para cada round, a ordem de publicação é:
 1. `ROUND_START` (no round 1, 3 s depois do `PHASE_CHANGE` para `VERSUS`).
 2. `PHASE_CHANGE` para `ROUND_DRAW`.
 3. `DECK_UPDATE` e `DRAW_OPTIONS` privados para cada jogador.
-4. Escolha dos jogadores ou encerramento automático do prazo do sorteio.
+4. Escolha dos jogadores ou encerramento do prazo do sorteio: no primeiro round o
+   timeout sorteia uma habilidade automaticamente; nos rounds seguintes o timeout
+   pula o sorteio e mantém o deck do jogador como está.
 5. `DECK_UPDATE` privado dos decks alterados.
 6. `BOARD_UPDATE` com o tabuleiro inicial do round.
 7. `PHASE_CHANGE` para `PLAYING`.
@@ -1851,10 +1866,11 @@ compradas e excluindo todo o deck atual e todas as habilidades já escolhidas pe
 próprio jogador na partida (as iniciais e as escolhidas em sorteios anteriores,
 mesmo se substituídas). Opções oferecidas e não escolhidas podem aparecer em sorteios
 futuros. O histórico é independente por jogador. No primeiro round, o deck tem as
-duas habilidades iniciais e a escolhida é adicionada. Nos rounds seguintes, a escolhida
-entra no lugar da habilidade sorteada no round anterior (ou da indicada em
-`abilityToRemove`), e as duas iniciais continuam no deck.
-`deadline` e `serverTime` são epoch millis.
+duas habilidades iniciais e a escolhida é adicionada. Nos rounds seguintes, a escolha
+manual exige `abilityToRemove` e a sorteada entra no lugar da habilidade indicada,
+que precisa estar no deck atual. Se o prazo de 8 segundos vencer, o primeiro round
+sorteia uma opção automaticamente e a adiciona ao deck; nos rounds seguintes o
+sorteio é pulado e o deck não muda. `deadline` e `serverTime` são epoch millis.
 
 ```json
 {
@@ -1872,8 +1888,9 @@ entra no lugar da habilidade sorteada no round anterior (ou da indicada em
 
 Cada escolha salva publica um `DECK_UPDATE` ao dono com exatamente três habilidades.
 A segunda escolha não reenvia
-os decks já publicados. Na expiração, somente quem recebeu uma escolha automática
-recebe o evento. Durante o round, cada habilidade usada publica um novo `DECK_UPDATE`
+os decks já publicados. Na expiração do primeiro round, somente quem recebeu uma
+escolha automática recebe o evento; nos rounds seguintes o timeout pula o sorteio e
+nenhum deck muda, então nenhum `DECK_UPDATE` é enviado. Durante o round, cada habilidade usada publica um novo `DECK_UPDATE`
 ao dono, com `usedThisRound: true` nela (o adversário não recebe). Os snapshots privados
 continuam disponíveis para sincronização.
 

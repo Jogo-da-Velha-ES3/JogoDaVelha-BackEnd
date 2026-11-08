@@ -114,7 +114,7 @@ public class RoundSkillDrawService implements RoundSkillDraft {
                 event("PHASE_CHANGE", Map.of("phase", "ROUND_DRAW")));
         draw.players().keySet().forEach(playerId -> publishDeck(gameId, round, playerId));
         draw.players().forEach((playerId, player) -> {
-            if (player.selected() == null) websocket.sendToUser(playerId.toString(), "/queue/room",
+            if (player.selected() == null && !player.skipped()) websocket.sendToUser(playerId.toString(), "/queue/room",
                     event("DRAW_OPTIONS", Map.of("options", player.options(), "deadline", draw.deadline())));
         });
     }
@@ -151,15 +151,17 @@ public class RoundSkillDrawService implements RoundSkillDraft {
         if (expected.round() == 1 && abilityToRemove != null) {
             throw new IllegalArgumentException("Não há habilidade para remover no primeiro round.");
         }
-        boolean defaultReplacement = abilityToRemove == null || abilityToRemove.isBlank();
+        if (expected.round() > 1 && (abilityToRemove == null || abilityToRemove.isBlank())) {
+            throw new IllegalArgumentException("Informe a habilidade do deck que será substituída.");
+        }
         states.update(gameId, current -> {
             RoundDrawState draw = current.getRoundDraw();
             // Reconfere o prazo em cada tentativa, como o Draft inicial.
             if (current.getPhase() != GamePhase.DRAFT || draw == null || draw.round() != expected.round()
                     || clock.millis() >= draw.deadline()) throw new IllegalStateException("Prazo do sorteio encerrado.");
             current.setRoundDraw(draw.select(playerId, ability));
-            // Sem indicação, a nova carta entra no lugar da sorteada no round anterior [RN-DRAFT-02].
-            String replaced = defaultReplacement ? replacement(current, playerId, expected.round()) : abilityToRemove;
+            // A partir do segundo round o jogador indica explicitamente qual habilidade do deck sai.
+            String replaced = expected.round() == 1 ? null : abilityToRemove;
             applyDeck(current, playerId, expected.round(), ability, replaced);
             current.recordChosenDrawSkill(playerId, ability);
             return current;
@@ -183,11 +185,16 @@ public class RoundSkillDrawService implements RoundSkillDraft {
             return;
         }
         Map<UUID, String> automatic = new HashMap<>();
-        Map<UUID, String> replacements = new HashMap<>();
+        Set<UUID> skipped = new HashSet<>();
         state.getRoundDraw().players().forEach((player, draw) -> {
-            if (draw.selected() == null) {
-                automatic.put(player, draw.options().get(random.nextInt(draw.options().size())));
-                replacements.put(player, replacement(state, player, round));
+            if (draw.selected() == null && !draw.skipped()) {
+                if (round == 1) {
+                    // No primeiro round o timeout sorteia uma opção e a adiciona ao deck.
+                    automatic.put(player, draw.options().get(random.nextInt(draw.options().size())));
+                } else {
+                    // Nos rounds seguintes o timeout pula o sorteio: o deck fica como está.
+                    skipped.add(player);
+                }
             }
         });
         Set<UUID> selected;
@@ -196,11 +203,18 @@ public class RoundSkillDrawService implements RoundSkillDraft {
                 Set<UUID> changed = new HashSet<>();
                 if (!pending(current, round, deadline)) return new GameStateManager.Update<>(current, changed);
                 for (var choice : automatic.entrySet()) {
-                    if (current.getRoundDraw().players().get(choice.getKey()).selected() == null) {
+                    var draw = current.getRoundDraw().players().get(choice.getKey());
+                    if (draw.selected() == null && !draw.skipped()) {
                         current.setRoundDraw(current.getRoundDraw().select(choice.getKey(), choice.getValue()));
-                        applyDeck(current, choice.getKey(), round, choice.getValue(), replacements.get(choice.getKey()));
+                        applyDeck(current, choice.getKey(), round, choice.getValue(), null);
                         current.recordChosenDrawSkill(choice.getKey(), choice.getValue());
                         changed.add(choice.getKey());
+                    }
+                }
+                for (UUID player : skipped) {
+                    var draw = current.getRoundDraw().players().get(player);
+                    if (draw.selected() == null && !draw.skipped()) {
+                        current.setRoundDraw(current.getRoundDraw().skip(player));
                     }
                 }
                 return new GameStateManager.Update<>(current, Set.copyOf(changed));
@@ -239,16 +253,6 @@ public class RoundSkillDrawService implements RoundSkillDraft {
         if (current == null) current = state.getInitialSkillsByPlayer().get(playerId);
         if (current == null) throw new IllegalStateException("Deck do jogador indisponível.");
         return new HashSet<>(current);
-    }
-
-    /** A habilidade sorteada no round anterior: é ela que sai, e as duas iniciais ficam [RN-DRAFT-02]. */
-    private String replacement(GameState state, UUID playerId, int round) {
-        if (round == 1) return null;
-        Set<String> drawn = currentDeck(state, playerId);
-        if (drawn.size() != 3) throw new IllegalStateException("O deck atual deve conter três habilidades.");
-        drawn.removeAll(state.getInitialSkillsByPlayer().getOrDefault(playerId, Set.of()));
-        if (drawn.size() != 1) throw new IllegalStateException("O deck atual não possui uma habilidade sorteada.");
-        return drawn.iterator().next();
     }
 
     private void applyDeck(GameState state, UUID playerId, int round, String selected, String replaced) {

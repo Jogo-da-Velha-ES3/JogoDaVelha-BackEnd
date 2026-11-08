@@ -299,7 +299,7 @@ public class RoomSnapshotService {
     private DrawOptions drawOptions(GameState state, UUID viewerId) {
         if (state == null || state.getPhase() != GamePhase.DRAFT || state.getRoundDraw() == null) return null;
         var player = state.getRoundDraw().players().get(viewerId);
-        return player == null || player.selected() != null ? null
+        return player == null || player.selected() != null || player.skipped() ? null
                 : new DrawOptions(player.options(), state.getRoundDraw().deadline());
     }
 
