@@ -4,7 +4,7 @@ FROM maven:3.9.16-eclipse-temurin-25-alpine AS build
 WORKDIR /app
 
 # Copy pom.xml first to leverage Docker cache
-COPY pom.xml ./
+COPY pom.xml ./ lombok.config
 
 # Download dependencies
 RUN mvn dependency:go-offline -B
