@@ -191,6 +191,35 @@ class RoomServiceTest {
         verify(events, never()).publishEvent(any(Object.class));
     }
 
+    @Test
+    void leavingDuringPreparationClosesTheRoomWithoutAMatch() {
+        room.join(guest);
+        room.setId(UUID.randomUUID());
+        when(rooms.findById(room.getId())).thenReturn(Optional.of(room));
+        when(games.findByRoomIdAndStatus(room.getId(), com.jogodavelha.game.GameStatus.IN_PROGRESS))
+                .thenReturn(Optional.empty());
+        when(rooms.saveAndFlush(room)).thenReturn(room);
+
+        service.closeBeforeMatch(room.getId(), guest.getId());
+
+        assertEquals(RoomStatus.CLOSED, room.getStatus());
+        verify(events).publishEvent(new RoomClosedEvent("0042", room.getId(), guest.getId(),
+                RoomClosedEvent.PLAYER_LEFT));
+    }
+
+    @Test
+    void leavingBeforeTheMatchIsRejectedOnceTheMatchStarted() {
+        room.join(guest);
+        room.setId(UUID.randomUUID());
+        when(rooms.findById(room.getId())).thenReturn(Optional.of(room));
+        when(games.findByRoomIdAndStatus(room.getId(), com.jogodavelha.game.GameStatus.IN_PROGRESS))
+                .thenReturn(Optional.of(mock(Game.class)));
+
+        assertThrows(RoomAlreadyStartedException.class, () -> service.closeBeforeMatch(room.getId(), guest.getId()));
+        assertEquals(RoomStatus.IN_GAME, room.getStatus());
+        verify(events, never()).publishEvent(any());
+    }
+
     private static User player(String name) {
         User user = new User(name, "hash", name + "@example.test");
         user.setId(UUID.randomUUID());

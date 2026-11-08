@@ -39,6 +39,8 @@ public class GameState {
     private int player1ConsecutiveTimeouts;
     private int player2ConsecutiveTimeouts;
     private long version;
+    @Builder.Default
+    private List<Integer> winningLine = new ArrayList<>();
 
     public static final int BOARD_SIZE = 16;
     public static final String EMPTY_BOARD = "----------------";
@@ -161,6 +163,7 @@ public class GameState {
         }
         UUID opponent = getOpponentId(firstPlayerId);
         board = EMPTY_BOARD;
+        winningLine = new ArrayList<>();
         clearEffects(); // Efeitos não atravessam rounds
         if (usedSkillsByPlayer != null) usedSkillsByPlayer.clear();
         // O deck evolui entre rounds; apenas o consumo das habilidades reinicia.
@@ -280,6 +283,10 @@ public class GameState {
         forceFieldTurns.clear();
         silencedTurns.clear();
         hourglassTurns.clear();
+    }
+
+    public void setWinningLine(Collection<Integer> positions) {
+        winningLine = positions == null ? new ArrayList<>() : new ArrayList<>(positions);
     }
 
     /* Duração do turno de quem vai jogar, considerando a AMPULHETA */

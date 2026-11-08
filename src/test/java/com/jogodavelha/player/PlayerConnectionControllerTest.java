@@ -64,7 +64,7 @@ class PlayerConnectionControllerTest {
         controller.connect("0042", () -> p1.getId().toString(), headers);
 
         verify(playerService).markConnected("0042", p1.getId());
-        verify(snapshots).publish("0042");
+        verify(snapshots).publishTo("0042", p1.getId());
         verify(presenceEvents, never()).reconnected(any());
         assertEquals(new PlayerSessionRegistry.Entry("0042", p1.getId(), "P1", p2.getId()),
                 sessions.activeEntries().getFirst());
@@ -80,7 +80,7 @@ class PlayerConnectionControllerTest {
 
         verify(presenceEvents).reconnected(entry);
         verify(playerService).markConnected("0042", p2.getId());
-        verify(snapshots).publish("0042");
+        verify(snapshots).publishTo("0042", p2.getId());
         assertEquals(entry, sessions.activeEntries().getFirst());
     }
 

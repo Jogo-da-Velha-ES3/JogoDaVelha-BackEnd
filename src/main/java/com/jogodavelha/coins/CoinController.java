@@ -55,18 +55,18 @@ public class CoinController {
     }
 
     @PostMapping("/packages/{packageId}/purchase")
-    public ResponseEntity<Void> purchase(
+    public ResponseEntity<BalanceResponse> purchase(
             Authentication authentication,
             @PathVariable UUID packageId
     ) {
 
         UUID userId = (UUID) authentication.getPrincipal();
 
-        coinPurchaseService.purchase(
+        Integer coinsBalance = coinPurchaseService.purchase(
                 userId,
                 packageId
         );
 
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(new BalanceResponse(coinsBalance));
     }
 }

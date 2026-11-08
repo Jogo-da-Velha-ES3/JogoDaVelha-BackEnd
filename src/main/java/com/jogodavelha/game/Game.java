@@ -93,6 +93,12 @@ public class Game {
     @Transient
     private RewardResult rewardResult;
 
+    @Column(name = "player1_reward_coins", nullable = false)
+    private int player1RewardCoins;
+
+    @Column(name = "player2_reward_coins", nullable = false)
+    private int player2RewardCoins;
+
     public Game(Room room, User player1) {
         if (room == null || room.getId() == null) {
             throw new IllegalArgumentException("Room não pode ser nula");
@@ -139,6 +145,17 @@ public class Game {
 
     public void setRewardResult(RewardResult rewardResult) {
         this.rewardResult = rewardResult;
+        if (rewardResult != null) {
+            this.player1RewardCoins = rewardResult.player1Reward();
+            this.player2RewardCoins = rewardResult.player2Reward();
+        }
+    }
+
+    public RewardResult getRewardResult() {
+        if (rewardResult != null) {
+            return rewardResult;
+        }
+        return rewardsGranted ? new RewardResult(player1RewardCoins, player2RewardCoins) : null;
     }
 
     /**

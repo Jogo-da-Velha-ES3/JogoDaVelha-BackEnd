@@ -61,8 +61,19 @@ class OffensiveEffectsTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"3, 4", "4, 3", "5, 10", "5, 15", "5, 5", "5, -1", "5, 16"})
-    void tornadoRejectsRowWrappingDiagonalsAndInvalidDestinations(int source, int destination) {
+    @ValueSource(ints = {0, 2, 8, 10})
+    void tornadoMovesToEachDiagonalNeighbor(int destination) {
+        GameState state = state("-X---O----------");
+
+        assertEquals(SkillResult.APPLIED,
+                engine.useSkill(state, "TORNADO", new SkillContext(p1, 5, destination)));
+
+        assertMovedTo(state, 5, destination);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"3, 4", "4, 3", "5, 15", "5, 5", "5, -1", "5, 16"})
+    void tornadoRejectsRowWrappingAndInvalidDestinations(int source, int destination) {
         char[] board = GameState.EMPTY_BOARD.toCharArray();
         board[source] = 'O';
         GameState state = state(new String(board));
@@ -110,9 +121,14 @@ class OffensiveEffectsTest {
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
     void tornadoWithoutAvailableNeighborReturnsNoValidTarget(boolean shielded) {
-        GameState state = state(shielded ? "X----O----------" : "XX--XOX--X------");
+        char[] board = GameState.EMPTY_BOARD.toCharArray();
+        board[5] = 'O';
+        for (int position : new int[]{0, 1, 2, 4, 6, 8, 9, 10}) {
+            if (!shielded) board[position] = 'X';
+        }
+        GameState state = state(new String(board));
         if (shielded) {
-            for (int position : new int[]{1, 4, 6, 9}) {
+            for (int position : new int[]{0, 1, 2, 4, 6, 8, 9, 10}) {
                 state.getShieldedPositions().put(position, new GameState.ShieldEffect(p2, 2));
             }
         }
@@ -178,7 +194,7 @@ class OffensiveEffectsTest {
 
         assertEquals('-', state.getBoard().charAt(5));
         assertEquals('O', state.getBoard().charAt(15));
-        assertEquals('X', state.getBoard().charAt(0));
+        assertEquals(1, state.getBoard().chars().filter(symbol -> symbol == 'X').count());
     }
 
     @Test
@@ -413,7 +429,6 @@ class OffensiveEffectsTest {
     private void assertMovedTo(GameState state, int source, int destination) {
         assertEquals('-', state.getBoard().charAt(source));
         assertEquals('O', state.getBoard().charAt(destination));
-        assertEquals('X', state.getBoard().charAt(0));
         assertEquals(1, state.getBoard().chars().filter(symbol -> symbol == 'O').count());
     }
 }

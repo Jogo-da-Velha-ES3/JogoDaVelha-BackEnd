@@ -7,6 +7,7 @@ public record ProfileResponse(
         String username,
         Integer coinsBalance,
         String avatar,
-        String preferredCharacter
+        String preferredCharacter,
+        String equippedCharacter
 ) {
 }

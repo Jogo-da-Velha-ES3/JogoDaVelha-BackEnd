@@ -270,21 +270,25 @@ class RoomSnapshotServiceTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void persistedForfeitRestoresOutcomeAndThirtyZeroCoinsWithoutTheTransientRewardResult(boolean hostLoses) throws Exception {
+    void persistedForfeitRestoresOutcomeAndThePersistedRewardResult(boolean hostLoses) throws Exception {
         var fixture = activeRoom(false);
         UUID gameId = UUID.randomUUID();
         var game = new Game(fixture.room(), fixture.host());
         game.setPlayer2(fixture.guest());
         setId(game, gameId);
         game.forfeit(hostLoses ? fixture.host() : fixture.guest());
+        game.setRewardResult(new com.jogodavelha.game.RewardResult(hostLoses ? 0 : 30,
+                hostLoses ? 30 : 0));
         when(games.findTopByRoomIdAndStatusOrderByFinishedAtDesc(fixture.room().getId(), GameStatus.FINISHED))
                 .thenReturn(Optional.of(game));
 
-        assertNull(snapshots.compose("0042", fixture.host().getId()).coins());
+        var unmarkedSnapshot = snapshots.compose("0042", fixture.host().getId());
+        assertEquals(Map.of(RoomSnapshotService.Slot.P1, hostLoses ? 0 : 30,
+                RoomSnapshotService.Slot.P2, hostLoses ? 30 : 0), unmarkedSnapshot.coins());
         game.markRewardsGranted();
         var result = snapshots.compose("0042", fixture.host().getId());
 
-        assertNull(game.getRewardResult());
+        assertNotNull(game.getRewardResult());
         assertEquals(RoomSnapshotService.RoomPhase.RESULT, result.phase());
         assertEquals("WO", result.outcome().kind());
         assertEquals(hostLoses ? RoomSnapshotService.Slot.P2 : RoomSnapshotService.Slot.P1, result.outcome().winner());
@@ -334,6 +338,52 @@ class RoomSnapshotServiceTest {
         assertNull(snapshot.outcome());
         assertEquals(deadline, snapshot.draft().deadline());
         assertNull(snapshot.rematch());
+    }
+
+    @Test
+    void completedDraftOfAQuickMatchDoesNotHideTheResult() throws Exception {
+        RoomFixture fixture = activeRoom(false);
+        Game finished = finishedGame(fixture);
+        var eligible = new DraftEligibilityProvider.EligibleItems(
+                List.of(UUID.randomUUID(), UUID.randomUUID()), List.of("BOMBA", "ESCUDO"));
+        // A partida terminou antes do prazo de 20s do próprio Draft (ex: desistência logo no início)
+        DraftState draft = new DraftState(fixture.room().getId(), "0042",
+                finished.getFinishedAt().toEpochMilli() + 10_000, 4,
+                DraftState.Player.initial(fixture.host().getId(), eligible),
+                DraftState.Player.initial(fixture.guest().getId(), eligible))
+                .autoComplete(List.of(0.1, 0.2, 0.3, 0.4, 0.5, 0.6));
+        var x = new com.jogodavelha.character.Character("X", com.jogodavelha.character.CharacterSymbol.X, 0);
+        x.setId(draft.player1().characterId());
+        var o = new com.jogodavelha.character.Character("O", com.jogodavelha.character.CharacterSymbol.O, 0);
+        o.setId(draft.player2().characterId());
+        when(characters.findAllById(any())).thenReturn(List.of(x, o));
+        when(games.findTopByRoomIdAndStatusOrderByFinishedAtDesc(fixture.room().getId(), GameStatus.FINISHED))
+                .thenReturn(Optional.of(finished));
+        when(drafts.find(fixture.room().getId())).thenReturn(Optional.of(draft));
+
+        var snapshot = snapshots.compose("0042", fixture.host().getId());
+
+        assertTrue(draft.completed());
+        assertEquals(RoomSnapshotService.RoomPhase.RESULT, snapshot.phase());
+        assertEquals(finished.getId(), snapshot.gameId());
+        assertNotNull(snapshot.outcome());
+    }
+
+    @Test
+    void roundOneBeforeTheDrawIsTheVersusScreen() throws Exception {
+        RoomFixture fixture = activeRoom(false);
+        UUID gameId = UUID.randomUUID();
+        Game game = new Game(fixture.room(), fixture.host());
+        game.setPlayer2(fixture.guest());
+        setId(game, gameId);
+        when(games.findByRoomIdAndStatus(fixture.room().getId(), GameStatus.IN_PROGRESS)).thenReturn(Optional.of(game));
+        GameState state = GameState.builder().gameId(gameId).board(GameState.EMPTY_BOARD)
+                .player1Id(fixture.host().getId()).player2Id(fixture.guest().getId())
+                .roundNumber(1).phase(GamePhase.DRAFT).build();
+        when(gameStates.find(gameId)).thenReturn(Optional.of(state));
+
+        assertEquals(RoomSnapshotService.RoomPhase.VERSUS,
+                snapshots.compose("0042", fixture.host().getId()).phase());
     }
 
     @Test

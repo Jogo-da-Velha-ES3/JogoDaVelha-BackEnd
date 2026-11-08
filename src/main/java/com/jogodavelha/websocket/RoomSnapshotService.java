@@ -15,7 +15,6 @@ import com.jogodavelha.game.logic.GamePhase;
 import com.jogodavelha.game.logic.GameState;
 import com.jogodavelha.game.logic.GameStateManager;
 import com.jogodavelha.game.service.PlayerService;
-import com.jogodavelha.game.service.GameService;
 import com.jogodavelha.room.Room;
 import com.jogodavelha.room.RoomNotFoundException;
 import com.jogodavelha.room.RoomPlayerService;
@@ -101,6 +100,20 @@ public class RoomSnapshotService {
                 new SnapshotEnvelope("ROOM_SNAPSHOT", snapshot(room, requesterSlot, true, state, serverTime), serverTime));
     }
 
+    public void publishTo(String code, UUID requesterId) {
+        if (code == null || !code.matches("[0-9]{4}")) {
+            throw new IllegalArgumentException("O código da sala deve conter quatro dígitos.");
+        }
+        if (requesterId == null) throw new AccessDeniedException("Identidade autenticada obrigatória.");
+        Room room = activeRoom(code);
+        Slot requesterSlot = slot(room, requesterId);
+        if (requesterSlot == null) throw new AccessDeniedException("Jogador não pertence à sala.");
+
+        long serverTime = System.currentTimeMillis();
+        State state = readState(room);
+        sendPrivate(room, requesterId, requesterSlot, state, serverTime);
+    }
+
     private RoomSnapshot compose(Room room, Slot mySlot, boolean includePrivate, long serverTime) {
         return snapshot(room, mySlot, includePrivate, readState(room), serverTime);
     }
@@ -135,7 +148,10 @@ public class RoomSnapshotService {
         Game active = games.findByRoomIdAndStatus(room.getId(), GameStatus.IN_PROGRESS).orElse(null);
         Game finished = games.findTopByRoomIdAndStatusOrderByFinishedAtDesc(room.getId(), GameStatus.FINISHED)
                 .orElse(null);
-        boolean preparingNewMatch = active == null && draft != null
+        // Só um Draft ainda aberto é a Preparação de uma revanche. O Draft concluído é o da partida
+        // que acabou (o estado fica no Redis): numa partida rápida, o prazo de 20s dele ainda vale
+        // depois do fim e escondia o resultado (fase DRAFT, sem outcome).
+        boolean preparingNewMatch = active == null && draft != null && !draft.completed()
                 && (finished == null || finished.getFinishedAt() == null
                 || draft.deadlineEpochMillis() > finished.getFinishedAt().toEpochMilli());
         Game game = active != null ? active : preparingNewMatch ? null : finished;
@@ -191,7 +207,7 @@ public class RoomSnapshotService {
         Slot turnSlot = gs == null || gs.getCurrentTurnPlayerId() == null ? null
                 : gs.getCurrentTurnPlayerId().equals(room.getPlayer1().getId()) ? Slot.P1 : Slot.P2;
         Turn turn = game.getStatus() == GameStatus.FINISHED || gs == null
-                || gs.getPhase() != GamePhase.PLAYING || turnSlot == null ? null
+                || gs.getPhase() != GamePhase.PLAYING || gs.getTurnDeadlineEpochMillis() <= 0 || turnSlot == null ? null
                 : new Turn(turnSlot, gs.getTurnDeadlineEpochMillis() - gs.getTurnDurationMillis(),
                 gs.getTurnDeadlineEpochMillis(), (int) (gs.getTurnDurationMillis() / 1000));
         return new MatchSnapshot(game.getCurrentRound(), game.isSuddenDeath(), turn,
@@ -200,11 +216,6 @@ public class RoomSnapshotService {
 
     private Map<Slot, Integer> creditedCoins(Game game) {
         RewardResult rewards = game.getRewardResult();
-        if (rewards == null && game.isRewardsGranted() && game.getEndReason() == GameEndReason.FORFEIT_TIMEOUT) {
-            boolean firstWins = game.getWinner().getId().equals(game.getPlayer1().getId());
-            return Map.of(Slot.P1, firstWins ? GameService.COINS_FORFEIT_WIN : 0,
-                    Slot.P2, firstWins ? 0 : GameService.COINS_FORFEIT_WIN);
-        }
         if (rewards == null) return null;
         return Map.of(Slot.P1, rewards.player1Reward(), Slot.P2, rewards.player2Reward());
     }
@@ -219,7 +230,7 @@ public class RoomSnapshotService {
         return Outcome.win(winner, score, game.getEndReason().name());
     }
 
-    private List<Cell> board(GameState state) {
+    public static List<Cell> boardFor(GameState state) {
         if (state == null || state.getBoard() == null) return emptyBoard();
         return IntStream.range(0, GameState.BOARD_SIZE).mapToObj(index -> {
             char mark = state.getBoard().charAt(index);
@@ -233,6 +244,10 @@ public class RoomSnapshotService {
             if (reinforced != null) effects.add(new CellEffect("REFORCO", reinforced));
             return new Cell(index, owner, List.copyOf(effects));
         }).toList();
+    }
+
+    private List<Cell> board(GameState state) {
+        return boardFor(state);
     }
 
     private static List<Cell> emptyBoard() {
@@ -253,7 +268,9 @@ public class RoomSnapshotService {
         GameState gameState = state.gameStateOptional().orElse(null);
         if (gameState != null) {
             return switch (gameState.getPhase()) {
-                case DRAFT -> gameState.getRoundDraw() != null ? RoomPhase.ROUND_DRAW : RoomPhase.DRAFT;
+                // Sem sorteio aberto no round 1, a partida está na tela de Confronto (VS).
+                case DRAFT -> gameState.getRoundDraw() != null ? RoomPhase.ROUND_DRAW
+                        : gameState.getRoundNumber() == 1 ? RoomPhase.VERSUS : RoomPhase.ROUND_DRAW;
                 case PLAYING -> RoomPhase.PLAYING;
                 case ROUND_FINISHED -> RoomPhase.ROUND_END;
                 case FINISHED -> RoomPhase.RESULT;
@@ -282,7 +299,7 @@ public class RoomSnapshotService {
     private DrawOptions drawOptions(GameState state, UUID viewerId) {
         if (state == null || state.getPhase() != GamePhase.DRAFT || state.getRoundDraw() == null) return null;
         var player = state.getRoundDraw().players().get(viewerId);
-        return player == null || player.selected() != null ? null
+        return player == null || player.selected() != null || player.skipped() ? null
                 : new DrawOptions(player.options(), state.getRoundDraw().deadline());
     }
 

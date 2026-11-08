@@ -118,8 +118,27 @@ public class GameService {
 
     @Transactional
     public Game forfeit(UUID gameId, User loser) {
+        if (loser == null || loser.getId() == null) {
+            throw new IllegalArgumentException("O perdedor deve ser um jogador da partida.");
+        }
+        return forfeit(gameId, loser.getId());
+    }
+
+    @Transactional
+    public Game forfeit(UUID gameId, UUID loserId) {
         Game game = gameRepository.findByIdForUpdate(gameId)
                 .orElseThrow(() -> new GameNotFoundException(gameId));
+        if (game.getStatus() == GameStatus.FINISHED) {
+            throw new IllegalStateException("A partida já foi encerrada.");
+        }
+        User loser;
+        if (game.getPlayer1().getId().equals(loserId)) {
+            loser = game.getPlayer1();
+        } else if (game.getPlayer2() != null && game.getPlayer2().getId().equals(loserId)) {
+            loser = game.getPlayer2();
+        } else {
+            throw new IllegalArgumentException("O perdedor não pertence à partida.");
+        }
         game.forfeit(loser);
         if (game.getStatus() == GameStatus.FINISHED) {
             game.setRewardResult(grantRewards(game));

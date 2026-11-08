@@ -77,6 +77,28 @@ public class RoomService {
         return saved;
     }
 
+    /**
+     * Saída depois do MATCH FEITO e antes de a partida começar (Preparação): encerra a sala sem
+     * partida e sem Coins. Durante a partida, a saída é desistência (W.O.).
+     */
+    public void closeBeforeMatch(UUID roomId, UUID playerId) {
+        if (roomId == null) throw new IllegalArgumentException("Informe a identidade da sala.");
+        allocator.lockMembership();
+        Room room = rooms.findById(roomId).orElseThrow(
+                () -> new RoomNotFoundException("Sala não encontrada ou encerrada."));
+        boolean member = room.getPlayer1().getId().equals(playerId)
+                || room.getPlayer2() != null && room.getPlayer2().getId().equals(playerId);
+        if (!member) throw new IllegalArgumentException("Jogador não pertence à sala.");
+        if (room.getStatus() == RoomStatus.CLOSED) return;
+        if (room.getStatus() != RoomStatus.IN_GAME
+                || games.findByRoomIdAndStatus(room.getId(), GameStatus.IN_PROGRESS).isPresent()) {
+            throw new RoomAlreadyStartedException("A partida já começou; a saída é tratada como W.O.");
+        }
+        room.close();
+        Room saved = rooms.saveAndFlush(room);
+        events.publishEvent(new RoomClosedEvent(saved.getCode(), saved.getId(), playerId, RoomClosedEvent.PLAYER_LEFT));
+    }
+
     public void closeAfterMatch(UUID roomId, UUID playerId, String reason) {
         if (roomId == null) throw new IllegalArgumentException("Informe a identidade da sala.");
         if (reason == null || reason.isBlank()) throw new IllegalArgumentException("Informe o motivo do encerramento.");

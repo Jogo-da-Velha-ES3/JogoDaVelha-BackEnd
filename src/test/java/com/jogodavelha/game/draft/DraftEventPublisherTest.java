@@ -55,7 +55,8 @@ class DraftEventPublisherTest {
         assertEquals("O", json.path("payload").path("characters").path("P2").asText());
         assertTrue(json.path("payload").path("ready").path("P1").asBoolean());
         assertFalse(json.path("payload").path("ready").path("P2").asBoolean());
-        assertEquals(4, json.path("payload").size());
+        assertEquals(5, json.path("payload").size());
+        assertTrue(json.path("payload").has("version"));
         assertFalse(json.toString().contains("BOMBA"));
         assertFalse(json.toString().contains("eligible"));
         assertFalse(json.toString().contains(x.toString()));
@@ -71,8 +72,9 @@ class DraftEventPublisherTest {
         publisher.onDraftUpdated(DraftUpdated.from(state));
 
         verifyNoInteractions(characters);
-        verify(websocket).sendToTopic(eq("/topic/rooms/0042"), argThat(message ->
-                ((DraftEventPublisher.Message) message).payload().characters().isEmpty()));
+        verify(websocket).sendToTopic(eq("/topic/rooms/0042"), argThat((Object message) ->
+                message instanceof DraftEventPublisher.Message draft
+                        && draft.payload().characters().isEmpty()));
     }
 
     @Test
@@ -92,6 +94,21 @@ class DraftEventPublisherTest {
         verify(websocket).sendToTopic(eq("/topic/rooms/0042"), captor.capture());
         var message = (DraftEventPublisher.Message) captor.getValue();
         assertEquals(java.util.Map.of("P1", "ana"), message.payload().nicknames());
+    }
+
+    @Test
+    void draftUpdateCarriesTheStateVersionSoLateMessagesCanBeDiscarded() {
+        publisher.onDraftUpdated(new DraftUpdated(UUID.randomUUID(), "0042", 1L, 7L, List.of(
+                new DraftUpdated.PlayerStatus(UUID.randomUUID(), null, DraftState.Stage.CHARACTER, false),
+                new DraftUpdated.PlayerStatus(UUID.randomUUID(), null, DraftState.Stage.CHARACTER, false))));
+
+        var captor = org.mockito.ArgumentCaptor.forClass(Object.class);
+        verify(websocket, atLeastOnce()).sendToTopic(eq("/topic/rooms/0042"), captor.capture());
+        var message = captor.getAllValues().stream()
+                .filter(DraftEventPublisher.Message.class::isInstance)
+                .map(DraftEventPublisher.Message.class::cast)
+                .findFirst().orElseThrow();
+        assertEquals(7L, message.payload().version());
     }
 
     @Test

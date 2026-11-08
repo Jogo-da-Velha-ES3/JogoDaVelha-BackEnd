@@ -74,6 +74,18 @@ class DraftServiceTest {
     }
 
     @Test
+    void closedRoomCancelsTheTimerAndDiscardsTheOpenDraft() {
+        when(redis.delete(key)).thenAnswer(ignored -> { stored.set(null); return true; });
+        service.start(room, "0042", p1, p2);
+
+        service.onRoomClosed(new com.jogodavelha.room.RoomClosedEvent("0042", room, p2,
+                com.jogodavelha.room.RoomClosedEvent.PLAYER_LEFT));
+
+        verify(timer).cancel(false);
+        assertNull(stored.get());
+    }
+
+    @Test
     void failedProgressListenerDoesNotSuppressCompletion() {
         ApplicationEventPublisher failingEvents = mock(ApplicationEventPublisher.class);
         doThrow(new IllegalStateException("Falha ao notificar clientes"))

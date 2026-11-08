@@ -75,6 +75,22 @@ class TurnServiceTest {
     }
 
     @Test
+    void timeoutPublishesCounterThenRelevantBoardUpdateAndTurnTransition() {
+        state.getFrozenPositions().put(7, 1);
+        long deadline = state.getTurnDeadlineEpochMillis();
+        nowMillis = deadline;
+
+        service.expire(gameId, deadline);
+
+        assertEquals(1, state.getConsecutiveTimeouts(p1));
+        assertFalse(state.getFrozenPositions().containsKey(7));
+        org.mockito.InOrder order = inOrder(events);
+        order.verify(events).publishEvent(new TurnTimedOutEvent(gameId, p1, 1));
+        order.verify(events).publishEvent(any(GameplayBoardUpdatedEvent.class));
+        order.verify(events).publishEvent(any(TurnChangedEvent.class));
+    }
+
+    @Test
     void expireBeforeDeadlineChangesNothing() {
         long deadline = state.getTurnDeadlineEpochMillis();
         nowMillis = deadline - 100;

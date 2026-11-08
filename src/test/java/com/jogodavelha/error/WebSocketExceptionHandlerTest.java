@@ -3,6 +3,7 @@ package com.jogodavelha.error;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jogodavelha.game.logic.SkillValidationException;
 import com.jogodavelha.game.logic.MoveValidationException;
+import com.jogodavelha.room.RoomNotFoundException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -43,26 +44,38 @@ class WebSocketExceptionHandlerTest {
     }
 
     @Test
-    void keepsExistingGenericErrorMappings() throws Exception {
-        assertEquals("BAD_REQUEST", ((ApiError) resolver.resolveMethod(new IllegalArgumentException())
+    void mapsGenericBusinessErrorsToExistingCatalogCodes() throws Exception {
+        assertEquals("ROOM_BAD_REQUEST", ((ApiError) resolver.resolveMethod(new IllegalArgumentException())
                 .invoke(handler, new IllegalArgumentException("inválido"), "/app/test")).code());
-        assertEquals("CONFLICT", ((ApiError) resolver.resolveMethod(new IllegalStateException())
+        assertEquals("ROOM_CONFLICT", ((ApiError) resolver.resolveMethod(new IllegalStateException())
                 .invoke(handler, new IllegalStateException("conflito"), "/app/test")).code());
         var unexpected = (ApiError) resolver.resolveMethod(new Exception())
                 .invoke(handler, new Exception("detalhe interno"), "/app/test");
-        assertEquals("INTERNAL_SERVER_ERROR", unexpected.code());
+        assertEquals("INTERNAL_ERROR", unexpected.code());
         assertEquals("Erro interno do servidor", unexpected.message());
     }
 
     @Test
-    void mapsTurnValidationToExistingBadRequestCode() throws Exception {
+    void preservesSpecificTurnValidationCode() throws Exception {
         var exception = new MoveValidationException(MoveValidationException.Code.TURN_EXPIRED, "Prazo expirado");
         var method = resolver.resolveMethod(exception);
         assertNotNull(method);
         assertEquals("handleMoveValidation", method.getName());
         var response = (ApiError) method.invoke(handler, exception, "/app/game/action");
-        assertEquals("BAD_REQUEST", response.code());
+        assertEquals(MoveValidationException.Code.TURN_EXPIRED.name(), response.code());
         assertEquals(400, response.status());
         assertEquals("Prazo expirado", response.message());
+    }
+
+    @Test
+    void mapsMissingRoomToTheRestCatalogCodeWithoutLeakingDetails() throws Exception {
+        var exception = new RoomNotFoundException("Sala encerrada");
+        var method = resolver.resolveMethod(exception);
+        assertNotNull(method);
+        assertEquals("handleRoomNotFound", method.getName());
+        var response = (ApiError) method.invoke(handler, exception, "/app/rooms/0042/move");
+        assertEquals("ROOM_NOT_FOUND", response.code());
+        assertEquals(404, response.status());
+        assertEquals("Sala não encontrada ou encerrada.", response.message());
     }
 }

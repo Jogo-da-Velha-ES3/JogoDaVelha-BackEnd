@@ -2,6 +2,7 @@ package com.jogodavelha.profile;
 
 import com.jogodavelha.auth.User;
 import com.jogodavelha.avatar.AvatarService;
+import com.jogodavelha.avatar.UserEquipmentRepository;
 import com.jogodavelha.auth.UserRepository;
 import com.jogodavelha.character.Character;
 import com.jogodavelha.character.CharacterRepository;
@@ -29,6 +30,7 @@ public class ProfileService {
     private final UserStatsRepository userStatsRepository;
     private final CharacterRepository characterRepository;
     private final AvatarService avatars;
+    private final UserEquipmentRepository equipment;
 
     public ProfileResponse getProfile(UUID userId) {
 
@@ -37,12 +39,17 @@ public class ProfileService {
                         new IllegalStateException("Usuário não encontrado"));
 
         String favoriteCharacter = getFavoriteCharacter(userId);
+        String equippedCharacter = equipment.findById(userId)
+                .map(item -> item.getCharacterId() == null ? null : characterRepository.findById(item.getCharacterId())
+                        .map(character -> character.getSymbol().name()).orElse(null))
+                .orElse(null);
 
         return new ProfileResponse(
                 user.getUsername(),
                 user.getCoinsBalance(),
                 avatars.equippedCode(userId),
-                favoriteCharacter
+                favoriteCharacter,
+                equippedCharacter
         );
     }
 

@@ -140,6 +140,10 @@ class RoundSkillDrawWebSocketTest {
         var publicEvents = subscribe(first, "/topic/rooms/0042", P1);
         draws.beginRound(GAME, 2, P1, P2);
 
+        var firstDeck = receive(own);
+        var secondDeck = receive(opponent);
+        assertEquals("DECK_UPDATE", firstDeck.path("type").asText());
+        assertEquals("DECK_UPDATE", secondDeck.path("type").asText());
         var firstOptions = receive(own);
         var secondOptions = receive(opponent);
         assertEquals("DRAW_OPTIONS", firstOptions.path("type").asText());

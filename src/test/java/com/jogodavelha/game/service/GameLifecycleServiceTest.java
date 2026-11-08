@@ -70,6 +70,8 @@ class GameLifecycleServiceTest {
     @Mock private RoomSnapshotService snapshots;
     @Mock private ApplicationEventPublisher applicationEvents;
     @Mock private RoundSkillDraft roundSkillDraft;
+    @Mock private Clock clock;
+    @Mock private TaskScheduler scheduler;
 
     private GameLifecycleService lifecycle;
     private User player1;
@@ -79,11 +81,26 @@ class GameLifecycleServiceTest {
     private UUID character2Id;
     private Game game;
     private final AtomicReference<GameState> redisState = new AtomicReference<>();
+    /** Tarefas agendadas no scheduler falso; {@link #runPauses()} roda as que não foram canceladas. */
+    private final List<Scheduled> scheduled = new java.util.ArrayList<>();
+
+    private record Scheduled(Runnable task, Instant at, ScheduledFuture<?> future) { }
 
     @BeforeEach
     void setUp() throws Exception {
+        lenient().when(clock.millis()).thenReturn(10_000L);
+        lenient().when(scheduler.schedule(any(Runnable.class), any(Instant.class))).thenAnswer(invocation -> {
+            ScheduledFuture<?> future = mock(ScheduledFuture.class);
+            scheduled.add(new Scheduled(invocation.getArgument(0), invocation.getArgument(1), future));
+            return future;
+        });
+        // Como o Spring: o fim de uma pausa volta ao serviço pelo listener transacional.
+        lenient().doAnswer(invocation -> {
+            lifecycle.onPauseElapsed(invocation.getArgument(0));
+            return null;
+        }).when(applicationEvents).publishEvent(any(LifecyclePauseElapsed.class));
         lifecycle = new GameLifecycleService(games, gameRepository, rooms, states, turns, websocket, skillDraft,
-                applicationEvents);
+                applicationEvents, clock, scheduler);
         player1 = new User("p1", "pass", "p1@test.com");
         player1.setId(UUID.randomUUID());
         player2 = new User("p2", "pass", "p2@test.com");
@@ -153,14 +170,31 @@ class GameLifecycleServiceTest {
         verify(games).startGame(room, character1Id, character2Id);
         verify(states).create(eq(game.getId()), eq(player1.getId()), eq(player2.getId()),
                 eq(GameState.DEFAULT_TURN_DURATION_MILLIS));
+        // Tela de Confronto: o round 1 (e o sorteio) só abre depois da pausa do VS
+        verify(roundSkillDraft, never()).beginRound(any(), anyInt(), any(), any());
+        verify(websocket, times(1)).sendToTopic(eq("/topic/rooms/4242"), any());
+        assertEquals(Instant.ofEpochMilli(13_000), scheduled.getFirst().at());
+        runPauses();
         verify(roundSkillDraft).beginRound(eq(game.getId()), eq(1), eq(player1.getId()), eq(player2.getId()));
-        ArgumentCaptor<MatchLifecycleEvent> event = ArgumentCaptor.forClass(MatchLifecycleEvent.class);
-        verify(websocket).sendToTopic(eq("/topic/rooms/4242"), event.capture());
-        assertEquals("PHASE_CHANGE", event.getValue().type());
-        assertEquals("PLAYING", event.getValue().payload().get("phase"));
-        assertEquals(1, event.getValue().payload().get("round"));
-        verify(turns).schedule(eq(game.getId()), anyLong());
+        ArgumentCaptor<MatchLifecycleEvent> events = ArgumentCaptor.forClass(MatchLifecycleEvent.class);
+        verify(websocket, times(3)).sendToTopic(eq("/topic/rooms/4242"), events.capture());
+        assertEquals(List.of("PHASE_CHANGE", "ROUND_START", "PHASE_CHANGE"),
+                events.getAllValues().stream().map(MatchLifecycleEvent::type).toList());
+        assertEquals("VERSUS", events.getAllValues().getFirst().payload().get("phase"));
+        assertEquals("PLAYING", events.getAllValues().getLast().payload().get("phase"));
+        assertEquals(1, events.getAllValues().getLast().payload().get("round"));
+        verify(turns, never()).schedule(any(), anyLong());
+        assertEquals(0, redisState.get().getTurnDeadlineEpochMillis());
+        Scheduled presentation = scheduled.getLast();
+        assertEquals(Instant.ofEpochMilli(12_500), presentation.at());
         assertEquals(GamePhase.PLAYING, redisState.get().getPhase());
+
+        when(clock.millis()).thenReturn(12_500L);
+        presentation.task().run();
+        presentation.task().run();
+        ArgumentCaptor<GameState> firstTurn = ArgumentCaptor.forClass(GameState.class);
+        verify(turns, times(1)).publishAndSchedule(firstTurn.capture(), eq(Optional.empty()));
+        assertEquals(22_500L, firstTurn.getValue().getTurnDeadlineEpochMillis());
     }
 
     @Test
@@ -183,11 +217,19 @@ class GameLifecycleServiceTest {
         when(gameRepository.findById(game.getId())).thenReturn(Optional.of(game));
 
         lifecycle.onDraftCompleted(draftEvent(false));
+        runPauses();
 
         assertEquals(GamePhase.DRAFT, redisState.get().getPhase());
         verify(turns, never()).schedule(any(), anyLong());
+        ArgumentCaptor<MatchLifecycleEvent> openingEvents = ArgumentCaptor.forClass(MatchLifecycleEvent.class);
+        verify(websocket, times(3)).sendToTopic(eq("/topic/rooms/4242"), openingEvents.capture());
+        assertEquals(List.of("PHASE_CHANGE", "ROUND_START", "PHASE_CHANGE"),
+                openingEvents.getAllValues().stream().map(MatchLifecycleEvent::type).toList());
+        assertEquals("VERSUS", openingEvents.getAllValues().getFirst().payload().get("phase"));
+        assertEquals(1, openingEvents.getAllValues().get(1).payload().get("round"));
+        assertEquals("ROUND_DRAW", openingEvents.getAllValues().getLast().payload().get("phase"));
         lifecycle = new GameLifecycleService(games, gameRepository, rooms, states, turns, websocket, skillDraft,
-                applicationEvents);
+                applicationEvents, clock, this.scheduler);
         var restarted = new RoundSkillDrawService(states, catalog, rooms, gameRepository, clock,
                 scheduler, websocket, snapshots,
                 event -> lifecycle.onRoundDrawCompleted((RoundDrawCompleted) event), new Random(99));
@@ -200,24 +242,25 @@ class GameLifecycleServiceTest {
         assertEquals(3, redisState.get().getRoundSkillDecks().get(player2.getId()).size());
         assertEquals(0, redisState.get().getConsecutiveTimeouts(player1.getId()));
         assertEquals(0, redisState.get().getConsecutiveTimeouts(player2.getId()));
-        verify(turns).schedule(eq(game.getId()), anyLong());
+        verify(turns, never()).schedule(any(), anyLong());
         restarted.expire(game.getId(), 1, 9_000);
-        verify(turns, times(1)).schedule(eq(game.getId()), anyLong());
+        verify(turns, never()).schedule(any(), anyLong());
 
         when(games.applyRoundResult(game.getId(), 1, RoundResult.PLAYER1_WIN)).thenAnswer(ignored -> {
             game.registerRoundResult(RoundResult.PLAYER1_WIN);
             return new RoundUpdate(game, true);
         });
         lifecycle.finishRound(game.getId(), 1, RoundResult.PLAYER1_WIN);
+        runPauses();
         assertEquals(GamePhase.DRAFT, redisState.get().getPhase());
         assertEquals(3, redisState.get().getRoundSkillDecks().get(player1.getId()).size());
         assertEquals(3, redisState.get().getRoundSkillDecks().get(player2.getId()).size());
-        verify(turns, times(1)).schedule(eq(game.getId()), anyLong());
+        verify(turns, never()).schedule(any(), anyLong());
         now.set(17_000);
         restarted.expire(game.getId(), 2, 17_000);
         assertEquals(GamePhase.PLAYING, redisState.get().getPhase());
         assertEquals(3, redisState.get().getRoundSkillDecks().get(player1.getId()).size());
-        verify(turns, times(2)).schedule(eq(game.getId()), anyLong());
+        verify(turns, never()).schedule(any(), anyLong());
     }
 
     @Test
@@ -227,9 +270,10 @@ class GameLifecycleServiceTest {
         when(gameRepository.findById(game.getId())).thenReturn(Optional.of(game));
 
         lifecycle.onDraftCompleted(draftEvent(true));
+        runPauses();
 
         verify(games).startGame(room, character1Id, character2Id);
-        verify(turns).schedule(eq(game.getId()), anyLong());
+        verify(turns, never()).schedule(any(), anyLong());
     }
 
     @Test
@@ -274,13 +318,14 @@ class GameLifecycleServiceTest {
         when(rooms.findById(room.getId())).thenReturn(Optional.of(room));
         when(games.startGame(room, character1Id, character2Id)).thenReturn(game);
         when(gameRepository.findById(game.getId())).thenReturn(Optional.of(game));
-        doNothing().when(roundSkillDraft).beginRound(any(), anyInt(), any(), any());
 
+        // A pausa do VS não roda aqui: o sorteio não se resolve sozinho e o teste o encerra duas vezes
         lifecycle.onDraftCompleted(draftEvent(false));
         lifecycle.onRoundDrawCompleted(new RoundDrawCompleted(game.getId(), 1));
         lifecycle.onRoundDrawCompleted(new RoundDrawCompleted(game.getId(), 1));
 
-        verify(turns, times(1)).schedule(eq(game.getId()), anyLong());
+        verify(turns, never()).schedule(any(), anyLong());
+        verify(scheduler).schedule(any(Runnable.class), eq(Instant.ofEpochMilli(12_500)));
     }
 
     @Test
@@ -299,6 +344,7 @@ class GameLifecycleServiceTest {
         });
 
         lifecycle.finishRound(game.getId(), 1, RoundResult.PLAYER1_WIN);
+        runPauses();
 
         assertEquals(2, game.getCurrentRound());
         assertEquals(GamePhase.PLAYING, redisState.get().getPhase());
@@ -307,6 +353,7 @@ class GameLifecycleServiceTest {
         assertEquals(player2.getId(), redisState.get().getCurrentTurnPlayerId());
 
         lifecycle.finishRound(game.getId(), 2, RoundResult.PLAYER1_WIN);
+        runPauses();
 
         assertEquals(GameStatus.FINISHED, game.getStatus());
         assertNull(redisState.get());
@@ -320,15 +367,18 @@ class GameLifecycleServiceTest {
                 .filter(e -> "MATCH_END".equals(e.type()))
                 .findFirst()
                 .orElseThrow();
-        assertEquals(game.getId(), matchEnd.payload().get("gameId"));
-        assertEquals(new Score(2, 0), matchEnd.payload().get("score"));
-        assertEquals(player1.getId().toString(), matchEnd.payload().get("winnerId"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> outcome = (Map<String, Object>) matchEnd.payload().get("outcome");
+        assertEquals("WIN", outcome.get("kind"));
+        assertEquals("P1", outcome.get("winner"));
+        assertEquals(List.of(2, 0), outcome.get("score"));
         assertEquals(false, matchEnd.payload().get("forfeit"));
         assertEquals(GameEndReason.NORMAL.name(), matchEnd.payload().get("reason"));
         @SuppressWarnings("unchecked")
-        Map<String, Integer> coins = (Map<String, Integer>) matchEnd.payload().get("coinsCredited");
-        assertEquals(GameService.COINS_WIN, coins.get(player1.getId().toString()));
-        assertEquals(GameService.COINS_LOSS, coins.get(player2.getId().toString()));
+        Map<String, Integer> coins = (Map<String, Integer>) matchEnd.payload().get("coins");
+        assertEquals(GameService.COINS_WIN, coins.get("P1"));
+        assertEquals(GameService.COINS_LOSS, coins.get("P2"));
+        assertFalse(matchEnd.payload().containsKey("winnerId"));
         assertTrue(matchEnd.serverTime() > 0);
     }
 
@@ -347,7 +397,9 @@ class GameLifecycleServiceTest {
         });
 
         lifecycle.finishRound(game.getId(), 1, RoundResult.PLAYER1_WIN);
+        runPauses();
         lifecycle.finishRound(game.getId(), 2, RoundResult.PLAYER2_WIN);
+        runPauses();
 
         assertEquals(3, game.getCurrentRound());
         assertTrue(game.isSuddenDeath());
@@ -376,8 +428,80 @@ class GameLifecycleServiceTest {
                 .filter(e -> "ROUND_END".equals(e.type()))
                 .findFirst()
                 .orElseThrow();
-        assertEquals("DRAW", roundEnd.payload().get("result"));
         assertEquals(1, roundEnd.payload().get("round"));
+        assertNull(roundEnd.payload().get("winner"));
+        assertFalse(roundEnd.payload().containsKey("winningLine"));
+        assertEquals(Map.of("P1", 0, "P2", 0), roundEnd.payload().get("score"));
+    }
+
+    @Test
+    void victoryRoundEndPublishesTheWinningLineAndUpdatedSlotScore() {
+        when(gameRepository.findById(game.getId())).thenReturn(Optional.of(game));
+        seedPlayingState(1, false);
+        redisState.get().setWinningLine(List.of(0, 5, 10, 15));
+        when(games.applyRoundResult(game.getId(), 1, RoundResult.PLAYER1_WIN)).thenAnswer(invocation -> {
+            game.registerRoundResult(RoundResult.PLAYER1_WIN);
+            return new RoundUpdate(game, true);
+        });
+
+        lifecycle.finishRound(game.getId(), 1, RoundResult.PLAYER1_WIN);
+
+        ArgumentCaptor<MatchLifecycleEvent> event = ArgumentCaptor.forClass(MatchLifecycleEvent.class);
+        verify(websocket, atLeastOnce()).sendToTopic(eq("/topic/rooms/4242"), event.capture());
+        MatchLifecycleEvent roundEnd = event.getAllValues().stream()
+                .filter(value -> "ROUND_END".equals(value.type())).findFirst().orElseThrow();
+        assertEquals("P1", roundEnd.payload().get("winner"));
+        assertEquals(List.of(0, 5, 10, 15), roundEnd.payload().get("winningLine"));
+        assertEquals(Map.of("P1", 1, "P2", 0), roundEnd.payload().get("score"));
+    }
+
+    @Test
+    void playerTwoVictoryAndAbsoluteDrawUseSlotBasedMatchResults() throws Exception {
+        game.registerRoundResult(RoundResult.PLAYER2_WIN);
+        when(gameRepository.findById(game.getId())).thenReturn(Optional.of(game));
+        seedPlayingState(2, false);
+        when(games.applyRoundResult(game.getId(), 2, RoundResult.PLAYER2_WIN)).thenAnswer(invocation -> {
+            game.registerRoundResult(RoundResult.PLAYER2_WIN);
+            game.setRewardResult(new RewardResult(GameService.COINS_LOSS, GameService.COINS_WIN));
+            return new RoundUpdate(game, true);
+        });
+
+        lifecycle.finishRound(game.getId(), 2, RoundResult.PLAYER2_WIN);
+        runPauses();
+
+        ArgumentCaptor<MatchLifecycleEvent> events = ArgumentCaptor.forClass(MatchLifecycleEvent.class);
+        verify(websocket, atLeastOnce()).sendToTopic(eq("/topic/rooms/4242"), events.capture());
+        MatchLifecycleEvent matchEnd = events.getAllValues().stream()
+                .filter(value -> "MATCH_END".equals(value.type())).findFirst().orElseThrow();
+        assertEquals(Map.of("kind", "WIN", "winner", "P2", "score", List.of(0, 2)),
+                matchEnd.payload().get("outcome"));
+        assertEquals(Map.of("P1", GameService.COINS_LOSS, "P2", GameService.COINS_WIN),
+                matchEnd.payload().get("coins"));
+
+        Game drawGame = new Game(room, player1);
+        drawGame.setPlayer2(player2);
+        setId(drawGame, UUID.randomUUID());
+        drawGame.registerRoundResult(RoundResult.DRAW);
+        drawGame.registerRoundResult(RoundResult.DRAW);
+        when(gameRepository.findById(drawGame.getId())).thenReturn(Optional.of(drawGame));
+        redisState.set(GameState.createInitial(drawGame.getId(), player1.getId(), player2.getId(),
+                GameState.DEFAULT_TURN_DURATION_MILLIS, new SecureRandom()));
+        redisState.get().startRound(3, GameState.SUDDEN_DEATH_TURN_DURATION_MILLIS, 10_000);
+        when(games.applyRoundResult(drawGame.getId(), 3, RoundResult.DRAW)).thenAnswer(invocation -> {
+            drawGame.registerRoundResult(RoundResult.DRAW);
+            drawGame.setRewardResult(new RewardResult(GameService.COINS_DRAW, GameService.COINS_DRAW));
+            return new RoundUpdate(drawGame, true);
+        });
+
+        lifecycle.finishRound(drawGame.getId(), 3, RoundResult.DRAW);
+        runPauses();
+
+        verify(websocket, atLeastOnce()).sendToTopic(eq("/topic/rooms/4242"), events.capture());
+        MatchLifecycleEvent drawEnd = events.getAllValues().stream()
+                .filter(value -> "MATCH_END".equals(value.type())).reduce((first, second) -> second).orElseThrow();
+        assertEquals(Map.of("kind", "ABSOLUTE_DRAW"), drawEnd.payload().get("outcome"));
+        assertEquals(Map.of("P1", GameService.COINS_DRAW, "P2", GameService.COINS_DRAW),
+                drawEnd.payload().get("coins"));
     }
 
     @Test
@@ -407,16 +531,21 @@ class GameLifecycleServiceTest {
         publicationOrder.verify(applicationEvents).publishEvent(new MatchFinishedEvent(game.getId(), room.getCode()));
         publicationOrder.verify(states, times(2)).delete(game.getId());
         ArgumentCaptor<MatchLifecycleEvent> events = ArgumentCaptor.forClass(MatchLifecycleEvent.class);
-        verify(websocket, times(1)).sendToTopic(eq("/topic/rooms/4242"), events.capture());
-        MatchLifecycleEvent matchEnd = events.getValue();
+        verify(websocket, atLeastOnce()).sendToTopic(eq("/topic/rooms/4242"), events.capture());
+        MatchLifecycleEvent matchEnd = events.getAllValues().stream()
+                .filter(event -> "MATCH_END".equals(event.type())).findFirst().orElseThrow();
         assertEquals("MATCH_END", matchEnd.type());
         assertEquals(true, matchEnd.payload().get("forfeit"));
         assertEquals(GameEndReason.FORFEIT_TIMEOUT.name(), matchEnd.payload().get("reason"));
-        assertEquals(player2.getId().toString(), matchEnd.payload().get("winnerId"));
         @SuppressWarnings("unchecked")
-        Map<String, Integer> coins = (Map<String, Integer>) matchEnd.payload().get("coinsCredited");
-        assertEquals(GameService.COINS_FORFEIT_WIN, coins.get(player2.getId().toString()));
-        assertFalse(coins.containsKey(player1.getId().toString()));
+        Map<String, Object> outcome = (Map<String, Object>) matchEnd.payload().get("outcome");
+        assertEquals(Map.of("kind", "WO", "winner", "P2"), outcome);
+        @SuppressWarnings("unchecked")
+        Map<String, Integer> coins = (Map<String, Integer>) matchEnd.payload().get("coins");
+        assertEquals(GameService.COINS_FORFEIT_WIN, coins.get("P2"));
+        assertEquals(0, coins.get("P1"));
+        assertFalse(matchEnd.payload().toString().contains(player1.getId().toString()));
+        assertFalse(matchEnd.payload().toString().contains(player2.getId().toString()));
         assertEquals(GameEndReason.FORFEIT_TIMEOUT, game.getEndReason());
         assertEquals(RoomStatus.IN_GAME, room.getStatus());
         verify(applicationEvents, times(1)).publishEvent(new MatchFinishedEvent(game.getId(), room.getCode()));
@@ -437,6 +566,139 @@ class GameLifecycleServiceTest {
                 argThat(event -> event instanceof MatchLifecycleEvent m && "MATCH_END".equals(m.type())));
         verify(states, atLeastOnce()).delete(game.getId());
         verify(applicationEvents, times(1)).publishEvent(new MatchFinishedEvent(game.getId(), room.getCode()));
+    }
+
+    @Test
+    void voluntaryForfeitUsesTheSameFinalizationAndRewardResult() {
+        game.forfeit(player1);
+        game.setRewardResult(new RewardResult(0, GameService.COINS_FORFEIT_WIN));
+        game.markRewardsGranted();
+        when(games.forfeit(game.getId(), player1.getId())).thenReturn(game);
+        when(rooms.findById(room.getId())).thenReturn(Optional.of(room));
+        seedPlayingState(1, false);
+
+        lifecycle.forfeitActiveGame(game.getId(), player1.getId());
+
+        verify(games).forfeit(game.getId(), player1.getId());
+        ArgumentCaptor<MatchLifecycleEvent> events = ArgumentCaptor.forClass(MatchLifecycleEvent.class);
+        verify(websocket, atLeastOnce()).sendToTopic(eq("/topic/rooms/4242"), events.capture());
+        MatchLifecycleEvent matchEnd = events.getAllValues().stream()
+                .filter(event -> "MATCH_END".equals(event.type())).findFirst().orElseThrow();
+        assertEquals(Map.of("kind", "WO", "winner", "P2"), matchEnd.payload().get("outcome"));
+        assertEquals(Map.of("P1", 0, "P2", GameService.COINS_FORFEIT_WIN), matchEnd.payload().get("coins"));
+    }
+
+    @Test
+    void roundEndAnnouncementHoldsTheNextRoundForTheConfiguredPause() {
+        when(gameRepository.findById(game.getId())).thenReturn(Optional.of(game));
+        seedPlayingState(1, false);
+        when(games.applyRoundResult(game.getId(), 1, RoundResult.PLAYER1_WIN)).thenAnswer(invocation -> {
+            game.registerRoundResult(RoundResult.PLAYER1_WIN);
+            return new RoundUpdate(game, true);
+        });
+
+        lifecycle.finishRound(game.getId(), 1, RoundResult.PLAYER1_WIN);
+
+        assertEquals(List.of("ROUND_END", "PHASE_CHANGE"), topicTypes());
+        verify(roundSkillDraft, never()).beginRound(any(), anyInt(), any(), any());
+        assertEquals(Instant.ofEpochMilli(10_000 + GameLifecycleService.ROUND_END_MILLIS), scheduled.getLast().at());
+
+        runPauses();
+
+        assertEquals(List.of("ROUND_END", "PHASE_CHANGE", "ROUND_START", "PHASE_CHANGE"), topicTypes());
+        verify(roundSkillDraft).beginRound(eq(game.getId()), eq(2), eq(player1.getId()), eq(player2.getId()));
+    }
+
+    @Test
+    void finalRoundAnnouncementComesBeforeMatchEndAndMatchEndBeforeTheResultPhase() {
+        game.registerRoundResult(RoundResult.PLAYER1_WIN);
+        when(gameRepository.findById(game.getId())).thenReturn(Optional.of(game));
+        seedPlayingState(2, false);
+        when(games.applyRoundResult(game.getId(), 2, RoundResult.PLAYER1_WIN)).thenAnswer(invocation -> {
+            game.registerRoundResult(RoundResult.PLAYER1_WIN);
+            game.setRewardResult(new RewardResult(GameService.COINS_WIN, GameService.COINS_LOSS));
+            return new RoundUpdate(game, true);
+        });
+
+        lifecycle.finishRound(game.getId(), 2, RoundResult.PLAYER1_WIN);
+        // Uma nova tentativa durante o anúncio não adianta o resultado
+        lifecycle.finishRound(game.getId(), 2, RoundResult.PLAYER1_WIN);
+
+        assertEquals(List.of("ROUND_END", "PHASE_CHANGE"), topicTypes());
+        verify(applicationEvents, never()).publishEvent(any(MatchFinishedEvent.class));
+
+        runPauses();
+
+        ArgumentCaptor<MatchLifecycleEvent> events = ArgumentCaptor.forClass(MatchLifecycleEvent.class);
+        verify(websocket, atLeastOnce()).sendToTopic(eq("/topic/rooms/4242"), events.capture());
+        var published = events.getAllValues();
+        assertEquals(List.of("ROUND_END", "PHASE_CHANGE", "MATCH_END", "PHASE_CHANGE"),
+                published.stream().map(MatchLifecycleEvent::type).toList());
+        assertEquals("RESULT", published.getLast().payload().get("phase"));
+        verify(applicationEvents, times(1)).publishEvent(new MatchFinishedEvent(game.getId(), room.getCode()));
+        assertNull(redisState.get());
+    }
+
+    @Test
+    void forfeitDuringTheRoundEndAnnouncementCancelsTheNextRound() {
+        when(gameRepository.findById(game.getId())).thenReturn(Optional.of(game));
+        seedPlayingState(1, false);
+        when(games.applyRoundResult(game.getId(), 1, RoundResult.PLAYER1_WIN)).thenAnswer(invocation -> {
+            game.registerRoundResult(RoundResult.PLAYER1_WIN);
+            return new RoundUpdate(game, true);
+        });
+        when(games.forfeit(game.getId(), player2.getId())).thenAnswer(invocation -> {
+            game.forfeit(player2);
+            game.setRewardResult(new RewardResult(GameService.COINS_FORFEIT_WIN, 0));
+            game.markRewardsGranted();
+            return game;
+        });
+
+        lifecycle.finishRound(game.getId(), 1, RoundResult.PLAYER1_WIN);
+        lifecycle.forfeitActiveGame(game.getId(), player2.getId());
+        runPauses();
+
+        assertFalse(topicTypes().contains("ROUND_START"));
+        verify(roundSkillDraft, never()).beginRound(any(), anyInt(), any(), any());
+        verify(websocket, times(1)).sendToTopic(eq("/topic/rooms/4242"),
+                argThat(event -> event instanceof MatchLifecycleEvent m && "MATCH_END".equals(m.type())));
+    }
+
+    @Test
+    void forfeitDuringTheVersusScreenNeverOpensRoundOne() {
+        when(rooms.findById(room.getId())).thenReturn(Optional.of(room));
+        when(games.startGame(room, character1Id, character2Id)).thenReturn(game);
+        when(games.forfeit(game.getId(), player1.getId())).thenAnswer(invocation -> {
+            game.forfeit(player1);
+            game.setRewardResult(new RewardResult(0, GameService.COINS_FORFEIT_WIN));
+            game.markRewardsGranted();
+            return game;
+        });
+
+        lifecycle.onDraftCompleted(draftEvent(false));
+        lifecycle.forfeitActiveGame(game.getId(), player1.getId());
+        runPauses();
+
+        assertFalse(topicTypes().contains("ROUND_START"));
+        verify(roundSkillDraft, never()).beginRound(any(), anyInt(), any(), any());
+    }
+
+    /** Roda as pausas agendadas até agora, menos as canceladas, como o scheduler faria no prazo. */
+    private void runPauses() {
+        List<Scheduled> due = List.copyOf(scheduled);
+        scheduled.clear();
+        for (Scheduled pending : due) {
+            boolean cancelled = mockingDetails(pending.future()).getInvocations().stream()
+                    .anyMatch(invocation -> invocation.getMethod().getName().equals("cancel"));
+            if (!cancelled) pending.task().run();
+        }
+    }
+
+    private List<String> topicTypes() {
+        ArgumentCaptor<Object> events = ArgumentCaptor.forClass(Object.class);
+        verify(websocket, atLeast(0)).sendToTopic(eq("/topic/rooms/4242"), events.capture());
+        return events.getAllValues().stream()
+                .map(event -> ((MatchLifecycleEvent) event).type()).toList();
     }
 
     private DraftCompleted draftEvent(boolean automatic) {
