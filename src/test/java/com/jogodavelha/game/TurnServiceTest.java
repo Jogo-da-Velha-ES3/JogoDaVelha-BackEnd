@@ -15,6 +15,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
 import java.util.function.Function;
@@ -163,6 +164,78 @@ class TurnServiceTest {
         service.expire(gameId, deadline);
         assertEquals(GamePhase.ROUND_FINISHED, state.getPhase());
         assertEquals(p1, state.getCurrentTurnPlayerId()); // vez não passa
+    }
+
+    @Test
+    void fullBoardWithoutFrozenPiecesEndsRoundAsDraw() {
+        state.setBoard("XOXOOXXOXOOXOXOX"); // 16/16 sem linha vencedora
+
+        Optional<Character> winner = service.endPlayerAction(state, p1, 1_000);
+
+        assertTrue(winner.isEmpty());
+        assertEquals(GamePhase.ROUND_FINISHED, state.getPhase());
+        assertTrue(state.getWinningLine().isEmpty());
+        assertEquals(p1, state.getCurrentTurnPlayerId()); // a vez não passa
+    }
+
+    @Test
+    void fullBoardWithFrozenPiecesStillEndsRoundAsDraw() {
+        state.setBoard("XOXOOXXOXOOXOXOX");
+        state.getFrozenPositions().put(0, 2);
+        state.getFrozenPositions().put(15, 1);
+
+        Optional<Character> winner = service.endPlayerAction(state, p2, 1_000);
+
+        assertTrue(winner.isEmpty());
+        assertEquals(GamePhase.ROUND_FINISHED, state.getPhase());
+    }
+
+    @Test
+    void fullBoardWithWinningLineStillEndsRoundAsDraw() {
+        // XXXX na primeira linha, tabuleiro completo: a regra absoluta prevalece sobre a vitória.
+        state.setBoard("XXXXOOOOXOXOXOXO");
+
+        Optional<Character> winner = service.endPlayerAction(state, p1, 1_000);
+
+        assertTrue(winner.isEmpty());
+        assertEquals(GamePhase.ROUND_FINISHED, state.getPhase());
+        assertTrue(state.getWinningLine().isEmpty());
+    }
+
+    @Test
+    void fifteenthOfSixteenCellsDoesNotEndRoundEarly() {
+        state.setBoard("XOXOOXXOXOOXOXO-"); // 15/16 sem linha vencedora
+
+        Optional<Character> winner = service.endPlayerAction(state, p1, 1_000);
+
+        assertTrue(winner.isEmpty());
+        assertEquals(GamePhase.PLAYING, state.getPhase());
+        assertEquals(p2, state.getCurrentTurnPlayerId());
+    }
+
+    @Test
+    void sixteenthMoveEndsRoundImmediatelyAndPublishesDrawEvent() {
+        state.setBoard("XOXOOXXOXOOXOXOX"); // jogada que ocupa a 16ª casa
+
+        Optional<Character> winner = service.endPlayerAction(state, p1, 1_000);
+        service.publishAndSchedule(state, winner);
+
+        assertEquals(GamePhase.ROUND_FINISHED, state.getPhase());
+        verify(events).publishEvent(org.mockito.ArgumentMatchers.<Object>argThat(value -> value instanceof TurnChangedEvent event
+                && event.roundFinished() && event.winnerSymbol() == null));
+    }
+
+    @Test
+    void timeoutOnFullBoardEndsRoundAsDraw() {
+        state.setBoard("XOXOOXXOXOOXOXOX");
+        long deadline = state.getTurnDeadlineEpochMillis();
+        nowMillis = deadline;
+
+        service.expire(gameId, deadline);
+
+        assertEquals(GamePhase.ROUND_FINISHED, state.getPhase());
+        verify(events).publishEvent(org.mockito.ArgumentMatchers.<Object>argThat(value -> value instanceof TurnChangedEvent event
+                && event.roundFinished() && event.winnerSymbol() == null));
     }
 
     @Test

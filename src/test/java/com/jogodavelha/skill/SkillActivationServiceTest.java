@@ -173,6 +173,36 @@ class SkillActivationServiceTest {
     }
 
     @Test
+    void fullBoardRejectsBombWithoutApplyingOrRemovingPieces() {
+        state.setBoard("XOXOOXXOXOOXOXOX");
+        state.setRoundSkillDeck(p1, List.of("BOMBA"));
+        var bombEngine = new SkillEngine(List.of(new BombEffect()), new GameValidator());
+        var bombActivations = new SkillActivationService(states, bombEngine, turns,
+                Clock.fixed(Instant.ofEpochMilli(1_000), ZoneOffset.UTC),
+                mock(org.springframework.context.ApplicationEventPublisher.class));
+
+        var error = assertThrows(MoveValidationException.class,
+                () -> bombActivations.activate(gameId, "BOMBA", new SkillContext(p1, 0)));
+
+        assertEquals(MoveValidationException.Code.ROUND_FINISHED, error.getCode());
+        assertEquals("XOXOOXXOXOOXOXOX", state.getBoard());
+        assertFalse(state.hasUsedSkill(p1, "BOMBA"));
+        verify(turns, never()).endPlayerAction(any(), any(), anyLong());
+        verify(turns, never()).publishAndSchedule(any(), any());
+    }
+
+    @Test
+    void nearlyFullBoardStillAllowsLegalSkillUse() {
+        state.setBoard("XOXOOXXOXOOXOXO-");
+        state.setRoundSkillDeck(p1, List.of("CONGELAR"));
+
+        var activation = activations.activate(gameId, "CONGELAR", new SkillContext(p1, 0));
+
+        assertEquals(SkillResult.APPLIED, activation.result());
+        verify(turns).endPlayerAction(state, p1, 1_000);
+    }
+
+    @Test
     void sameCodeCanBeUsedByOpponentAndDifferentCodeBySamePlayer() throws Exception {
         activations.activate(gameId, "CONGELAR", new SkillContext(p1, 0));
         state.setCurrentTurnPlayerId(p2);

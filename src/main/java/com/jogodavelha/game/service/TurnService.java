@@ -62,6 +62,14 @@ public class TurnService {
      */
     public Optional<Character> endAction(GameState state, UUID actorId, long nowMillis) {
         var frozenPositions = state.frozenSet();
+        // Regra absoluta: 16/16 casas ocupadas encerram o round como empate,
+        // mesmo com linha vencedora ou peças congeladas no tabuleiro.
+        if (state.getBoard() != null && state.getBoard().indexOf('-') < 0) {
+            state.tickEffects();
+            state.setWinningLine(java.util.List.of());
+            state.setPhase(GamePhase.ROUND_FINISHED);
+            return Optional.empty();
+        }
         Optional<Character> winner = skillEngine.endAction(state, actorId);
         if (winner.isPresent()) {
             state.setWinningLine(GameValidator.findWinningLine(state.getBoard(), winner.get(), frozenPositions)

@@ -71,6 +71,12 @@ public class SkillActivationService {
                         : state.getPhase() == GamePhase.FINISHED ? GAME_FINISHED : INVALID_PHASE,
                         "A partida não está aceitando ações neste momento.");
             }
+            // Tabuleiro completo encerra o round em empate: nenhuma habilidade (ex.: Bomba)
+            // pode mais ser ativada para remover peças e adiar o resultado.
+            if (state.getBoard() != null && state.getBoard().indexOf('-') < 0) {
+                throw new MoveValidationException(ROUND_FINISHED,
+                        "O tabuleiro está completo: o round terminou em empate.");
+            }
             if (!actor.equals(state.getCurrentTurnPlayerId())) {
                 throw new MoveValidationException(NOT_YOUR_TURN, "Não é o turno deste jogador.");
             }
