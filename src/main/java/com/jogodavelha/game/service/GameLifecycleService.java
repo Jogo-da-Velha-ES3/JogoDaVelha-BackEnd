@@ -145,6 +145,12 @@ public class GameLifecycleService implements RoundLifecycle {
         }
         Game game = update.game();
         Room room = game.getRoom();
+        // A partida pode já estar FINISHED aqui, mas o finishMatch só roda depois da
+        // pausa do ROUND_END: remove a rota agora para nenhuma ação resolver para uma
+        // partida encerrada nesse intervalo.
+        if (game.getStatus() == GameStatus.FINISHED) {
+            routes.evict(room.getCode());
+        }
         GameState completedState = states.find(gameId).orElse(null);
         Map<String, Object> roundEnd = new LinkedHashMap<>();
         roundEnd.put("round", oldRound);

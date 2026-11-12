@@ -16,6 +16,7 @@ import java.security.SecureRandom;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -189,5 +190,96 @@ class GameStateManagerTest {
         assertEquals("turno inválido", failure.getMessage());
         verify(values, times(1)).get(key);
         verify(redis, never()).execute(any(RedisScript.class), anyList(), any(), any(), any());
+    }
+
+    @Test
+    void failedCasDoesNotEvictANewerCommittedState() throws Exception {
+        when(values.setIfAbsent(eq(key), anyString(), eq(1800000L), eq(TimeUnit.MILLISECONDS)))
+                .thenReturn(true);
+        AtomicInteger casCalls = new AtomicInteger();
+        when(redis.execute(any(RedisScript.class), eq(List.of(key)), anyString(), anyString(), anyString()))
+                .thenAnswer(invocation -> {
+                    if (casCalls.getAndIncrement() == 0) {
+                        // Outra operação do mesmo nó commita a versão 1 enquanto esta
+                        // tentativa ainda perde o CAS.
+                        manager.update(gameId, state -> {
+                            state.setBoard("XO--------------");
+                            return state;
+                        });
+                        return false;
+                    }
+                    return true;
+                });
+        manager.create(gameId, player1, player2, 10000);
+
+        GameState committed = manager.update(gameId, state -> {
+            state.setBoard("X---------------");
+            return state;
+        });
+
+        assertEquals(2, committed.getVersion());
+        assertEquals("X---------------", committed.getBoard());
+        // O commit mais novo sobreviveu à falha do CAS antigo: nenhuma releitura.
+        verify(values, never()).get(anyString());
+        verify(redis, times(3)).execute(any(RedisScript.class), eq(List.of(key)),
+                anyString(), anyString(), eq("1800"));
+    }
+
+    @Test
+    void expiredCacheEntryFallsBackToTheRedisRead() throws Exception {
+        GameStateManager expiring = new GameStateManager(redis, mapper, 0, 5, random);
+        ArgumentCaptor<String> created = ArgumentCaptor.forClass(String.class);
+        when(values.setIfAbsent(eq(key), created.capture(), eq(0L), eq(TimeUnit.MILLISECONDS)))
+                .thenReturn(true);
+        expiring.create(gameId, player1, 10000);
+        when(values.get(key)).thenReturn(created.getValue());
+        when(redis.execute(any(RedisScript.class), eq(List.of(key)), anyString(), anyString(), eq("0")))
+                .thenReturn(true);
+
+        GameState updated = expiring.update(gameId, state -> state);
+
+        assertEquals(1, updated.getVersion());
+        verify(values, times(1)).get(key);
+    }
+
+    @Test
+    void missingRedisKeyDiscardsTheLocalEntryAndReportsNotFound() {
+        when(values.setIfAbsent(eq(key), anyString(), eq(1800000L), eq(TimeUnit.MILLISECONDS)))
+                .thenReturn(true);
+        when(redis.execute(any(RedisScript.class), eq(List.of(key)), anyString(), anyString(), anyString()))
+                .thenReturn(true);
+        manager.create(gameId, player1, player2, 10000);
+        manager.update(gameId, state -> state);
+
+        // A chave sumiu do Redis (TTL ou delete) enquanto o cache local ainda a tinha.
+        when(values.get(key)).thenReturn(null);
+        when(redis.execute(any(RedisScript.class), eq(List.of(key)), anyString(), anyString(), anyString()))
+                .thenReturn(false);
+
+        assertThrows(GameStateNotFoundException.class, () -> manager.update(gameId, state -> state));
+        verify(values, atLeastOnce()).get(key);
+    }
+
+    @Test
+    void recoveryScanPrunesCacheEntriesMissingFromRedis() throws Exception {
+        ArgumentCaptor<String> created = ArgumentCaptor.forClass(String.class);
+        when(values.setIfAbsent(eq(key), created.capture(), eq(1800000L), eq(TimeUnit.MILLISECONDS)))
+                .thenReturn(true);
+        manager.create(gameId, player1, player2, 10000);
+
+        UUID other = UUID.randomUUID();
+        var cursor = mock(Cursor.class);
+        when(redis.scan(any(ScanOptions.class))).thenReturn(cursor);
+        when(cursor.hasNext()).thenReturn(true, false);
+        when(cursor.next()).thenReturn("game:state:" + other);
+        assertEquals(List.of(other), manager.findAllGameIds());
+
+        when(values.get(key)).thenReturn(created.getValue());
+        when(redis.execute(any(RedisScript.class), eq(List.of(key)), anyString(), anyString(), anyString()))
+                .thenReturn(true);
+
+        manager.update(gameId, state -> state);
+        // Sem a poda, o update usaria o cache e nunca leria o Redis.
+        verify(values, times(1)).get(key);
     }
 }

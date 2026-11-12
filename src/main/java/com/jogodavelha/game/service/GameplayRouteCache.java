@@ -27,8 +27,13 @@ public class GameplayRouteCache {
     private final ObjectMapper mapper;
     private final long ttlMillis;
 
+    /**
+     * TTL propositalmente menor que o do estado da partida: se a aplicação cair entre o
+     * commit do encerramento no PostgreSQL e a remoção da rota, a associação stale não
+     * pode sobreviver por 30 minutos. Uma rota expirada apenas refaz a consulta ao banco.
+     */
     public GameplayRouteCache(RedisTemplate<String, Object> redis, ObjectMapper mapper,
-                              @Value("${game.state.ttl:1800000}") long ttlMillis) {
+                              @Value("${gameplay.route.ttl:300000}") long ttlMillis) {
         this.redis = redis;
         this.mapper = mapper;
         this.ttlMillis = ttlMillis;

@@ -1,5 +1,6 @@
 package com.jogodavelha.websocket;
 
+import com.jogodavelha.telemetry.ActionProfiler;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
@@ -23,7 +24,13 @@ public class WebSocketService {
      * @param message A mensagem a ser enviada
      */
     public void sendToTopic(String topic, Object message) {
-        messagingTemplate.convertAndSend(topic, message);
+        long start = System.nanoTime();
+        try {
+            messagingTemplate.convertAndSend(topic, message);
+        } finally {
+            // Mede só a enfileiragem no broker, não a entrega ao cliente.
+            ActionProfiler.add("ws.send", start);
+        }
     }
 
     /**
@@ -44,6 +51,11 @@ public class WebSocketService {
      * @param message A mensagem a ser enviada
      */
     public void sendToUser(String user, String destination, Object message) {
-        messagingTemplate.convertAndSendToUser(user, destination, message);
+        long start = System.nanoTime();
+        try {
+            messagingTemplate.convertAndSendToUser(user, destination, message);
+        } finally {
+            ActionProfiler.add("ws.sendUser", start);
+        }
     }
 }

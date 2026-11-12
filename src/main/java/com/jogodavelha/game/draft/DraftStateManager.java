@@ -29,9 +29,12 @@ public class DraftStateManager {
     /**
      * Último JSON commitado por este nó. Evita o GET antes do CAS no caminho feliz;
      * um conflito de versão ou um mutator que rejeita o estado em cache força releitura.
+     * Cada entrada expira junto com a retenção do Redis; o mapa é limitado e entradas
+     * expiradas são removidas na leitura e na poda disparada ao ultrapassar o limite.
      */
     private final ConcurrentHashMap<UUID, CacheEntry> committedStates = new ConcurrentHashMap<>();
-    private record CacheEntry(String json, long version) { }
+    private static final int MAX_CACHED_STATES = 4096;
+    private record CacheEntry(String json, long version, long expiresAtEpochMillis) { }
     private final RedisScript<Long> compareAndSet = new DefaultRedisScript<>("""
             local previous = redis.call('GET', KEYS[1])
             if not previous then return 0 end
@@ -58,7 +61,41 @@ public class DraftStateManager {
                 retentionMillis, TimeUnit.MILLISECONDS))) {
             throw new IllegalStateException("Draft já existe para esta sala.");
         }
-        committedStates.put(state.roomId(), new CacheEntry(json(state), state.version()));
+        remember(state.roomId(), json(state), state.version());
+    }
+
+    /** Entrada válida apenas se ainda não expirou; a expirada é removida na hora. */
+    private CacheEntry liveEntry(UUID roomId) {
+        CacheEntry entry = committedStates.get(roomId);
+        if (entry != null && entry.expiresAtEpochMillis() <= System.currentTimeMillis()) {
+            committedStates.remove(roomId, entry);
+            return null;
+        }
+        return entry;
+    }
+
+    /**
+     * Remove a entrada somente se ela não for mais nova que {@code version}: uma operação
+     * que falhou no CAS sobre um estado antigo não pode derrubar o commit de outra thread.
+     */
+    private void evictIfNotNewer(UUID roomId, long version) {
+        committedStates.computeIfPresent(roomId,
+                (id, entry) -> entry.version() <= version ? null : entry);
+    }
+
+    private void remember(UUID roomId, String json, long version) {
+        committedStates.merge(roomId,
+                new CacheEntry(json, version, System.currentTimeMillis() + retentionMillis),
+                (existing, incoming) -> incoming.version() >= existing.version() ? incoming : existing);
+        if (committedStates.size() > MAX_CACHED_STATES) {
+            long now = System.currentTimeMillis();
+            committedStates.values().removeIf(entry -> entry.expiresAtEpochMillis() <= now);
+            var iterator = committedStates.values().iterator();
+            while (committedStates.size() > MAX_CACHED_STATES && iterator.hasNext()) {
+                iterator.next();
+                iterator.remove();
+            }
+        }
     }
 
     public Optional<DraftState> find(UUID roomId) {
@@ -80,8 +117,14 @@ public class DraftStateManager {
 
     public List<UUID> findAllRoomIds() {
         Set<String> keys = redis.keys("draft:state:*");
-        if (keys == null || keys.isEmpty()) return List.of();
-        return keys.stream().map(key -> UUID.fromString(key.substring("draft:state:".length()))).toList();
+        if (keys == null || keys.isEmpty()) {
+            committedStates.clear();
+            return List.of();
+        }
+        List<UUID> ids = keys.stream().map(key -> UUID.fromString(key.substring("draft:state:".length()))).toList();
+        Set<UUID> live = Set.copyOf(ids);
+        committedStates.keySet().removeIf(id -> !live.contains(id));
+        return ids;
     }
 
     public void delete(UUID roomId) {
@@ -94,7 +137,7 @@ public class DraftStateManager {
         for (int attempt = 0; attempt < maxRetries; attempt++) {
             DraftState before;
             boolean fromCache = false;
-            CacheEntry cached = committedStates.get(roomId);
+            CacheEntry cached = liveEntry(roomId);
             if (cached != null) {
                 try {
                     before = mapper.readValue(cached.json(), DraftState.class);
@@ -119,9 +162,10 @@ public class DraftStateManager {
             try {
                 after = Objects.requireNonNull(mutator.apply(before));
             } catch (RuntimeException failure) {
-                // Rejeição sobre estado em cache pode ser defasada: relê e tenta de novo.
+                // Rejeição sobre estado em cache pode ser defasada: relê e tenta de novo,
+                // sem derrubar um commit mais novo feito por outra thread.
                 if (fromCache) {
-                    committedStates.remove(roomId);
+                    evictIfNotNewer(roomId, before.version());
                     continue;
                 }
                 throw failure;
@@ -140,11 +184,10 @@ public class DraftStateManager {
                     afterJson, Long.toString(retentionMillis));
             ActionProfiler.add("draft.redis.cas", casStart);
             if (Long.valueOf(1).equals(stored)) {
-                committedStates.merge(roomId, new CacheEntry(afterJson, after.version()),
-                        (existing, incoming) -> incoming.version() >= existing.version() ? incoming : existing);
+                remember(roomId, afterJson, after.version());
                 return Optional.of(new Change(before, after));
             }
-            committedStates.remove(roomId);
+            evictIfNotNewer(roomId, before.version());
         }
         throw new ConcurrentStateModificationException("Conflito ao atualizar o Draft da sala " + roomId);
     }

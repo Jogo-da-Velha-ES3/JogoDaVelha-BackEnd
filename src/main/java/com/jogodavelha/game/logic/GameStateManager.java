@@ -46,10 +46,13 @@ public class GameStateManager {
      * no caminho feliz: se outra instância gravar, o CAS falha e a leitura volta ao Redis.
      * O mutator precisa ser puro (contrato já existente) porque pode rodar sobre estado
      * eventualmente defasado; nesse caso uma exceção do mutator força releitura.
+     * Cada entrada expira junto com o TTL do Redis; o mapa é limitado e entradas
+     * expiradas são removidas na leitura e na poda disparada ao ultrapassar o limite.
      */
     private final ConcurrentHashMap<UUID, CacheEntry> committedStates = new ConcurrentHashMap<>();
+    private static final int MAX_CACHED_STATES = 4096;
 
-    private record CacheEntry(String json, long version) { }
+    private record CacheEntry(String json, long version, long expiresAtEpochMillis) { }
 
     @Autowired
     public GameStateManager(RedisTemplate<String, Object> redisTemplate, ObjectMapper objectMapper,
@@ -135,6 +138,30 @@ public class GameStateManager {
         log.debug("Estado inicial criado para partida {}", gameId);
     }
 
+    /** Entrada válida apenas se ainda não expirou; a expirada é removida na hora. */
+    private CacheEntry liveEntry(UUID gameId) {
+        CacheEntry entry = committedStates.get(gameId);
+        if (entry != null && entry.expiresAtEpochMillis() <= System.currentTimeMillis()) {
+            committedStates.remove(gameId, entry);
+            return null;
+        }
+        return entry;
+    }
+
+    /**
+     * Remove a entrada somente se ela não for mais nova que {@code version}: uma operação
+     * que falhou no CAS sobre um estado antigo não pode derrubar o commit de outra thread.
+     */
+    private void evictIfNotNewer(UUID gameId, long version) {
+        committedStates.computeIfPresent(gameId,
+                (id, entry) -> entry.version() <= version ? null : entry);
+    }
+
+    private void evictExpired() {
+        long now = System.currentTimeMillis();
+        committedStates.values().removeIf(entry -> entry.expiresAtEpochMillis() <= now);
+    }
+
     /**
      * Busca o estado de uma partida.
      *
@@ -184,7 +211,7 @@ public class GameStateManager {
         for (int attempt = 0; attempt < maxRetries; attempt++) {
             GameState current;
             boolean fromCache = false;
-            CacheEntry cached = committedStates.get(gameId);
+            CacheEntry cached = liveEntry(gameId);
             if (cached != null) {
                 try {
                     current = deserialize(cached.json());
@@ -209,9 +236,10 @@ public class GameStateManager {
                 update = mutator.apply(current);
             } catch (RuntimeException failure) {
                 // Um mutator que rejeita o estado em cache pode estar vendo dados defasados:
-                // descarta o cache e tenta de novo com a leitura fresca do Redis.
+                // descarta o cache (se ninguém gravou algo mais novo) e tenta de novo com
+                // a leitura fresca do Redis.
                 if (fromCache) {
-                    committedStates.remove(gameId);
+                    evictIfNotNewer(gameId, current.getVersion());
                     continue;
                 }
                 throw failure;
@@ -238,7 +266,7 @@ public class GameStateManager {
                 return update.result();
             }
             
-            committedStates.remove(gameId);
+            evictIfNotNewer(gameId, expectedVersion);
             log.debug("Conflito de versão ao atualizar partida {} (tentativa {}/{})", gameId, attempt + 1, maxRetries);
         }
         
@@ -246,8 +274,19 @@ public class GameStateManager {
     }
 
     private void remember(UUID gameId, String json, long version) {
-        committedStates.merge(gameId, new CacheEntry(json, version),
+        committedStates.merge(gameId,
+                new CacheEntry(json, version, System.currentTimeMillis() + stateTtlMillis),
                 (existing, incoming) -> incoming.version() >= existing.version() ? incoming : existing);
+        if (committedStates.size() > MAX_CACHED_STATES) {
+            evictExpired();
+            // Ainda acima do limite: descarta entradas arbitrárias; são só uma otimização
+            // e a próxima leitura volta ao Redis.
+            var iterator = committedStates.values().iterator();
+            while (committedStates.size() > MAX_CACHED_STATES && iterator.hasNext()) {
+                iterator.next();
+                iterator.remove();
+            }
+        }
     }
 
     public record Update<T>(GameState state, T result) { }
@@ -257,6 +296,9 @@ public class GameStateManager {
         try (var keys = redisTemplate.scan(ScanOptions.scanOptions().match(KEY_PREFIX + "*").count(100).build())) {
             while (keys.hasNext()) ids.add(UUID.fromString(keys.next().substring(KEY_PREFIX.length())));
         }
+        // A varredura é a fonte autoritativa: entradas locais sem chave no Redis são lixo.
+        java.util.Set<UUID> live = java.util.Set.copyOf(ids);
+        committedStates.keySet().removeIf(id -> !live.contains(id));
         return ids;
     }
 

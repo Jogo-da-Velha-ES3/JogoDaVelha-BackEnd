@@ -72,6 +72,7 @@ class GameLifecycleServiceTest {
     @Mock private RoundSkillDraft roundSkillDraft;
     @Mock private Clock clock;
     @Mock private TaskScheduler scheduler;
+    @Mock private GameplayRouteCache routes;
 
     private GameLifecycleService lifecycle;
     private User player1;
@@ -100,7 +101,7 @@ class GameLifecycleServiceTest {
             return null;
         }).when(applicationEvents).publishEvent(any(LifecyclePauseElapsed.class));
         lifecycle = new GameLifecycleService(games, gameRepository, rooms, states, turns, websocket, skillDraft,
-                applicationEvents, clock, mock(GameplayRouteCache.class), scheduler);
+                applicationEvents, clock, routes, scheduler);
         player1 = new User("p1", "pass", "p1@test.com");
         player1.setId(UUID.randomUUID());
         player2 = new User("p2", "pass", "p2@test.com");
@@ -171,6 +172,7 @@ class GameLifecycleServiceTest {
         verify(games).startGame(room, character1Id, character2Id);
         verify(states).create(eq(game.getId()), eq("4242"), eq(player1.getId()), eq(player2.getId()),
                 eq(GameState.DEFAULT_TURN_DURATION_MILLIS));
+        verify(routes).put(eq("4242"), eq(game.getId()), eq(player1.getId()), eq(player2.getId()));
         // Tela de Confronto: o round 1 (e o sorteio) só abre depois da pausa do VS
         verify(roundSkillDraft, never()).beginRound(any(), anyInt(), any(), any());
         verify(websocket, times(1)).sendToTopic(eq("/topic/rooms/4242"), any());
@@ -230,7 +232,7 @@ class GameLifecycleServiceTest {
         assertEquals(1, openingEvents.getAllValues().get(1).payload().get("round"));
         assertEquals("ROUND_DRAW", openingEvents.getAllValues().getLast().payload().get("phase"));
         lifecycle = new GameLifecycleService(games, gameRepository, rooms, states, turns, websocket, skillDraft,
-                applicationEvents, clock, mock(GameplayRouteCache.class), this.scheduler);
+                applicationEvents, clock, routes, this.scheduler);
         var restarted = new RoundSkillDrawService(states, catalog, rooms, gameRepository, clock,
                 scheduler, websocket, snapshots,
                 event -> lifecycle.onRoundDrawCompleted((RoundDrawCompleted) event), new Random(99));
@@ -527,6 +529,7 @@ class GameLifecycleServiceTest {
 
         verify(games, times(1)).forfeit(game.getId(), player1);
         verify(states, atLeastOnce()).delete(game.getId());
+        verify(routes, atLeastOnce()).evict("4242");
         verify(applicationEvents, times(1)).publishEvent(new MatchFinishedEvent(game.getId(), room.getCode()));
         org.mockito.InOrder publicationOrder = inOrder(applicationEvents, states);
         publicationOrder.verify(applicationEvents).publishEvent(new MatchFinishedEvent(game.getId(), room.getCode()));
@@ -625,6 +628,8 @@ class GameLifecycleServiceTest {
         // Uma nova tentativa durante o anúncio não adianta o resultado
         lifecycle.finishRound(game.getId(), 2, RoundResult.PLAYER1_WIN);
 
+        // A rota já foi removida quando a partida virou FINISHED, sem esperar a pausa.
+        verify(routes, times(1)).evict("4242");
         assertEquals(List.of("ROUND_END", "PHASE_CHANGE"), topicTypes());
         verify(applicationEvents, never()).publishEvent(any(MatchFinishedEvent.class));
 

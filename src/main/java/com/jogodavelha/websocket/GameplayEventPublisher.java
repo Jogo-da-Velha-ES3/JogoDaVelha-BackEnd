@@ -106,9 +106,14 @@ public class GameplayEventPublisher {
                 roomCode = state.getRoomCode();
             } else {
                 // Estados antigos no Redis não têm roomCode: mantém a rota pelo PostgreSQL.
-                var route = games.findSnapshotRouteById(event.gameId()).orElse(null);
-                if (route == null || route.getStatus() != GameStatus.IN_PROGRESS) return;
-                roomCode = route.getRoomCode();
+                long dbStart = System.nanoTime();
+                try {
+                    var route = games.findSnapshotRouteById(event.gameId()).orElse(null);
+                    if (route == null || route.getStatus() != GameStatus.IN_PROGRESS) return;
+                    roomCode = route.getRoomCode();
+                } finally {
+                    ActionProfiler.add("db.routeLookup", dbStart);
+                }
             }
             if (state.getPhase() != GamePhase.PLAYING || state.getTurnDeadlineEpochMillis() <= 0) return;
 
@@ -136,7 +141,12 @@ public class GameplayEventPublisher {
         if (state != null && state.getRoomCode() != null) {
             return state.getRoomCode();
         }
-        return games.findSnapshotRouteById(gameId).map(route -> route.getRoomCode()).orElse(null);
+        long dbStart = System.nanoTime();
+        try {
+            return games.findSnapshotRouteById(gameId).map(route -> route.getRoomCode()).orElse(null);
+        } finally {
+            ActionProfiler.add("db.routeLookup", dbStart);
+        }
     }
 
     private void send(String roomCode, String type, Map<String, Object> payload) {
