@@ -25,6 +25,7 @@ import com.jogodavelha.room.RoomStatus;
 import com.jogodavelha.auth.User;
 import com.jogodavelha.game.GameplayBoardUpdatedEvent;
 import com.jogodavelha.websocket.WebSocketService;
+import com.jogodavelha.telemetry.ActionProfiler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
@@ -69,6 +70,7 @@ public class GameLifecycleService implements RoundLifecycle {
     private final ObjectProvider<RoundSkillDraft> skillDraft;
     private final ApplicationEventPublisher events;
     private final Clock clock;
+    private final GameplayRouteCache routes;
     @Qualifier("turnTaskScheduler")
     private final TaskScheduler scheduler;
 
@@ -98,23 +100,23 @@ public class GameLifecycleService implements RoundLifecycle {
         boolean stateCreated = state == null;
         if (state == null) {
             try {
-                states.create(game.getId(), game.getPlayer1().getId(), game.getPlayer2().getId(),
+                states.create(game.getId(), room.getCode(), game.getPlayer1().getId(), game.getPlayer2().getId(),
                         GameState.DEFAULT_TURN_DURATION_MILLIS);
             } catch (IllegalStateException duplicateState) {
                 state = states.find(game.getId()).orElseThrow(() -> duplicateState);
             }
             state = states.find(game.getId()).orElseThrow();
         }
-        states.update(game.getId(), current -> {
+        state = states.update(game.getId(), current -> {
             current.setInitialSkills(game.getPlayer1().getId(), player1.initialSkills());
             current.setInitialSkills(game.getPlayer2().getId(), player2.initialSkills());
             return current;
         });
+        routes.put(room.getCode(), game.getId(), game.getPlayer1().getId(), game.getPlayer2().getId());
         if (room.getStatus() == RoomStatus.WAITING) {
             room.setStatus(RoomStatus.IN_GAME);
             rooms.save(room);
         }
-        state = states.find(game.getId()).orElseThrow();
         if (stateCreated || state.getPhase() == GamePhase.DRAFT) {
             beginRound(game, state);
         } else if (state.getPhase() == GamePhase.PLAYING && state.getTurnDeadlineEpochMillis() > 0) {
@@ -143,6 +145,12 @@ public class GameLifecycleService implements RoundLifecycle {
         }
         Game game = update.game();
         Room room = game.getRoom();
+        // A partida pode já estar FINISHED aqui, mas o finishMatch só roda depois da
+        // pausa do ROUND_END: remove a rota agora para nenhuma ação resolver para uma
+        // partida encerrada nesse intervalo.
+        if (game.getStatus() == GameStatus.FINISHED) {
+            routes.evict(room.getCode());
+        }
         GameState completedState = states.find(gameId).orElse(null);
         Map<String, Object> roundEnd = new LinkedHashMap<>();
         roundEnd.put("round", oldRound);
@@ -186,14 +194,13 @@ public class GameLifecycleService implements RoundLifecycle {
         long duration = game.getCurrentRound() == Game.MAX_ROUNDS
                 ? GameState.SUDDEN_DEATH_TURN_DURATION_MILLIS : GameState.DEFAULT_TURN_DURATION_MILLIS;
         long now = clock.millis();
-        states.update(gameId, current -> {
+        GameState state = states.update(gameId, current -> {
             if (current.getRoundNumber() == finishedRound) {
                 current.startRound(game.getCurrentRound(), duration, now);
                 current.setPhase(GamePhase.DRAFT);
             }
             return current;
         });
-        GameState state = states.find(gameId).orElseThrow();
         beginRound(game, state);
     }
 
@@ -202,13 +209,22 @@ public class GameLifecycleService implements RoundLifecycle {
     @Order(0)
     @Transactional
     public void onTurnChanged(TurnChangedEvent event) {
+        long start = System.nanoTime();
+        try {
+            onTurnChangedInternal(event);
+        } finally {
+            ActionProfiler.add("lifecycle.turnChanged", start);
+        }
+    }
+
+    private void onTurnChangedInternal(TurnChangedEvent event) {
         if (event.timedOutPlayerId() != null) {
             Game game = gameRepository.findById(event.gameId()).orElse(null);
             if (game != null && game.getStatus() == GameStatus.FINISHED) {
                 finishMatch(game);
                 return;
             }
-            GameState state = states.find(event.gameId()).orElse(null);
+            GameState state = event.state() != null ? event.state() : states.find(event.gameId()).orElse(null);
             if (game != null && state != null && state.getConsecutiveTimeouts(event.timedOutPlayerId()) >= 3
                     && game.getStatus() == GameStatus.IN_PROGRESS) {
                 turns.cancel(game.getId());
@@ -313,7 +329,7 @@ public class GameLifecycleService implements RoundLifecycle {
         }
         long duration = state.isSuddenDeath() ? GameState.SUDDEN_DEATH_TURN_DURATION_MILLIS
                 : GameState.DEFAULT_TURN_DURATION_MILLIS;
-        states.update(gameId, current -> {
+        GameState updated = states.update(gameId, current -> {
             if (current.getPhase() == GamePhase.DRAFT && current.getRoundNumber() == expectedRound) {
                 current.setPhase(GamePhase.PLAYING);
                 current.setTurnDurationMillis(duration);
@@ -321,11 +337,10 @@ public class GameLifecycleService implements RoundLifecycle {
             }
             return current;
         });
-        state = states.find(gameId).orElse(null);
-        if (state == null || state.getPhase() != GamePhase.PLAYING || state.getTurnDeadlineEpochMillis() > 0) {
+        if (updated.getPhase() != GamePhase.PLAYING || updated.getTurnDeadlineEpochMillis() > 0) {
             return;
         }
-        events.publishEvent(new GameplayBoardUpdatedEvent(gameId, state));
+        events.publishEvent(new GameplayBoardUpdatedEvent(gameId, updated));
         phase(game.getRoom(), "PLAYING", expectedRound);
         pause(gameId, expectedRound, LifecyclePauseElapsed.Step.PRESENTATION, ROUND_PRESENTATION_MILLIS);
     }
@@ -337,15 +352,14 @@ public class GameLifecycleService implements RoundLifecycle {
             return;
         }
         long startedAt = clock.millis();
-        states.update(gameId, current -> {
+        GameState state = states.update(gameId, current -> {
             if (current.getPhase() == GamePhase.PLAYING && current.getRoundNumber() == expectedRound
                     && current.getTurnDeadlineEpochMillis() == 0) {
                 current.setTurnDeadlineEpochMillis(startedAt + current.getTurnDurationMillis());
             }
             return current;
         });
-        GameState state = states.find(gameId).orElse(null);
-        if (state != null && state.getPhase() == GamePhase.PLAYING && state.getRoundNumber() == expectedRound
+        if (state.getPhase() == GamePhase.PLAYING && state.getRoundNumber() == expectedRound
                 && state.getTurnDeadlineEpochMillis() > 0) {
             turns.publishAndSchedule(state, java.util.Optional.empty());
         }
@@ -391,6 +405,7 @@ public class GameLifecycleService implements RoundLifecycle {
             events.publishEvent(new MatchFinishedEvent(game.getId(), room.getCode()));
         }
         states.delete(game.getId());
+        routes.evict(room.getCode());
         cancelPauses(game.getId());
     }
 

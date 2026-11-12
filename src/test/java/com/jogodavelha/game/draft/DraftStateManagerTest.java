@@ -13,8 +13,10 @@ import org.springframework.data.redis.core.script.RedisScript;
 
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -116,6 +118,84 @@ class DraftStateManagerTest {
     @ValueSource(longs = {0, 19999, 20000})
     void retentionCannotRemoveTheStateBeforeAutoChoice(long retention) {
         assertThrows(IllegalArgumentException.class, () -> new DraftStateManager(redis, mapper, retention, 3));
+    }
+
+    @Test
+    void sequentialUpdatesReuseTheCommittedSnapshotWithoutRereading() throws Exception {
+        when(values.setIfAbsent(eq(key), anyString(), eq(1800000L), eq(TimeUnit.MILLISECONDS)))
+                .thenReturn(true);
+        when(redis.execute(any(RedisScript.class), eq(List.of(key)), anyString(), anyString(), eq("1800000")))
+                .thenReturn(1L);
+        manager.create(initial());
+
+        var first = manager.update(room, state -> state.withPlayer(state.player1().withCharacter(a))).orElseThrow();
+        var second = manager.update(room, state -> state.withPlayer(state.player2().withCharacter(b))).orElseThrow();
+
+        assertEquals(1, first.after().version());
+        assertEquals(2, second.after().version());
+        assertEquals(a, second.after().player1().characterId());
+        assertEquals(b, second.after().player2().characterId());
+        verify(values, never()).get(anyString());
+        verify(redis, times(2)).execute(any(RedisScript.class), eq(List.of(key)), anyString(), anyString(), eq("1800000"));
+    }
+
+    @Test
+    void failedCasDoesNotEvictANewerCommittedState() throws Exception {
+        when(values.setIfAbsent(eq(key), anyString(), eq(1800000L), eq(TimeUnit.MILLISECONDS)))
+                .thenReturn(true);
+        AtomicInteger casCalls = new AtomicInteger();
+        when(redis.execute(any(RedisScript.class), eq(List.of(key)), anyString(), anyString(), eq("1800000")))
+                .thenAnswer(invocation -> {
+                    if (casCalls.getAndIncrement() == 0) {
+                        // Outra operação do mesmo nó commita a v1 enquanto esta perde o CAS.
+                        manager.update(room, state -> state.withPlayer(state.player2().withCharacter(b)));
+                        return 0L;
+                    }
+                    return 1L;
+                });
+        manager.create(initial());
+
+        var change = manager.update(room, state -> state.withPlayer(state.player1().withCharacter(a)))
+                .orElseThrow();
+
+        assertEquals(2, change.after().version());
+        // O mutator externo rodou sobre o estado mais novo: a seleção concorrente ficou.
+        assertEquals(a, change.after().player1().characterId());
+        assertEquals(b, change.after().player2().characterId());
+        verify(values, never()).get(anyString());
+        verify(redis, times(3)).execute(any(RedisScript.class), eq(List.of(key)), anyString(), anyString(), eq("1800000"));
+    }
+
+    @Test
+    void mutatorRejectionOnCachedStateFallsBackToFreshRead() throws Exception {
+        ArgumentCaptor<String> created = ArgumentCaptor.forClass(String.class);
+        when(values.setIfAbsent(eq(key), created.capture(), eq(1800000L), eq(TimeUnit.MILLISECONDS)))
+                .thenReturn(true);
+        manager.create(initial());
+        when(values.get(key)).thenReturn(created.getValue());
+
+        assertThrows(IllegalStateException.class, () -> manager.update(room, state -> {
+            throw new IllegalStateException("seleção inválida");
+        }));
+
+        verify(values, times(1)).get(key);
+        verify(redis, never()).execute(any(RedisScript.class), anyList(), any(), any(), any());
+    }
+
+    @Test
+    void roomScanPrunesCacheEntriesMissingFromRedis() throws Exception {
+        ArgumentCaptor<String> created = ArgumentCaptor.forClass(String.class);
+        when(values.setIfAbsent(eq(key), created.capture(), eq(1800000L), eq(TimeUnit.MILLISECONDS)))
+                .thenReturn(true);
+        manager.create(initial());
+        when(redis.keys("draft:state:*")).thenReturn(Set.of());
+        assertTrue(manager.findAllRoomIds().isEmpty());
+        when(values.get(key)).thenReturn(created.getValue());
+        when(redis.execute(any(RedisScript.class), eq(List.of(key)), anyString(), anyString(), eq("1800000")))
+                .thenReturn(1L);
+
+        assertTrue(manager.update(room, state -> state.withPlayer(state.player1().withCharacter(a))).isPresent());
+        verify(values, times(1)).get(key);
     }
 
     private DraftState initial() {

@@ -3,6 +3,7 @@ package com.jogodavelha.game.draw;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
+import com.jogodavelha.telemetry.ActionProfiler;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Controller;
 
@@ -22,6 +23,15 @@ public class RoundSkillDrawController {
 
     @MessageMapping("/rooms/{code}/draw/pick")
     public void pick(@DestinationVariable String code, Request request, Principal principal) {
+        ActionProfiler.begin("draw.pick");
+        try {
+            pickInternal(code, request, principal);
+        } finally {
+            ActionProfiler.end();
+        }
+    }
+
+    private void pickInternal(@DestinationVariable String code, Request request, Principal principal) {
         if (principal == null || principal.getName() == null) {
             throw new AccessDeniedException("Autenticação STOMP obrigatória.");
         }

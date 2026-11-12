@@ -432,9 +432,10 @@ class RoomSnapshotStompIT {
             return state != null && state.getGameId().equals(gameId) ? Optional.of(state) : Optional.empty();
         }
 
-        @Override public void update(UUID gameId, Function<GameState, GameState> mutator) {
+        @Override public GameState update(UUID gameId, Function<GameState, GameState> mutator) {
             if (state == null || !state.getGameId().equals(gameId)) throw new IllegalStateException("Estado ausente");
             state = mutator.apply(state);
+            return state;
         }
     }
 }

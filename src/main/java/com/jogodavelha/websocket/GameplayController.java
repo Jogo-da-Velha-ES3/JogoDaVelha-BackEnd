@@ -6,6 +6,7 @@ import com.jogodavelha.game.service.RoomLeaveService;
 import com.jogodavelha.game.service.MoveActionService;
 import com.jogodavelha.skill.SkillActivationService;
 import com.jogodavelha.skill.SkillContext;
+import com.jogodavelha.telemetry.ActionProfiler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -31,27 +32,42 @@ public class GameplayController {
 
     @MessageMapping("/rooms/{code}/move")
     public void move(@DestinationVariable String code, MoveRequest request, Principal principal) {
-        UUID actor = authenticatedUser(principal);
-        if (request == null || request.position() == null) {
-            throw new IllegalArgumentException("Informe a posição da jogada.");
+        ActionProfiler.begin("move");
+        try {
+            UUID actor = authenticatedUser(principal);
+            if (request == null || request.position() == null) {
+                throw new IllegalArgumentException("Informe a posição da jogada.");
+            }
+            moves.play(games.resolveActiveGame(code, actor), actor, request.position());
+        } finally {
+            ActionProfiler.end();
         }
-        moves.play(games.resolveActiveGame(code, actor), actor, request.position());
     }
 
     @MessageMapping("/rooms/{code}/ability")
     public void activateSkill(@DestinationVariable String code, SkillRequest request, Principal principal) {
-        UUID actor = authenticatedUser(principal);
-        if (request == null || request.skillCode() == null || request.skillCode().isBlank()) {
-            throw new IllegalArgumentException("Informe o código da habilidade.");
+        ActionProfiler.begin("ability");
+        try {
+            UUID actor = authenticatedUser(principal);
+            if (request == null || request.skillCode() == null || request.skillCode().isBlank()) {
+                throw new IllegalArgumentException("Informe o código da habilidade.");
+            }
+            skills.activate(games.resolveActiveGame(code, actor), request.skillCode(),
+                    new SkillContext(actor, request.targetPosition(), request.destinationPosition()));
+        } finally {
+            ActionProfiler.end();
         }
-        skills.activate(games.resolveActiveGame(code, actor), request.skillCode(),
-                new SkillContext(actor, request.targetPosition(), request.destinationPosition()));
     }
 
     /** Sair da sala em qualquer fase; o servidor decide o efeito pela fase (ver RoomLeaveService). */
     @MessageMapping("/rooms/{code}/leave")
     public void leave(@DestinationVariable String code, Principal principal) {
-        leaves.leave(code, authenticatedUser(principal));
+        ActionProfiler.begin("leave");
+        try {
+            leaves.leave(code, authenticatedUser(principal));
+        } finally {
+            ActionProfiler.end();
+        }
     }
 
     private UUID authenticatedUser(Principal principal) {

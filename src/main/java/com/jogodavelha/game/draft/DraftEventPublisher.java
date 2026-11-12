@@ -1,7 +1,6 @@
 package com.jogodavelha.game.draft;
 
 import com.jogodavelha.auth.UserRepository;
-import com.jogodavelha.character.Character;
 import com.jogodavelha.character.CharacterRepository;
 import com.jogodavelha.character.CharacterSymbol;
 import com.jogodavelha.websocket.WebSocketService;
@@ -15,7 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.stream.Collectors;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 @Slf4j
@@ -24,6 +23,10 @@ public class DraftEventPublisher {
     private final CharacterRepository characters;
     private final Clock clock;
     private final UserRepository users;
+    /** Símbolos dos personagens já resolvidos; o catálogo é estável e evita queries repetidas. */
+    private final Map<UUID, CharacterSymbol> symbolCache = new ConcurrentHashMap<>();
+    /** Nicknames não mudam durante um Draft; o cache evita uma query por jogador a cada update. */
+    private final Map<UUID, String> nicknames = new ConcurrentHashMap<>();
 
     public DraftEventPublisher(
             WebSocketService websocket,
@@ -40,15 +43,22 @@ public class DraftEventPublisher {
     // DraftService emite depois do CAS no Redis, fora do callback que pode ser repetido.
     @EventListener
     public void onDraftUpdated(DraftUpdated event) {
+        long start = System.nanoTime();
+        try {
+            publish(event);
+        } finally {
+            com.jogodavelha.telemetry.ActionProfiler.add("draft.wsPublish", start);
+        }
+    }
+
+    private void publish(DraftUpdated event) {
         if (event.version() == 0) {
             websocket.sendToTopic("/topic/rooms/" + event.roomCode(),
                     MatchLifecycleEvent.of("PHASE_CHANGE", Map.of("phase", "DRAFT")));
         }
         var selectedIds = event.players().stream().map(DraftUpdated.PlayerStatus::characterId)
                 .filter(Objects::nonNull).toList();
-        var symbols = selectedIds.isEmpty() ? Map.<UUID, CharacterSymbol>of()
-                : characters.findAllById(selectedIds).stream()
-                        .collect(Collectors.toMap(Character::getId, Character::getSymbol));
+        var catalog = symbolCatalog(selectedIds);
         Map<String, CharacterSymbol> selected = new LinkedHashMap<>();
         Map<String, Boolean> ready = new LinkedHashMap<>();
         Map<String, String> nicknames = new LinkedHashMap<>();
@@ -59,16 +69,12 @@ public class DraftEventPublisher {
             if (player.characterId() != null) {
                 selected.put(
                         slot,
-                        Objects.requireNonNull(symbols.get(player.characterId()),
+                        Objects.requireNonNull(catalog.get(player.characterId()),
                         "Personagem selecionado não existe no catálogo.")
                 );
-                try {
-                    users.findById(player.playerId()).ifPresent(
-                            user -> nicknames.put(slot, user.getUsername())
-                    );
-                } catch (RuntimeException exception) {
-                    log.warn("Could not enrich DRAFT_UPDATE with nickname: roomCode={}, playerId={}",
-                            event.roomCode(), player.playerId(), exception);
+                String nickname = nickname(player.playerId());
+                if (nickname != null) {
+                    nicknames.put(slot, nickname);
                 }
             }
         }
@@ -81,6 +87,30 @@ public class DraftEventPublisher {
                         clock.millis()
                 )
         );
+    }
+
+    private Map<UUID, CharacterSymbol> symbolCatalog(java.util.List<UUID> selectedIds) {
+        var missing = selectedIds.stream().filter(id -> !symbolCache.containsKey(id)).toList();
+        if (!missing.isEmpty()) {
+            characters.findAllById(missing).forEach(character ->
+                    symbolCache.put(character.getId(), character.getSymbol()));
+        }
+        return symbolCache;
+    }
+
+    private String nickname(UUID playerId) {
+        String cached = nicknames.get(playerId);
+        if (cached != null) {
+            return cached;
+        }
+        try {
+            return users.findById(playerId)
+                    .map(user -> nicknames.computeIfAbsent(playerId, ignored -> user.getUsername()))
+                    .orElse(null);
+        } catch (RuntimeException exception) {
+            log.warn("Could not enrich DRAFT_UPDATE with nickname: playerId={}", playerId, exception);
+            return null;
+        }
     }
 
     public record Message(String type, Progress payload, long serverTime) { }

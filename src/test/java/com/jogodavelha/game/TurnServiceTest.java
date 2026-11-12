@@ -86,7 +86,7 @@ class TurnServiceTest {
         assertEquals(1, state.getConsecutiveTimeouts(p1));
         assertFalse(state.getFrozenPositions().containsKey(7));
         org.mockito.InOrder order = inOrder(events);
-        order.verify(events).publishEvent(new TurnTimedOutEvent(gameId, p1, 1));
+        order.verify(events).publishEvent(new TurnTimedOutEvent(gameId, p1, 1, state));
         order.verify(events).publishEvent(any(GameplayBoardUpdatedEvent.class));
         order.verify(events).publishEvent(any(TurnChangedEvent.class));
     }

@@ -125,6 +125,48 @@ class GameplayEventPublisherTest {
         assertEquals(3, event.payload().get("consecutiveTimeouts"));
     }
 
+    @Test
+    void turnStartUsesTheEventStateAndRoomCodeWithoutRepositories() {
+        GameState state = state(GamePhase.PLAYING, "----------------");
+        state.setRoomCode("0042");
+        state.setCurrentTurnPlayerId(p2);
+        state.setTurnDurationMillis(10_000L);
+        state.setTurnDeadlineEpochMillis(15_000L);
+
+        publisher.onTurnChanged(new TurnChangedEvent(gameId, p2, 15_000L, 1, false,
+                false, null, null, state));
+
+        MatchLifecycleEvent event = sent("TURN_START");
+        assertEquals("P2", event.payload().get("player"));
+        verify(games, never()).findSnapshotRouteById(any());
+        verify(states, never()).find(any());
+    }
+
+    @Test
+    void boardUpdateUsesTheRoomCodeCarriedByTheState() {
+        GameState state = state(GamePhase.PLAYING, "----------------");
+        state.setRoomCode("0042");
+
+        publisher.onBoardUpdated(new GameplayBoardUpdatedEvent(gameId, state));
+
+        sent("BOARD_UPDATE");
+        verify(games, never()).findSnapshotRouteById(any());
+    }
+
+    @Test
+    void skillResolutionUsesTheEventStateWithoutRepositories() {
+        GameState state = state(GamePhase.PLAYING, "----------------");
+        state.setRoomCode("0042");
+
+        publisher.onSkillResolved(new SkillResolvedEvent(gameId, p2, "TORNADO", 5, 10,
+                SkillResult.APPLIED, state));
+
+        MatchLifecycleEvent event = sent("ABILITY_RESOLVED");
+        assertEquals("P2", event.payload().get("by"));
+        verify(games, never()).findSnapshotRouteById(any());
+        verify(states, never()).find(any());
+    }
+
     private MatchLifecycleEvent sent(String type) {
         var captor = org.mockito.ArgumentCaptor.forClass(MatchLifecycleEvent.class);
         verify(websocket).sendToTopic(eq("/topic/rooms/0042"), captor.capture());

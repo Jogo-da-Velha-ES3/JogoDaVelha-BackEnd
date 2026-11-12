@@ -112,7 +112,7 @@ public class RoundSkillDrawService implements RoundSkillDraft {
         schedule(key, draw.deadline());
         websocket.sendToTopic("/topic/rooms/" + draw.roomCode(),
                 event("PHASE_CHANGE", Map.of("phase", "ROUND_DRAW")));
-        draw.players().keySet().forEach(playerId -> publishDeck(gameId, round, playerId));
+        draw.players().keySet().forEach(playerId -> publishDeck(gameId, round, playerId, state));
         draw.players().forEach((playerId, player) -> {
             if (player.selected() == null && !player.skipped()) websocket.sendToUser(playerId.toString(), "/queue/room",
                     event("DRAW_OPTIONS", Map.of("options", player.options(), "deadline", draw.deadline())));
@@ -154,7 +154,7 @@ public class RoundSkillDrawService implements RoundSkillDraft {
         if (expected.round() > 1 && (abilityToRemove == null || abilityToRemove.isBlank())) {
             throw new IllegalArgumentException("Informe a habilidade do deck que será substituída.");
         }
-        states.update(gameId, current -> {
+        GameState committed = states.update(gameId, current -> {
             RoundDrawState draw = current.getRoundDraw();
             // Reconfere o prazo em cada tentativa, como o Draft inicial.
             if (current.getPhase() != GamePhase.DRAFT || draw == null || draw.round() != expected.round()
@@ -167,7 +167,7 @@ public class RoundSkillDrawService implements RoundSkillDraft {
             return current;
         });
         try {
-            publishDeck(gameId, expected.round(), playerId);
+            publishDeck(gameId, expected.round(), playerId, committed);
         } finally {
             complete(new RoundKey(gameId, expected.round()));
         }
@@ -198,10 +198,14 @@ public class RoundSkillDrawService implements RoundSkillDraft {
             }
         });
         Set<UUID> selected;
+        GameState[] committed = new GameState[1];
         try {
             selected = states.updateWithResult(gameId, current -> {
+                committed[0] = current; // a última execução é a tentativa gravada pelo CAS
                 Set<UUID> changed = new HashSet<>();
-                if (!pending(current, round, deadline)) return new GameStateManager.Update<>(current, changed);
+                if (!pending(current, round, deadline)) {
+                    return new GameStateManager.Update<>(current, changed);
+                }
                 for (var choice : automatic.entrySet()) {
                     var draw = current.getRoundDraw().players().get(choice.getKey());
                     if (draw.selected() == null && !draw.skipped()) {
@@ -224,7 +228,7 @@ public class RoundSkillDrawService implements RoundSkillDraft {
             return;
         }
         try {
-            selected.forEach(player -> publishDeck(gameId, round, player));
+            selected.forEach(player -> publishDeck(gameId, round, player, committed[0]));
         } finally {
             complete(key);
         }
@@ -271,21 +275,21 @@ public class RoundSkillDrawService implements RoundSkillDraft {
     /** Habilidade usada: o dono recebe o deck com ela marcada, para a carta não parecer disponível. */
     @EventListener
     public void onSkillResolved(SkillResolvedEvent event) {
-        states.find(event.gameId()).ifPresent(state ->
-                publishDeck(event.gameId(), state.getRoundNumber(), event.playerId()));
+        GameState state = event.state() != null ? event.state() : states.find(event.gameId()).orElse(null);
+        if (state != null) {
+            publishDeck(event.gameId(), state.getRoundNumber(), event.playerId(), state);
+        }
     }
 
-    private void publishDeck(UUID gameId, int round, UUID playerId) {
-        states.find(gameId).ifPresent(state -> {
-            if (state.getRoundNumber() != round) return;
-            var fixed = state.getInitialSkillsByPlayer().getOrDefault(playerId, Set.of());
-            var current = state.getRoundSkillDecks().getOrDefault(playerId, fixed);
-            if (current.isEmpty()) return;
-            var deck = current.stream().sorted().map(ability ->
-                    new RoomSnapshotService.DeckSlot(ability, fixed.contains(ability) ? "INITIAL" : "DRAWN",
-                            state.hasUsedSkill(playerId, ability))).toList();
-            websocket.sendToUser(playerId.toString(), "/queue/room", event("DECK_UPDATE", Map.of("deck", deck)));
-        });
+    private void publishDeck(UUID gameId, int round, UUID playerId, GameState state) {
+        if (state == null || !gameId.equals(state.getGameId()) || state.getRoundNumber() != round) return;
+        var fixed = state.getInitialSkillsByPlayer().getOrDefault(playerId, Set.of());
+        var current = state.getRoundSkillDecks().getOrDefault(playerId, fixed);
+        if (current.isEmpty()) return;
+        var deck = current.stream().sorted().map(ability ->
+                new RoomSnapshotService.DeckSlot(ability, fixed.contains(ability) ? "INITIAL" : "DRAWN",
+                        state.hasUsedSkill(playerId, ability))).toList();
+        websocket.sendToUser(playerId.toString(), "/queue/room", event("DECK_UPDATE", Map.of("deck", deck)));
     }
 
     private boolean complete(RoundKey key) {

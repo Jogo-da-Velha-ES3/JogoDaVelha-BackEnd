@@ -110,8 +110,7 @@ class RoundSkillDrawWebSocketTest {
             when(states.find(GAME)).thenReturn(Optional.of(state));
             doAnswer(call -> {
                 Function<GameState, GameState> update = call.getArgument(1);
-                update.apply(state);
-                return null;
+                return update.apply(state);
             }).when(states).update(eq(GAME), any());
             return states;
         }

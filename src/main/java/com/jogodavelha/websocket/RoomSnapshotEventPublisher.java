@@ -31,6 +31,11 @@ public class RoomSnapshotEventPublisher {
 
     @EventListener
     public void onDraftUpdated(DraftUpdated event) {
-        snapshots.publish(event.roomCode());
+        long start = System.nanoTime();
+        try {
+            snapshots.publish(event.roomCode());
+        } finally {
+            com.jogodavelha.telemetry.ActionProfiler.add("snapshot.publish", start);
+        }
     }
 }

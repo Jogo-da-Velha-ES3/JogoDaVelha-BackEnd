@@ -165,7 +165,7 @@ public class TurnService {
             return;
         }
         try {
-            events.publishEvent(new TurnTimedOutEvent(gameId, timedOut[0], consecutiveTimeouts[0]));
+            events.publishEvent(new TurnTimedOutEvent(gameId, timedOut[0], consecutiveTimeouts[0], snapshot[0]));
             if (boardChanged[0]) events.publishEvent(new GameplayBoardUpdatedEvent(gameId, snapshot[0]));
         } finally {
             try {
@@ -192,6 +192,6 @@ public class TurnService {
     private static TurnChangedEvent toEvent(GameState s, Optional<Character> winner, UUID timedOut) {
         return new TurnChangedEvent(s.getGameId(), s.getCurrentTurnPlayerId(), s.getTurnDeadlineEpochMillis(),
                 s.getRoundNumber(), s.isSuddenDeath(), s.getPhase() == GamePhase.ROUND_FINISHED,
-                winner.orElse(null), timedOut);
+                winner.orElse(null), timedOut, s);
     }
 }

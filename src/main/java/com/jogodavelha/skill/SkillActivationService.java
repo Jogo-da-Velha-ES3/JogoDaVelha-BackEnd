@@ -104,10 +104,15 @@ public class SkillActivationService {
         if (committed[0] == null || result[0] == null) {
             throw new IllegalStateException("A ativação não produziu um estado persistido.");
         }
-        events.publishEvent(new SkillResolvedEvent(gameId, preparedContext.casterId(), skillCode,
-                preparedContext.targetPosition(), preparedContext.destinationPosition(), result[0]));
-        events.publishEvent(new com.jogodavelha.game.GameplayBoardUpdatedEvent(gameId, committed[0]));
-        turns.publishAndSchedule(committed[0], winner[0]);
+        long publishStart = System.nanoTime();
+        try {
+            events.publishEvent(new SkillResolvedEvent(gameId, preparedContext.casterId(), skillCode,
+                    preparedContext.targetPosition(), preparedContext.destinationPosition(), result[0], committed[0]));
+            events.publishEvent(new com.jogodavelha.game.GameplayBoardUpdatedEvent(gameId, committed[0]));
+            turns.publishAndSchedule(committed[0], winner[0]);
+        } finally {
+            com.jogodavelha.telemetry.ActionProfiler.add("events.publish", publishStart);
+        }
         return new Activation(committed[0], result[0], winner[0]);
     }
 }
