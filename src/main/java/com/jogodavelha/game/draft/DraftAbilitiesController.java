@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
+import com.jogodavelha.telemetry.ActionProfiler;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Controller;
 
@@ -26,6 +27,15 @@ public class DraftAbilitiesController {
 
     @MessageMapping("/rooms/{code}/draft/abilities")
     public void confirm(@DestinationVariable String code, @Payload Request request, Principal principal) {
+        ActionProfiler.begin("draft.abilities");
+        try {
+            confirmInternal(code, request, principal);
+        } finally {
+            ActionProfiler.end();
+        }
+    }
+
+    private void confirmInternal(@DestinationVariable String code, @Payload Request request, Principal principal) {
         if (principal == null || principal.getName() == null) {
             throw new AccessDeniedException("Autenticação STOMP obrigatória.");
         }

@@ -20,7 +20,8 @@ import static org.mockito.Mockito.*;
 class GameplayRoomResolverTest {
     private final RoomRepository rooms = mock(RoomRepository.class);
     private final GameRepository games = mock(GameRepository.class);
-    private final GameplayRoomResolver resolver = new GameplayRoomResolver(rooms, games);
+    private final GameplayRouteCache routes = mock(GameplayRouteCache.class);
+    private final GameplayRoomResolver resolver = new GameplayRoomResolver(rooms, games, routes);
     private final UUID roomId = UUID.randomUUID();
     private final UUID gameId = UUID.randomUUID();
     private final UUID p1 = UUID.randomUUID();
@@ -88,6 +89,33 @@ class GameplayRoomResolverTest {
         assertThrows(IllegalArgumentException.class, () -> resolver.resolveActiveGame("42", p1));
         assertThrows(AccessDeniedException.class, () -> resolver.resolveActiveGame("0042", null));
         verifyNoInteractions(rooms, games);
+    }
+
+    @Test
+    void cachedRouteResolvesMembersWithoutTouchingTheDatabase() {
+        when(routes.find("0042")).thenReturn(Optional.of(
+                new GameplayRouteCache.Route(gameId, p1, p2)));
+
+        assertEquals(gameId, resolver.resolveActiveGame("0042", p1));
+        assertEquals(gameId, resolver.resolveActiveGame("0042", p2));
+
+        verifyNoInteractions(rooms, games);
+    }
+
+    @Test
+    void cachedRouteStillRejectsNonMembersThroughTheDatabasePath() {
+        when(routes.find("0042")).thenReturn(Optional.of(
+                new GameplayRouteCache.Route(gameId, p1, p2)));
+
+        assertThrows(AccessDeniedException.class, () -> resolver.resolveActiveGame("0042", outsider));
+        verify(rooms).findByCodeAndStatusIn(eq("0042"), anyCollection());
+    }
+
+    @Test
+    void databaseResolutionRepopulatesTheRouteCache() {
+        resolver.resolveActiveGame("0042", p1);
+
+        verify(routes).put(eq("0042"), eq(gameId), eq(p1), eq(p2));
     }
 
     private User user(UUID id) {

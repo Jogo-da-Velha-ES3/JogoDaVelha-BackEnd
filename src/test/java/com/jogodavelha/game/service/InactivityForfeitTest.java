@@ -65,8 +65,9 @@ class InactivityForfeitTest {
         doAnswer(call -> {
             if (stored.get() == null) throw new GameStateNotFoundException(gameId);
             Function<GameState, GameState> update = call.getArgument(1);
-            stored.set(update.apply(stored.get()));
-            return null;
+            GameState updated = update.apply(stored.get());
+            stored.set(updated);
+            return updated;
         }).when(states).update(eq(gameId), any());
         doAnswer(ignored -> { stored.set(null); return null; }).when(states).delete(gameId);
         var scheduler = mock(TaskScheduler.class);
@@ -79,7 +80,7 @@ class InactivityForfeitTest {
             if (event instanceof TurnChangedEvent changed) lifecycle.get().onTurnChanged(changed);
         });
         lifecycle.set(new GameLifecycleService(games, repository, rooms, states, turns, websocket,
-                mock(ObjectProvider.class), applicationEvents, clock, mock(TaskScheduler.class)));
+                mock(ObjectProvider.class), applicationEvents, clock, mock(GameplayRouteCache.class), mock(TaskScheduler.class)));
         var moves = new MoveActionService(states, new MoveValidator(clock), turns, clock, applicationEvents);
 
         for (int timeout = 0; timeout < 2; timeout++) {

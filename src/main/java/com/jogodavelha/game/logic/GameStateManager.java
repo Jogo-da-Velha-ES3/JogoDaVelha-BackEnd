@@ -2,6 +2,7 @@ package com.jogodavelha.game.logic;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jogodavelha.telemetry.ActionProfiler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +20,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
@@ -39,6 +41,15 @@ public class GameStateManager {
     private final int maxRetries;
     private final RedisScript<Boolean> compareAndSetScript;
     private final SecureRandom random;
+    /**
+     * Último JSON commitado por este nó, indexado pelo gameId. Evita o GET anterior ao CAS
+     * no caminho feliz: se outra instância gravar, o CAS falha e a leitura volta ao Redis.
+     * O mutator precisa ser puro (contrato já existente) porque pode rodar sobre estado
+     * eventualmente defasado; nesse caso uma exceção do mutator força releitura.
+     */
+    private final ConcurrentHashMap<UUID, CacheEntry> committedStates = new ConcurrentHashMap<>();
+
+    private record CacheEntry(String json, long version) { }
 
     @Autowired
     public GameStateManager(RedisTemplate<String, Object> redisTemplate, ObjectMapper objectMapper,
@@ -100,6 +111,10 @@ public class GameStateManager {
         saveInitial(GameState.createInitial(gameId, player1Id, player2Id, turnDurationMillis, random));
     }
 
+    public void create(UUID gameId, String roomCode, UUID player1Id, UUID player2Id, long turnDurationMillis) {
+        saveInitial(GameState.createInitial(gameId, roomCode, player1Id, player2Id, turnDurationMillis, random));
+    }
+
     private void saveInitial(GameState gameState) {
         UUID gameId = gameState.getGameId();
         String key = buildKey(gameId);
@@ -116,6 +131,7 @@ public class GameStateManager {
             throw new IllegalStateException("Estado da partida já existe: " + gameId);
         }
 
+        remember(gameId, json, gameState.getVersion());
         log.debug("Estado inicial criado para partida {}", gameId);
     }
 
@@ -127,7 +143,9 @@ public class GameStateManager {
      */
     public Optional<GameState> find(UUID gameId) {
         String key = buildKey(gameId);
+        long readStart = System.nanoTime();
         String json = (String) redisTemplate.opsForValue().get(key);
+        ActionProfiler.add("redis.get", readStart);
         
         if (json == null) {
             return Optional.empty();
@@ -148,11 +166,15 @@ public class GameStateManager {
      *
      * @param gameId ID da partida
      * @param mutator função que aplica modificações ao estado
+     * @return o estado efetivamente commitado no Redis
      * @throws GameStateNotFoundException se o estado não existir
      * @throws ConcurrentStateModificationException se houver conflito de concorrência após todas as tentativas
      */
-    public void update(UUID gameId, Function<GameState, GameState> mutator) {
-        updateWithResult(gameId, current -> new Update<>(mutator.apply(current), null));
+    public GameState update(UUID gameId, Function<GameState, GameState> mutator) {
+        return updateWithResult(gameId, current -> {
+            GameState modified = mutator.apply(current);
+            return new Update<>(modified, modified);
+        });
     }
 
     /** Retorna somente o resultado da tentativa que foi gravada pelo CAS. */
@@ -160,22 +182,47 @@ public class GameStateManager {
         String key = buildKey(gameId);
         
         for (int attempt = 0; attempt < maxRetries; attempt++) {
-            Optional<GameState> currentOpt = find(gameId);
-            
-            if (currentOpt.isEmpty()) {
-                throw new GameStateNotFoundException(gameId);
+            GameState current;
+            boolean fromCache = false;
+            CacheEntry cached = committedStates.get(gameId);
+            if (cached != null) {
+                try {
+                    current = deserialize(cached.json());
+                    fromCache = true;
+                } catch (JsonProcessingException e) {
+                    committedStates.remove(gameId, cached);
+                    continue;
+                }
+            } else {
+                Optional<GameState> currentOpt = find(gameId);
+                if (currentOpt.isEmpty()) {
+                    committedStates.remove(gameId);
+                    throw new GameStateNotFoundException(gameId);
+                }
+                current = currentOpt.get();
             }
             
-            GameState current = currentOpt.get();
             long expectedVersion = current.getVersion();
             
-            Update<T> update = mutator.apply(current);
+            Update<T> update;
+            try {
+                update = mutator.apply(current);
+            } catch (RuntimeException failure) {
+                // Um mutator que rejeita o estado em cache pode estar vendo dados defasados:
+                // descarta o cache e tenta de novo com a leitura fresca do Redis.
+                if (fromCache) {
+                    committedStates.remove(gameId);
+                    continue;
+                }
+                throw failure;
+            }
             GameState modified = update.state();
             modified.setVersion(expectedVersion + 1);
             
             String json = serialize(modified);
             long ttlSeconds = stateTtlMillis / 1000;
             
+            long casStart = System.nanoTime();
             Boolean success = redisTemplate.execute(
                 compareAndSetScript,
                 Collections.singletonList(key),
@@ -183,16 +230,24 @@ public class GameStateManager {
                 json,
                 String.valueOf(ttlSeconds)
             );
+            ActionProfiler.add("redis.cas", casStart);
             
             if (Boolean.TRUE.equals(success)) {
+                remember(gameId, json, modified.getVersion());
                 log.debug("Estado atualizado com sucesso para partida {} (versão {})", gameId, modified.getVersion());
                 return update.result();
             }
             
+            committedStates.remove(gameId);
             log.debug("Conflito de versão ao atualizar partida {} (tentativa {}/{})", gameId, attempt + 1, maxRetries);
         }
         
         throw new ConcurrentStateModificationException(gameId, maxRetries);
+    }
+
+    private void remember(UUID gameId, String json, long version) {
+        committedStates.merge(gameId, new CacheEntry(json, version),
+                (existing, incoming) -> incoming.version() >= existing.version() ? incoming : existing);
     }
 
     public record Update<T>(GameState state, T result) { }
@@ -212,6 +267,7 @@ public class GameStateManager {
      */
     public void delete(UUID gameId) {
         String key = buildKey(gameId);
+        committedStates.remove(gameId);
         redisTemplate.delete(key);
         log.debug("Estado removido para partida {}", gameId);
     }

@@ -118,6 +118,25 @@ class DraftStateManagerTest {
         assertThrows(IllegalArgumentException.class, () -> new DraftStateManager(redis, mapper, retention, 3));
     }
 
+    @Test
+    void sequentialUpdatesReuseTheCommittedSnapshotWithoutRereading() throws Exception {
+        when(values.setIfAbsent(eq(key), anyString(), eq(1800000L), eq(TimeUnit.MILLISECONDS)))
+                .thenReturn(true);
+        when(redis.execute(any(RedisScript.class), eq(List.of(key)), anyString(), anyString(), eq("1800000")))
+                .thenReturn(1L);
+        manager.create(initial());
+
+        var first = manager.update(room, state -> state.withPlayer(state.player1().withCharacter(a))).orElseThrow();
+        var second = manager.update(room, state -> state.withPlayer(state.player2().withCharacter(b))).orElseThrow();
+
+        assertEquals(1, first.after().version());
+        assertEquals(2, second.after().version());
+        assertEquals(a, second.after().player1().characterId());
+        assertEquals(b, second.after().player2().characterId());
+        verify(values, never()).get(anyString());
+        verify(redis, times(2)).execute(any(RedisScript.class), eq(List.of(key)), anyString(), anyString(), eq("1800000"));
+    }
+
     private DraftState initial() {
         var items = new DraftEligibilityProvider.EligibleItems(List.of(a, b), List.of("BOMBA", "ESCUDO", "AMPULHETA"));
         return new DraftState(room, "0042", 21000, 0,

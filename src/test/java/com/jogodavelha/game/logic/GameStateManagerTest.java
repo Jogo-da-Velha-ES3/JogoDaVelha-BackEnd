@@ -146,4 +146,48 @@ class GameStateManagerTest {
         verify(redis, never()).execute(any(RedisScript.class), anyList(), any(), any(), any());
         verifyNoInteractions(random);
     }
+
+    @Test
+    void updateReturnsCommittedStateAndServesSequentialUpdatesFromCache() {
+        when(values.setIfAbsent(eq(key), anyString(), eq(1800000L), eq(TimeUnit.MILLISECONDS)))
+                .thenReturn(true);
+        when(redis.execute(any(RedisScript.class), eq(List.of(key)), anyString(), anyString(), anyString()))
+                .thenReturn(true);
+        manager.create(gameId, player1, player2, 10000);
+
+        GameState first = manager.update(gameId, state -> {
+            state.setBoard("X---------------");
+            return state;
+        });
+        GameState second = manager.update(gameId, state -> {
+            state.setBoard("XO--------------");
+            return state;
+        });
+
+        assertEquals(1, first.getVersion());
+        assertEquals(2, second.getVersion());
+        assertEquals("XO--------------", second.getBoard());
+        // O estado commitado fica em cache: nenhuma releitura precede os CAS.
+        verify(values, never()).get(anyString());
+        verify(redis, times(2)).execute(any(RedisScript.class), eq(List.of(key)),
+                anyString(), anyString(), eq("1800"));
+    }
+
+    @Test
+    void mutatorRejectionOnCachedStateFallsBackToFreshRead() throws Exception {
+        ArgumentCaptor<String> created = ArgumentCaptor.forClass(String.class);
+        when(values.setIfAbsent(eq(key), created.capture(), eq(1800000L), eq(TimeUnit.MILLISECONDS)))
+                .thenReturn(true);
+        manager.create(gameId, player1, 10000);
+        when(values.get(key)).thenReturn(created.getValue());
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> manager.update(gameId, state -> {
+                    throw new IllegalStateException("turno inválido");
+                }));
+
+        assertEquals("turno inválido", failure.getMessage());
+        verify(values, times(1)).get(key);
+        verify(redis, never()).execute(any(RedisScript.class), anyList(), any(), any(), any());
+    }
 }

@@ -25,6 +25,8 @@ import java.util.*;
 public class GameState {
 
     private UUID gameId;
+    /** Código da sala dona da partida; permite publicar eventos sem consultar o PostgreSQL. */
+    private String roomCode;
     private String board;
     private UUID player1Id;
     private UUID player2Id;
@@ -97,9 +99,14 @@ public class GameState {
      * @return estado inicial da partida
      */
     public static GameState createInitial(UUID gameId, UUID firstPlayerId, long turnDurationMillis) {
+        return createInitial(gameId, null, firstPlayerId, turnDurationMillis);
+    }
+
+    public static GameState createInitial(UUID gameId, String roomCode, UUID firstPlayerId, long turnDurationMillis) {
         long now = Instant.now().toEpochMilli();
         return GameState.builder()
                 .gameId(gameId)
+                .roomCode(roomCode)
                 .board(EMPTY_BOARD)
                 .firstPlayerId(firstPlayerId)
                 .currentTurnPlayerId(firstPlayerId)
@@ -113,6 +120,11 @@ public class GameState {
 
     public static GameState createInitial(UUID gameId, UUID player1Id, UUID player2Id,
                                           long turnDurationMillis, SecureRandom random) {
+        return createInitial(gameId, null, player1Id, player2Id, turnDurationMillis, random);
+    }
+
+    public static GameState createInitial(UUID gameId, String roomCode, UUID player1Id, UUID player2Id,
+                                          long turnDurationMillis, SecureRandom random) {
         if (gameId == null || player1Id == null || player2Id == null || player1Id.equals(player2Id)) {
             throw new IllegalArgumentException("A partida precisa de um ID e dois jogadores diferentes.");
         }
@@ -121,7 +133,7 @@ public class GameState {
         }
         Objects.requireNonNull(random, "Gerador aleatório é obrigatório.");
         UUID firstPlayer = random.nextBoolean() ? player1Id : player2Id;
-        GameState state = createInitial(gameId, firstPlayer, turnDurationMillis);
+        GameState state = createInitial(gameId, roomCode, firstPlayer, turnDurationMillis);
         state.setPlayer1Id(player1Id);
         state.setPlayer2Id(player2Id);
         return state;

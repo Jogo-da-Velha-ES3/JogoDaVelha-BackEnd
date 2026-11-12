@@ -54,8 +54,13 @@ public class MoveActionService {
             return state;
         });
         // Must remain outside update: its mutator can be retried after a CAS conflict.
-        events.publishEvent(new GameplayBoardUpdatedEvent(gameId, committed[0]));
-        turns.publishAndSchedule(committed[0], winner[0]);
+        long publishStart = System.nanoTime();
+        try {
+            events.publishEvent(new GameplayBoardUpdatedEvent(gameId, committed[0]));
+            turns.publishAndSchedule(committed[0], winner[0]);
+        } finally {
+            com.jogodavelha.telemetry.ActionProfiler.add("events.publish", publishStart);
+        }
         return new Result(committed[0], winner[0]);
     }
 }

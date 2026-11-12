@@ -100,7 +100,7 @@ class GameLifecycleServiceTest {
             return null;
         }).when(applicationEvents).publishEvent(any(LifecyclePauseElapsed.class));
         lifecycle = new GameLifecycleService(games, gameRepository, rooms, states, turns, websocket, skillDraft,
-                applicationEvents, clock, scheduler);
+                applicationEvents, clock, mock(GameplayRouteCache.class), scheduler);
         player1 = new User("p1", "pass", "p1@test.com");
         player1.setId(UUID.randomUUID());
         player2 = new User("p2", "pass", "p2@test.com");
@@ -129,23 +129,24 @@ class GameLifecycleServiceTest {
 
         lenient().doAnswer(invocation -> {
             UUID gameId = invocation.getArgument(0);
-            UUID p1 = invocation.getArgument(1);
-            UUID p2 = invocation.getArgument(2);
-            long duration = invocation.getArgument(3);
+            UUID p1 = invocation.getArgument(2);
+            UUID p2 = invocation.getArgument(3);
+            long duration = invocation.getArgument(4);
             SecureRandom fixed = mock(SecureRandom.class);
             when(fixed.nextBoolean()).thenReturn(true);
             GameState created = GameState.createInitial(gameId, p1, p2, duration, fixed);
             redisState.set(created);
             return null;
-        }).when(states).create(any(), any(), any(), anyLong());
+        }).when(states).create(any(), any(), any(), any(), anyLong());
 
         lenient().when(states.find(any())).thenAnswer(invocation -> Optional.ofNullable(redisState.get()));
         lenient().doAnswer(invocation -> {
             Function<GameState, GameState> mutator = invocation.getArgument(1);
             GameState current = redisState.get();
             assertNotNull(current);
-            redisState.set(mutator.apply(current));
-            return null;
+            GameState updated = mutator.apply(current);
+            redisState.set(updated);
+            return updated;
         }).when(states).update(any(), any());
         lenient().doAnswer(invocation -> {
             Function<GameState, GameStateManager.Update<Object>> mutator = invocation.getArgument(1);
@@ -168,7 +169,7 @@ class GameLifecycleServiceTest {
         lifecycle.onDraftCompleted(draftEvent(false));
 
         verify(games).startGame(room, character1Id, character2Id);
-        verify(states).create(eq(game.getId()), eq(player1.getId()), eq(player2.getId()),
+        verify(states).create(eq(game.getId()), eq("4242"), eq(player1.getId()), eq(player2.getId()),
                 eq(GameState.DEFAULT_TURN_DURATION_MILLIS));
         // Tela de Confronto: o round 1 (e o sorteio) só abre depois da pausa do VS
         verify(roundSkillDraft, never()).beginRound(any(), anyInt(), any(), any());
@@ -229,7 +230,7 @@ class GameLifecycleServiceTest {
         assertEquals(1, openingEvents.getAllValues().get(1).payload().get("round"));
         assertEquals("ROUND_DRAW", openingEvents.getAllValues().getLast().payload().get("phase"));
         lifecycle = new GameLifecycleService(games, gameRepository, rooms, states, turns, websocket, skillDraft,
-                applicationEvents, clock, this.scheduler);
+                applicationEvents, clock, mock(GameplayRouteCache.class), this.scheduler);
         var restarted = new RoundSkillDrawService(states, catalog, rooms, gameRepository, clock,
                 scheduler, websocket, snapshots,
                 event -> lifecycle.onRoundDrawCompleted((RoundDrawCompleted) event), new Random(99));
@@ -285,7 +286,7 @@ class GameLifecycleServiceTest {
 
         lifecycle.onDraftCompleted(draftEvent(false));
 
-        verify(states, never()).create(any(), any(), any(), anyLong());
+        verify(states, never()).create(any(), any(), any(), any(), anyLong());
         verify(roundSkillDraft, never()).beginRound(any(), anyInt(), any(), any());
     }
 
@@ -297,7 +298,7 @@ class GameLifecycleServiceTest {
 
         lifecycle.onDraftCompleted(draftEvent(false));
 
-        verify(states, never()).create(any(), any(), any(), anyLong());
+        verify(states, never()).create(any(), any(), any(), any(), anyLong());
     }
 
     @Test
