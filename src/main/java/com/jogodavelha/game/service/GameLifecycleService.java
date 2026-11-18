@@ -263,7 +263,7 @@ public class GameLifecycleService implements RoundLifecycle {
                 return current;
             });
             if (round == 1) {
-                // O round 1 (e o sorteio de 8s) só abre depois da tela de Confronto.
+                // O round 1 (e o sorteio de 12s) só abre depois da tela de Confronto.
                 phase(game.getRoom(), "VERSUS", round);
                 pause(game.getId(), round, LifecyclePauseElapsed.Step.VERSUS, VERSUS_MILLIS);
                 return;

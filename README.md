@@ -1221,7 +1221,7 @@ habilidades já escolhidas por aquele jogador na partida (inclusive as iniciais 
 as depois substituídas). Opções oferecidas e não escolhidas podem voltar em rounds
 futuros. Esse histórico é individual por jogador. As opções ficam
 no `GameState` do Redis e chegam somente ao dono em `/user/queue/room`, no evento
-`DRAW_OPTIONS`, com `{options, deadline}`. O prazo é de 8 segundos.
+`DRAW_OPTIONS`, com `{options, deadline}`. O prazo é de 12 segundos.
 
 Envie `SEND /app/rooms/{code}/draw/pick` com `{"ability":"TORNADO"}`. No primeiro
 round a escolhida é adicionada ao deck, que fica com as duas fixas mais uma sorteada

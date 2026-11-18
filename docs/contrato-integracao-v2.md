@@ -1231,7 +1231,7 @@ sempre as duas habilidades iniciais mais uma sorteada [RN-DRAFT-02]: no primeiro
 escolhida é adicionada ao deck; a partir do segundo round ela entra no lugar da habilidade
 indicada em `abilityToRemove`, que precisa estar no deck atual. No primeiro round o campo
 `abilityToRemove` deve ser omitido; do segundo em diante ele é obrigatório. Só é aceita
-uma confirmação por jogador, antes do prazo de 8 segundos.
+uma confirmação por jogador, antes do prazo de 12 segundos.
 
 Se o prazo vencer no primeiro round, o backend sorteia automaticamente uma das opções e
 a adiciona ao deck. Se o prazo vencer a partir do segundo round, o sorteio é pulado: o
@@ -1547,7 +1547,7 @@ incrementais; não geram snapshots completos a cada ação.
   é `[]`. A fase compartilhada pode ser `ROUND_DRAW`, mas as opções nunca são públicas.
 - `MATCH_END` mantém o envelope `{type,payload,serverTime}` e publica `outcome` com slots e `coins` com os valores efetivamente creditados por slot, sem expor UUIDs de jogadores. Inclui `reason` (`NORMAL` ou `FORFEIT_TIMEOUT`) e `forfeit` por compatibilidade. É publicado uma única vez. Em seguida, `MatchFinishedEvent` dispara `ROOM_SNAPSHOT` público e individualizado para os dois jogadores, com `phase:"RESULT"` e `outcome` final; somente depois da publicação o servidor remove o estado Redis. Chamadas repetidas de finalização não duplicam `MATCH_END` nem o snapshot final.
 - Após aceitar a revanche, o snapshot continua usando o envelope padrão e a mesma sala. `gameId` aponta para a nova partida apenas depois que o Draft termina e `GameLifecycleService` cria o novo `Game`; a partida anterior continua no histórico.
-- Na fase `ROUND_DRAW`, `turn` é `null`: os 8 segundos de escolha não são um turno
+- Na fase `ROUND_DRAW`, `turn` é `null`: os 12 segundos de escolha não são um turno
   e não alteram os contadores de timeout. O Draft inicial concluído não substitui
   a fase da partida no snapshot.
 - Campos variáveis do snapshot privado:
@@ -1868,7 +1868,7 @@ mesmo se substituídas). Opções oferecidas e não escolhidas podem aparecer em
 futuros. O histórico é independente por jogador. No primeiro round, o deck tem as
 duas habilidades iniciais e a escolhida é adicionada. Nos rounds seguintes, a escolha
 manual exige `abilityToRemove` e a sorteada entra no lugar da habilidade indicada,
-que precisa estar no deck atual. Se o prazo de 8 segundos vencer, o primeiro round
+que precisa estar no deck atual. Se o prazo de 12 segundos vencer, o primeiro round
 sorteia uma opção automaticamente e a adiciona ao deck; nos rounds seguintes o
 sorteio é pulado e o deck não muda. `deadline` e `serverTime` são epoch millis.
 
@@ -2145,7 +2145,7 @@ O `Outcome` presente em snapshots de composicao/sincronizacao e no snapshot fina
 - Jogador pode continuar jogando mesmo se desconectado (timeout de partida separado)
 - Reconexão via `sync` restaura estado completo
 - Durante o sorteio do round, o snapshot privado restaura as opções pendentes e
-  o prazo original, sem abrir uma nova janela de 8 segundos.
+  o prazo original, sem abrir uma nova janela de 12 segundos.
 - Após reiniciar o backend, `RoundSkillDrawService` usa `SCAN` para localizar
   estados de partida no Redis. Sorteios pendentes são reagendados pelo prazo salvo;
   os vencidos são resolvidos imediatamente. Se ambas as escolhas já estavam salvas

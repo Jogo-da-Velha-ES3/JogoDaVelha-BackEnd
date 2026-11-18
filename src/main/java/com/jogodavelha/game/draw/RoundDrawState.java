@@ -6,7 +6,7 @@ import java.util.Map;
 import java.util.UUID;
 
 public record RoundDrawState(String roomCode, int round, long deadline, Map<UUID, Player> players) {
-    public static final long DURATION_MILLIS = 8_000;
+    public static final long DURATION_MILLIS = 12_000;
 
     public RoundDrawState {
         players = Map.copyOf(players);
