@@ -370,6 +370,37 @@ class RoomSnapshotServiceTest {
     }
 
     @Test
+    void completedRematchDraftBeforeTheNewGameExistsIsStillThePreparation() throws Exception {
+        RoomFixture fixture = activeRoom(false);
+        Game previous = finishedGame(fixture);
+        var eligible = new DraftEligibilityProvider.EligibleItems(
+                List.of(UUID.randomUUID(), UUID.randomUUID()), List.of("BOMBA", "ESCUDO"));
+        // Revanche aceita 10s depois do fim: a Preparação acabou de ser concluída e o DraftUpdated
+        // publica o snapshot antes de o DraftCompleted criar a partida nova
+        DraftState draft = new DraftState(fixture.room().getId(), "0042",
+                previous.getFinishedAt().toEpochMilli() + 30_000, 4,
+                DraftState.Player.initial(fixture.host().getId(), eligible),
+                DraftState.Player.initial(fixture.guest().getId(), eligible))
+                .autoComplete(List.of(0.1, 0.2, 0.3, 0.4, 0.5, 0.6));
+        var x = new com.jogodavelha.character.Character("X", com.jogodavelha.character.CharacterSymbol.X, 0);
+        x.setId(draft.player1().characterId());
+        var o = new com.jogodavelha.character.Character("O", com.jogodavelha.character.CharacterSymbol.O, 0);
+        o.setId(draft.player2().characterId());
+        when(characters.findAllById(any())).thenReturn(List.of(x, o));
+        when(games.findTopByRoomIdAndStatusOrderByFinishedAtDesc(fixture.room().getId(), GameStatus.FINISHED))
+                .thenReturn(Optional.of(previous));
+        when(drafts.find(fixture.room().getId())).thenReturn(Optional.of(draft));
+
+        var snapshot = snapshots.compose("0042", fixture.host().getId());
+
+        assertTrue(draft.completed());
+        assertEquals(RoomSnapshotService.RoomPhase.DRAFT, snapshot.phase());
+        assertNull(snapshot.gameId());
+        assertNull(snapshot.outcome());
+        assertNull(snapshot.coins());
+    }
+
+    @Test
     void roundOneBeforeTheDrawIsTheVersusScreen() throws Exception {
         RoomFixture fixture = activeRoom(false);
         UUID gameId = UUID.randomUUID();
