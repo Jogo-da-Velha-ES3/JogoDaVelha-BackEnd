@@ -494,7 +494,7 @@ continua exigindo participação. Não são criados novos códigos de erro:
 | `CONFLICT` | 409 | Draft ausente, concluído, prazo encerrado ou escolhas já confirmadas. |
 
 Não há endpoint REST, escolha de personagem ou sorteio por round nesta entrega.
-A BE-011 continua responsável pelo personagem e a BE-013.1 pelo sorteio de 8s e
+A BE-011 continua responsável pelo personagem e a BE-013.1 pelo sorteio de 12s e
 pela montagem do deck de cada round. A validação conjunta geral da FE-17 segue pendente.
 
 ### `PLAYER_JOINED` — `/topic/rooms/{code}`
@@ -692,7 +692,7 @@ Envio de jogada solicitado pelo front em `/move`; destino final completo e paylo
 | Evento | Quando / destinatário | Campos previstos | Card / status |
 |---|---|---|---|
 | `DRAFT_UPDATE` | Início e mudanças do Draft; inscritos no tópico da sala | `deadline`, `characters` e `ready` por P1/P2; exemplo acima |
-| `DRAW_OPTIONS` | Sorteio de três opções; somente dono | Três opções e janela de escolha de 8s (BE-013.1) | BE-013.1, 24/10; 📝 |
+| `DRAW_OPTIONS` | Sorteio de três opções; somente dono | Três opções e janela de escolha de 12s (BE-013.1) | BE-013.1, 24/10; 📝 |
 | `DECK_UPDATE` | Atualização do deck; jogador dono | payload a definir; privado do jogador conforme pedido do front | BE-023/BE-024; 📝 |
 | `ABILITY_RESOLVED` | Resolução de habilidade; sala | `result`: `APPLIED`, `NO_VALID_TARGET` ou `BLOCKED_BY_FORCE_FIELD`; demais campos a definir | BE-023, 20/10; 📝 |
 | `TURN_TIMEOUT` | Expiração do turno; sala | Timeout e contador previsto em BE-021; payload a definir | BE-020/BE-021; 15/10 e 25/10; 📝 |
@@ -834,6 +834,6 @@ permanece `IN_GAME` ao fim da partida para permitir a revanche (BE-039); o fecha
 interno `com.jogodavelha.game.draft.DraftCompleted` (jogadores, personagens e flag
 `automatic`) publicado pelo `DraftService`. Os personagens selecionados são persistidos
 em `games.player1_character_id` / `player2_character_id`. A interface `RoundSkillDraft`
-é obrigatória: a partida não inicia o turno sem o callback da janela de escolha de 8s
+é obrigatória: a partida não inicia o turno sem o callback da janela de escolha de 12s
 (implementação BE-013.1). O destino `/topic/room/{code}` citado no backlog continua
 divergente; foi usado o plural `/topic/rooms/{code}` proposto nesta seção do contrato.
