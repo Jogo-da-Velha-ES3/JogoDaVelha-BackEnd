@@ -62,28 +62,40 @@ public class TurnService {
      */
     public Optional<Character> endAction(GameState state, UUID actorId, long nowMillis) {
         var frozenPositions = state.frozenSet();
-        // Regra absoluta: 16/16 casas ocupadas encerram o round como empate,
-        // mesmo com linha vencedora ou peças congeladas no tabuleiro.
-        if (state.getBoard() != null && state.getBoard().indexOf('-') < 0) {
-            state.tickEffects();
-            state.setWinningLine(java.util.List.of());
-            state.setPhase(GamePhase.ROUND_FINISHED);
-            return Optional.empty();
-        }
-        Optional<Character> winner = skillEngine.endAction(state, actorId);
+        Optional<Character> winner = skillEngine.resolveWinner(state, actorId);
         if (winner.isPresent()) {
             state.setWinningLine(GameValidator.findWinningLine(state.getBoard(), winner.get(), frozenPositions)
                     .orElseThrow(() -> new IllegalStateException("A vitória não possui uma linha válida.")));
             state.setPhase(GamePhase.ROUND_FINISHED);
             return winner;
         }
+        if (state.getBoard() != null && state.getBoard().indexOf('-') < 0) {
+            state.setWinningLine(java.util.List.of());
+            state.setPhase(GamePhase.ROUND_FINISHED);
+            return Optional.empty();
+        }
         state.setWinningLine(java.util.List.of());
+        return winner;
+    }
+
+    /** Registra resultado de uma ação; alterna somente quando ambas foram consumidas. */
+    public Optional<Character> actionResolved(GameState state, UUID actorId, long nowMillis) {
+        state.resetTimeouts(actorId);
+        Optional<Character> winner = endAction(state, actorId, nowMillis);
+        if (state.getPhase() == GamePhase.PLAYING && state.haveBothActionsThisTurn()) {
+            completeTurn(state, actorId, nowMillis);
+        }
+        return winner;
+    }
+
+    private void completeTurn(GameState state, UUID actorId, long nowMillis) {
+        state.tickEffects();
         UUID next = state.getOpponentId(actorId);
         long duration = state.effectiveTurnDuration(next, baseDuration(state));
         state.setCurrentTurnPlayerId(next);
         state.setTurnDurationMillis(duration);
         state.setTurnDeadlineEpochMillis(nowMillis + duration);
-        return winner;
+        state.resetTurnActions();
     }
 
     /**
@@ -91,8 +103,7 @@ public class TurnService {
      * Zera os timeouts consecutivos de quem agiu e passa a vez.
      */
     public Optional<Character> endPlayerAction(GameState state, UUID actorId, long nowMillis) {
-        state.resetTimeouts(actorId);
-        return endAction(state, actorId, nowMillis);
+        return actionResolved(state, actorId, nowMillis);
     }
 
     /** Chamar DEPOIS do update bem-sucedido: publica o evento e reagenda (ou cancela) o timer. */
@@ -129,6 +140,7 @@ public class TurnService {
         UUID[] timedOut = new UUID[1];
         int[] consecutiveTimeouts = new int[1];
         boolean[] boardChanged = new boolean[1];
+        boolean[] actedThisTurn = new boolean[1];
         try {
             stateManager.update(gameId, state -> {
                 snapshot[0] = null; // o mutator pode reexecutar em conflito de versão
@@ -141,15 +153,19 @@ public class TurnService {
                 var previousShields = new java.util.HashMap<>(state.getShieldedPositions());
                 var previousFrozen = new java.util.HashMap<>(state.getFrozenPositions());
                 var previousReinforced = new java.util.HashMap<>(state.getReinforcedPositions());
-                state.recordTimeout(player);
+                boolean acted = state.hasAnyActionThisTurn();
+                actedThisTurn[0] = acted;
+                if (!acted) state.recordTimeout(player);
                 consecutiveTimeouts[0] = state.getConsecutiveTimeouts(player);
-                if (state.getConsecutiveTimeouts(player) >= 3) {
+                if (!acted && state.getConsecutiveTimeouts(player) >= 3) {
                     state.setPhase(GamePhase.FINISHED);
                     winner[0] = Optional.empty();
                 } else {
                     winner[0] = endAction(state, player, now);
+                    if (state.getPhase() == GamePhase.PLAYING) completeTurn(state, player, now);
                 }
-                timedOut[0] = player;
+                // Uma expiração após ação válida conclui o turno, mas não o classifica como timeout.
+                timedOut[0] = acted ? null : player;
                 boardChanged[0] = !previousBoard.equals(state.getBoard())
                         || !previousShields.equals(state.getShieldedPositions())
                         || !previousFrozen.equals(state.getFrozenPositions())
@@ -165,7 +181,8 @@ public class TurnService {
             return;
         }
         try {
-            events.publishEvent(new TurnTimedOutEvent(gameId, timedOut[0], consecutiveTimeouts[0], snapshot[0]));
+            if (!actedThisTurn[0])
+                events.publishEvent(new TurnTimedOutEvent(gameId, timedOut[0], consecutiveTimeouts[0], snapshot[0]));
             if (boardChanged[0]) events.publishEvent(new GameplayBoardUpdatedEvent(gameId, snapshot[0]));
         } finally {
             try {

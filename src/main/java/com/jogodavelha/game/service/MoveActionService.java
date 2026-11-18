@@ -46,10 +46,16 @@ public class MoveActionService {
                 throw new AccessDeniedException("Jogador não pertence à partida.", exception);
             }
             moves.validate(state, playerId, position, state.blockedFor(playerId), now);
+            if (state.isMoveUsedThisTurn()) {
+                throw new com.jogodavelha.game.logic.MoveValidationException(
+                        com.jogodavelha.game.logic.MoveValidationException.Code.INVALID_PHASE,
+                        "A jogada deste turno já foi utilizada.");
+            }
             StringBuilder board = new StringBuilder(state.getBoard());
             board.setCharAt(position, symbol);
             state.setBoard(board.toString());
-            winner[0] = turns.endPlayerAction(state, playerId, now);
+            state.recordMoveAction();
+            winner[0] = turns.actionResolved(state, playerId, now);
             committed[0] = state;
             return state;
         });

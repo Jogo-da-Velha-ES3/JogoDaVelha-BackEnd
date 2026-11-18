@@ -83,6 +83,10 @@ public class SkillActivationService {
             if (now >= state.getTurnDeadlineEpochMillis()) {
                 throw new MoveValidationException(TURN_EXPIRED, "O prazo deste turno já terminou.");
             }
+            if (state.isAbilityUsedThisTurn()) {
+                throw new SkillValidationException(SkillValidationException.Code.SKILL_ALREADY_USED,
+                        "A ação de habilidade deste turno já foi utilizada.");
+            }
             if (state.hasUsedSkill(actor, skillCode)) {
                 throw new SkillValidationException(SkillValidationException.Code.SKILL_ALREADY_USED,
                         "Esta habilidade já foi utilizada neste round.");
@@ -95,8 +99,9 @@ public class SkillActivationService {
             SkillResult applied = skills.useSkill(state, skillCode, preparedContext);
             // APPLIED, NO_VALID_TARGET e BLOCKED_BY_FORCE_FIELD são ativações válidas que consomem ação.
             state.recordSkillUse(actor, skillCode);
+            state.recordAbilityAction();
             result[0] = applied;
-            winner[0] = turns.endPlayerAction(state, actor, now);
+            winner[0] = turns.actionResolved(state, actor, now);
             committed[0] = state;
             return state;
         });
