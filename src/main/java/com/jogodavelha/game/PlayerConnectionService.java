@@ -11,7 +11,6 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
@@ -87,7 +86,6 @@ public class PlayerConnectionService {
     }
 
     private void confirmDisconnect(PlayerRoom key, PendingDisconnect pending) {
-        PlayerSessionRegistry.Entry confirmed = null;
         synchronized (this) {
             if (pendingDisconnects.get(key) != pending) {
                 return;
@@ -95,11 +93,8 @@ public class PlayerConnectionService {
             pendingDisconnects.remove(key);
             if (!sessions.hasActiveSession(key.roomCode(), key.playerId())
                     && players.markDisconnected(key.roomCode(), key.playerId())) {
-                confirmed = pending.entry();
+                pending.onConfirmedDisconnect().accept(pending.entry());
             }
-        }
-        if (confirmed != null) {
-            pending.onConfirmedDisconnect().accept(confirmed);
         }
     }
 

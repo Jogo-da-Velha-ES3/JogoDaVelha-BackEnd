@@ -69,7 +69,7 @@ public class WebSocketService {
         long start = System.nanoTime();
         try {
             SimpUser simpUser = userRegistry == null ? null : userRegistry.getUser(user);
-            if (simpUser == null || simpUser.getSessions().isEmpty()) {
+            if (simpUser == null || simpUser.getSessions().size() <= 1) {
                 messagingTemplate.convertAndSendToUser(user, destination, message);
                 return;
             }

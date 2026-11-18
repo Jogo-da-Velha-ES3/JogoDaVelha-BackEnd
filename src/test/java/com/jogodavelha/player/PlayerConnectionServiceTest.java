@@ -6,6 +6,7 @@ import com.jogodavelha.game.service.PlayerService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.scheduling.TaskScheduler;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -13,9 +14,11 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -157,6 +160,48 @@ class PlayerConnectionServiceTest {
     }
 
     @Test
+    void stalePendingDisconnectTaskNeverConfirmsDisconnect() {
+        UUID playerId = UUID.randomUUID();
+        var entry = new PlayerSessionRegistry.Entry("0042", playerId, "P1", UUID.randomUUID());
+        when(players.markDisconnected("0042", playerId)).thenReturn(true);
+        AtomicReference<PlayerSessionRegistry.Entry> confirmed = new AtomicReference<>();
+
+        connections.connect("session-a", entry);
+        connections.disconnect("session-a", confirmed::set);
+        connections.connect("session-b", entry);
+        connections.disconnect("session-b", confirmed::set);
+
+        assertEquals(2, scheduledTasks.size());
+        verify(scheduledFutures.get(0)).cancel(false);
+
+        scheduledTasks.get(0).run();
+        assertNull(confirmed.get());
+        verify(players, never()).markDisconnected("0042", playerId);
+
+        scheduledTasks.get(1).run();
+        assertEquals(entry, confirmed.get());
+        verify(players, times(1)).markDisconnected("0042", playerId);
+    }
+
+    @Test
+    void reconnectAfterConfirmedDisconnectIsReportedAsReconnect() {
+        UUID playerId = UUID.randomUUID();
+        var entry = new PlayerSessionRegistry.Entry("0042", playerId, "P1", UUID.randomUUID());
+        when(players.markConnected("0042", playerId)).thenReturn(true);
+        when(players.markDisconnected("0042", playerId)).thenReturn(true);
+        AtomicReference<PlayerSessionRegistry.Entry> confirmed = new AtomicReference<>();
+
+        connections.connect("session-a", entry);
+        connections.disconnect("session-a", confirmed::set);
+        scheduledTasks.get(0).run();
+        assertEquals(entry, confirmed.get());
+
+        assertTrue(connections.connect("session-b", entry).reconnected());
+        assertEquals(1, sessions.activeEntries().size());
+        verify(players, times(1)).markDisconnected("0042", playerId);
+    }
+
+    @Test
     void graceWindowIsScheduledWithConfiguredDelay() {
         UUID playerId = UUID.randomUUID();
         var entry = new PlayerSessionRegistry.Entry("0042", playerId, "P1", UUID.randomUUID());
@@ -229,7 +274,7 @@ class PlayerConnectionServiceTest {
                 executor.shutdownNow();
             }
 
-            Thread.sleep(600);
+            await().atMost(5, TimeUnit.SECONDS).until(() -> scheduledQueueEmpty(realScheduler));
 
             // Nenhuma sessão permanece ativa: cada jogador ficou sem sessões ao final,
             // portanto no máximo uma desconexão confirmada por iteração sem reconexão.
@@ -257,7 +302,7 @@ class PlayerConnectionServiceTest {
             service.disconnect("session-old", confirmed::set);
             service.connect("session-new", entry);
 
-            Thread.sleep(700);
+            await().atMost(5, TimeUnit.SECONDS).until(() -> scheduledQueueEmpty(realScheduler));
 
             assertNull(confirmed.get());
             verify(players, never()).markDisconnected("0042", playerId);
@@ -265,5 +310,9 @@ class PlayerConnectionServiceTest {
         } finally {
             realScheduler.shutdown();
         }
+    }
+
+    private static boolean scheduledQueueEmpty(ThreadPoolTaskScheduler scheduler) {
+        return ((ScheduledThreadPoolExecutor) scheduler.getScheduledExecutor()).getQueue().isEmpty();
     }
 }

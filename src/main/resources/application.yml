@@ -47,6 +47,7 @@ game:
   presence:
     ttl: ${GAME_PRESENCE_TTL:300000}
     refresh-interval: ${GAME_PRESENCE_REFRESH_INTERVAL:30000}
+    disconnect-grace-millis: ${GAME_PRESENCE_DISCONNECT_GRACE_MILLIS:1500}
 
 payments:
   simulated:
