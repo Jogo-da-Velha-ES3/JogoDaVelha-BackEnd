@@ -12,9 +12,9 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -243,42 +243,39 @@ class PlayerConnectionServiceTest {
     }
 
     @Test
-    void concurrentDisconnectAndReconnectNeverProduceUndueOrDuplicateDisconnects() throws Exception {
-        org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler realScheduler =
-                new org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler();
-        realScheduler.setPoolSize(4);
-        realScheduler.setThreadNamePrefix("test-disconnect-");
-        realScheduler.initialize();
+    void concurrentPlayersConfirmDisconnectsExactlyOnce() throws Exception {
+        ThreadPoolTaskScheduler realScheduler = newScheduler(4);
         try {
             PlayerConnectionService service =
                     new PlayerConnectionService(players, sessions, realScheduler, 300);
-            UUID playerId = UUID.randomUUID();
-            var entry = new PlayerSessionRegistry.Entry("0042", playerId, "P1", UUID.randomUUID());
+            when(players.markDisconnected(anyString(), any(UUID.class))).thenReturn(true);
             int iterations = 30;
-            var executor = Executors.newFixedThreadPool(4);
+            CountDownLatch confirmed = new CountDownLatch(iterations);
+            var executor = Executors.newFixedThreadPool(8);
             try {
-                var futures = new java.util.ArrayList<java.util.concurrent.Future<?>>();
+                var futures = new ArrayList<java.util.concurrent.Future<?>>();
                 for (int i = 0; i < iterations; i++) {
                     int index = i;
                     futures.add(executor.submit(() -> {
+                        UUID playerId = UUID.randomUUID();
+                        var entry = new PlayerSessionRegistry.Entry("0042", playerId, "P1", UUID.randomUUID());
                         service.connect("session-" + index + "-old", entry);
-                        service.disconnect("session-" + index + "-old", ignored -> {});
+                        service.disconnect("session-" + index + "-old", ignored -> confirmed.countDown());
                         service.connect("session-" + index + "-new", entry);
-                        service.disconnect("session-" + index + "-new", ignored -> {});
+                        service.disconnect("session-" + index + "-new", ignored -> confirmed.countDown());
                     }));
                 }
                 for (var future : futures) {
-                    future.get(10, TimeUnit.SECONDS);
+                    future.get(15, TimeUnit.SECONDS);
                 }
             } finally {
                 executor.shutdownNow();
             }
 
-            await().atMost(5, TimeUnit.SECONDS).until(() -> scheduledQueueEmpty(realScheduler));
-
-            // Nenhuma sessão permanece ativa: cada jogador ficou sem sessões ao final,
-            // portanto no máximo uma desconexão confirmada por iteração sem reconexão.
-            verify(players, atMost(iterations * 2)).markDisconnected("0042", playerId);
+            assertTrue(confirmed.await(10, TimeUnit.SECONDS),
+                    "Cada jogador sem sessões deve ter sua desconexão confirmada uma única vez.");
+            verify(players, times(iterations)).markDisconnected(anyString(), any(UUID.class));
+            assertTrue(sessions.activeEntries().isEmpty());
         } finally {
             realScheduler.shutdown();
         }
@@ -286,33 +283,136 @@ class PlayerConnectionServiceTest {
 
     @Test
     void reconnectDuringGraceWindowWithRealSchedulerPreventsDisconnect() throws Exception {
-        org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler realScheduler =
-                new org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler();
-        realScheduler.setPoolSize(2);
-        realScheduler.setThreadNamePrefix("test-grace-");
-        realScheduler.initialize();
+        ThreadPoolTaskScheduler realScheduler = newScheduler(2);
         try {
             PlayerConnectionService service =
                     new PlayerConnectionService(players, sessions, realScheduler, 500);
             UUID playerId = UUID.randomUUID();
             var entry = new PlayerSessionRegistry.Entry("0042", playerId, "P1", UUID.randomUUID());
-            AtomicReference<PlayerSessionRegistry.Entry> confirmed = new AtomicReference<>();
+            AtomicReference<Boolean> confirmed = new AtomicReference<>(false);
 
             service.connect("session-old", entry);
-            service.disconnect("session-old", confirmed::set);
+            service.disconnect("session-old", ignored -> confirmed.set(true));
             service.connect("session-new", entry);
 
-            await().atMost(5, TimeUnit.SECONDS).until(() -> scheduledQueueEmpty(realScheduler));
+            await().pollDelay(700, TimeUnit.MILLISECONDS)
+                    .untilAsserted(() -> assertEquals(1, sessions.activeEntries().size()));
 
-            assertNull(confirmed.get());
+            assertFalse(confirmed.get());
             verify(players, never()).markDisconnected("0042", playerId);
-            assertEquals(1, sessions.activeEntries().size());
         } finally {
             realScheduler.shutdown();
         }
     }
 
-    private static boolean scheduledQueueEmpty(ThreadPoolTaskScheduler scheduler) {
-        return ((ScheduledThreadPoolExecutor) scheduler.getScheduledExecutor()).getQueue().isEmpty();
+    @Test
+    void slowDisconnectCallbackDoesNotBlockOtherPlayers() throws Exception {
+        ThreadPoolTaskScheduler realScheduler = newScheduler(2);
+        try {
+            PlayerConnectionService service =
+                    new PlayerConnectionService(players, sessions, realScheduler, 100);
+            when(players.markDisconnected(anyString(), any(UUID.class))).thenReturn(true);
+
+            UUID slowPlayer = UUID.randomUUID();
+            UUID fastPlayer = UUID.randomUUID();
+            var slowEntry = new PlayerSessionRegistry.Entry("0042", slowPlayer, "P1", fastPlayer);
+            var fastEntry = new PlayerSessionRegistry.Entry("0042", fastPlayer, "P2", slowPlayer);
+
+            CountDownLatch callbackStarted = new CountDownLatch(1);
+            CountDownLatch releaseCallback = new CountDownLatch(1);
+            CountDownLatch fastConfirmed = new CountDownLatch(1);
+
+            service.connect("slow-session", slowEntry);
+            service.disconnect("slow-session", ignored -> {
+                callbackStarted.countDown();
+                try {
+                    releaseCallback.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+            assertTrue(callbackStarted.await(10, TimeUnit.SECONDS),
+                    "A confirmação da desconexão lenta deveria ter iniciado.");
+
+            service.connect("fast-session", fastEntry);
+            service.disconnect("fast-session", ignored -> fastConfirmed.countDown());
+            assertTrue(fastConfirmed.await(10, TimeUnit.SECONDS),
+                    "A desconexão de outro jogador não pode ficar bloqueada pelo callback lento.");
+
+            releaseCallback.countDown();
+        } finally {
+            realScheduler.shutdown();
+        }
+    }
+
+    @Test
+    void concurrentConnectAndDisconnectForSamePlayerStayConsistent() throws Exception {
+        ThreadPoolTaskScheduler realScheduler = newScheduler(8);
+        try {
+            PlayerConnectionService service =
+                    new PlayerConnectionService(players, sessions, realScheduler, 300);
+            when(players.markDisconnected(anyString(), any(UUID.class))).thenReturn(true);
+            int iterations = 30;
+            var playerIds = new java.util.concurrent.CopyOnWriteArrayList<UUID>();
+            var executor = Executors.newFixedThreadPool(16);
+            try {
+                var futures = new ArrayList<java.util.concurrent.Future<?>>();
+                for (int i = 0; i < iterations; i++) {
+                    UUID playerId = UUID.randomUUID();
+                    playerIds.add(playerId);
+                    var entry = new PlayerSessionRegistry.Entry("0042", playerId, "P1", UUID.randomUUID());
+                    String sessionId = "session-" + i;
+                    CountDownLatch start = new CountDownLatch(2);
+                    futures.add(executor.submit(() -> {
+                        try {
+                            start.await();
+                            service.connect(sessionId, entry);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }));
+                    futures.add(executor.submit(() -> {
+                        try {
+                            start.await();
+                            service.disconnect(sessionId, ignored -> {});
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }));
+                    start.countDown();
+                    start.countDown();
+                }
+                for (var future : futures) {
+                    future.get(20, TimeUnit.SECONDS);
+                }
+            } finally {
+                executor.shutdownNow();
+            }
+
+            await().atMost(10, TimeUnit.SECONDS).untilAsserted(() -> {
+                int withoutSessions = 0;
+                for (UUID playerId : playerIds) {
+                    boolean hasSession = sessions.activeEntries().stream()
+                            .anyMatch(active -> active.playerId().equals(playerId));
+                    if (!hasSession) {
+                        withoutSessions++;
+                    }
+                }
+                verify(players, times(withoutSessions)).markDisconnected(anyString(), any(UUID.class));
+                for (UUID playerId : playerIds) {
+                    verify(players, atMost(1)).markDisconnected(anyString(), eq(playerId));
+                }
+            });
+        } finally {
+            realScheduler.shutdown();
+        }
+    }
+
+    private static ThreadPoolTaskScheduler newScheduler(int poolSize) {
+        ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
+        scheduler.setPoolSize(poolSize);
+        scheduler.setThreadNamePrefix("test-disconnect-");
+        scheduler.initialize();
+        return scheduler;
     }
 }
