@@ -27,6 +27,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     }
 
     @Override
+    public void configureClientOutboundChannel(ChannelRegistration registration) {
+        registration.taskExecutor().corePoolSize(1).maxPoolSize(1);
+    }
+
+    @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
         config.enableSimpleBroker("/topic", "/queue")
                 .setTaskScheduler(taskScheduler())

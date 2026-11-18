@@ -187,6 +187,20 @@ class PlayerConnectionControllerTest {
     }
 
     @Test
+    void presenceEventFailureDoesNotSkipRematchDisconnectRules() {
+        var entry = new PlayerSessionRegistry.Entry("0042", p1.getId(), "P1", p2.getId());
+        connections.connect("session-a", entry);
+        when(playerService.markDisconnected("0042", p1.getId())).thenReturn(true);
+        doThrow(new IllegalStateException("broker indisponível"))
+                .when(presenceEvents).disconnected(entry);
+
+        listener.handleDisconnect(disconnectEvent("session-a"));
+        scheduledTasks.get(0).run();
+
+        verify(rematches, times(1)).onPlayerDisconnected("0042", p1.getId());
+    }
+
+    @Test
     void disconnectForP2UsesP2SlotAndP1AsRecipient() {
         var entry = new PlayerSessionRegistry.Entry("0042", p2.getId(), "P2", p1.getId());
         connections.connect("session-p2", entry);

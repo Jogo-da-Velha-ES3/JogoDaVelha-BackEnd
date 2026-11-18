@@ -408,6 +408,157 @@ class PlayerConnectionServiceTest {
         }
     }
 
+    @Test
+    void reconnectWinningTheRaceLeavesNoStaleDisconnectEffects() throws Exception {
+        UUID playerId = UUID.randomUUID();
+        var entry = new PlayerSessionRegistry.Entry("0042", playerId, "P1", UUID.randomUUID());
+        AtomicReference<PlayerSessionRegistry.Entry> confirmed = new AtomicReference<>();
+
+        connections.connect("session-a", entry);
+        connections.disconnect("session-a", confirmed::set);
+        assertEquals(1, scheduledTasks.size());
+
+        CountDownLatch connectInsideLock = new CountDownLatch(1);
+        CountDownLatch releaseConnect = new CountDownLatch(1);
+        when(players.markConnected("0042", playerId)).thenAnswer(invocation -> {
+            connectInsideLock.countDown();
+            releaseConnect.await(10, TimeUnit.SECONDS);
+            return true;
+        });
+
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            var reconnect = executor.submit(() ->
+                    connections.connect("session-b", entry));
+            assertTrue(connectInsideLock.await(10, TimeUnit.SECONDS),
+                    "A reconexão deveria estar dentro do lock do jogador.");
+
+            var staleTask = executor.submit(() -> scheduledTasks.get(0).run());
+            releaseConnect.countDown();
+            staleTask.get(10, TimeUnit.SECONDS);
+            assertTrue(reconnect.get(10, TimeUnit.SECONDS).reconnected());
+
+            assertNull(confirmed.get());
+            verify(players, never()).markDisconnected("0042", playerId);
+            assertEquals(1, sessions.activeEntries().size());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void confirmationWinningTheRaceCompletesCallbackBeforeReconnectProceeds() throws Exception {
+        UUID playerId = UUID.randomUUID();
+        var entry = new PlayerSessionRegistry.Entry("0042", playerId, "P1", UUID.randomUUID());
+
+        CountDownLatch callbackDone = new CountDownLatch(1);
+        connections.connect("session-a", entry);
+        connections.disconnect("session-a", ignored -> callbackDone.countDown());
+        assertEquals(1, scheduledTasks.size());
+
+        CountDownLatch confirmInsideLock = new CountDownLatch(1);
+        CountDownLatch releaseConfirm = new CountDownLatch(1);
+        when(players.markDisconnected("0042", playerId)).thenAnswer(invocation -> {
+            confirmInsideLock.countDown();
+            releaseConfirm.await(10, TimeUnit.SECONDS);
+            return true;
+        });
+        when(players.markConnected("0042", playerId)).thenReturn(true);
+
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            var confirmation = executor.submit(() -> scheduledTasks.get(0).run());
+            assertTrue(confirmInsideLock.await(10, TimeUnit.SECONDS),
+                    "A confirmação deveria estar dentro do lock do jogador.");
+
+            CountDownLatch connectReturned = new CountDownLatch(1);
+            var callbackBeforeConnect = new java.util.concurrent.atomic.AtomicBoolean(false);
+            var reconnect = executor.submit(() -> {
+                connections.connect("session-b", entry);
+                callbackBeforeConnect.set(callbackDone.getCount() == 0);
+                connectReturned.countDown();
+            });
+
+            assertFalse(connectReturned.await(500, TimeUnit.MILLISECONDS),
+                    "A reconexão não pode prosseguir enquanto a confirmação detém o lock.");
+            releaseConfirm.countDown();
+
+            confirmation.get(10, TimeUnit.SECONDS);
+            reconnect.get(10, TimeUnit.SECONDS);
+
+            assertEquals(0, callbackDone.getCount());
+            assertTrue(callbackBeforeConnect.get(),
+                    "O callback de desconexão deveria ter terminado antes da reconexão prosseguir.");
+            verify(players, times(1)).markDisconnected("0042", playerId);
+            assertEquals(1, sessions.activeEntries().size());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void concurrentOperationsOnSamePlayerRoomStayConsistentPerPlayer() throws Exception {
+        ThreadPoolTaskScheduler realScheduler = newScheduler(16);
+        try {
+            PlayerConnectionService service =
+                    new PlayerConnectionService(players, sessions, realScheduler, 300);
+            when(players.markDisconnected(anyString(), any(UUID.class))).thenReturn(true);
+            int playerCount = 8;
+            int sessionsPerPlayer = 4;
+            var playerIds = new java.util.concurrent.CopyOnWriteArrayList<UUID>();
+            CountDownLatch start = new CountDownLatch(1);
+            var executor = Executors.newFixedThreadPool(32);
+            try {
+                var futures = new ArrayList<java.util.concurrent.Future<?>>();
+                for (int i = 0; i < playerCount; i++) {
+                    UUID playerId = UUID.randomUUID();
+                    playerIds.add(playerId);
+                    var entry = new PlayerSessionRegistry.Entry("0042", playerId, "P1", UUID.randomUUID());
+                    for (int j = 0; j < sessionsPerPlayer; j++) {
+                        String sessionId = "p" + i + "-s" + j;
+                        futures.add(executor.submit(() -> {
+                            try {
+                                start.await();
+                                service.connect(sessionId, entry);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }));
+                        futures.add(executor.submit(() -> {
+                            try {
+                                start.await();
+                                service.disconnect(sessionId, ignored -> {});
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }));
+                    }
+                }
+                start.countDown();
+                for (var future : futures) {
+                    future.get(20, TimeUnit.SECONDS);
+                }
+            } finally {
+                executor.shutdownNow();
+            }
+
+            // Verificação individual: jogador com sessão ativa nunca pode ter sido
+            // marcado como desconectado; jogador sem sessão é confirmado exatamente uma vez.
+            await().atMost(10, TimeUnit.SECONDS).untilAsserted(() -> {
+                for (UUID playerId : playerIds) {
+                    long activeSessions = sessions.activeEntries().stream()
+                            .filter(active -> active.playerId().equals(playerId))
+                            .count();
+                    int expected = activeSessions == 0 ? 1 : 0;
+                    verify(players, times(expected)).markDisconnected("0042", playerId);
+                    verify(players, atMost(1)).markDisconnected("0042", playerId);
+                }
+            });
+        } finally {
+            realScheduler.shutdown();
+        }
+    }
+
     private static ThreadPoolTaskScheduler newScheduler(int poolSize) {
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
         scheduler.setPoolSize(poolSize);
