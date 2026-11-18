@@ -15,7 +15,7 @@ public class PlayerDisconnectionListener {
 
     @EventListener
     public void handleDisconnect(SessionDisconnectEvent event) {
-        connections.disconnect(event.getSessionId()).ifPresent(entry -> {
+        connections.disconnect(event.getSessionId(), entry -> {
             events.disconnected(entry);
             rematches.onPlayerDisconnected(entry.roomCode(), entry.playerId());
         });

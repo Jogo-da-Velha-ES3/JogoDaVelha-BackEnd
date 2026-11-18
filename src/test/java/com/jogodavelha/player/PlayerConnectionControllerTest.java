@@ -15,12 +15,17 @@ import com.jogodavelha.websocket.RoomSnapshotService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
 import java.security.Principal;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ScheduledFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -29,7 +34,10 @@ import static org.mockito.Mockito.*;
 class PlayerConnectionControllerTest {
     private final PlayerService playerService = mock(PlayerService.class);
     private final PlayerSessionRegistry sessions = new PlayerSessionRegistry();
-    private final PlayerConnectionService connections = new PlayerConnectionService(playerService, sessions);
+    private final TaskScheduler scheduler = mock(TaskScheduler.class);
+    private final List<Runnable> scheduledTasks = new ArrayList<>();
+    private final PlayerConnectionService connections =
+            new PlayerConnectionService(playerService, sessions, scheduler, 1_500);
     private final RoomRepository rooms = mock(RoomRepository.class);
     private final RoomSnapshotService snapshots = mock(RoomSnapshotService.class);
     private final PlayerPresenceEventPublisher presenceEvents = mock(PlayerPresenceEventPublisher.class);
@@ -45,6 +53,11 @@ class PlayerConnectionControllerTest {
 
     @BeforeEach
     void setUp() {
+        scheduledTasks.clear();
+        when(scheduler.schedule(any(Runnable.class), any(Instant.class))).thenAnswer(invocation -> {
+            scheduledTasks.add(invocation.getArgument(0));
+            return mock(ScheduledFuture.class);
+        });
         p1 = user("host");
         p2 = user("guest");
         room = new Room("0042", p1);
@@ -130,8 +143,46 @@ class PlayerConnectionControllerTest {
         listener.handleDisconnect(finalEvent);
         listener.handleDisconnect(finalEvent);
 
-        verify(playerService).markDisconnected("0042", p1.getId());
+        assertEquals(1, scheduledTasks.size());
+        verify(playerService, never()).markDisconnected("0042", p1.getId());
+        verify(presenceEvents, never()).disconnected(any());
+
+        scheduledTasks.get(0).run();
+
+        verify(playerService, times(1)).markDisconnected("0042", p1.getId());
         verify(presenceEvents, times(1)).disconnected(entry);
+        verify(rematches, times(1)).onPlayerDisconnected("0042", p1.getId());
+    }
+
+    @Test
+    void reconnectDuringGraceWindowCancelsDisconnectEventsAndRematchRules() {
+        var entry = new PlayerSessionRegistry.Entry("0042", p1.getId(), "P1", p2.getId());
+        connections.connect("session-old", entry);
+        when(playerService.markDisconnected("0042", p1.getId())).thenReturn(true);
+
+        listener.handleDisconnect(disconnectEvent("session-old"));
+        assertEquals(1, scheduledTasks.size());
+
+        connections.connect("session-new", entry);
+        scheduledTasks.get(0).run();
+
+        verify(playerService, never()).markDisconnected("0042", p1.getId());
+        verify(presenceEvents, never()).disconnected(any());
+        verify(presenceEvents, never()).reconnected(any());
+        verify(rematches, never()).onPlayerDisconnected(anyString(), any(UUID.class));
+        assertEquals(1, sessions.activeEntries().size());
+    }
+
+    @Test
+    void definitiveDisconnectDuringPendingRematchStillCancelsNegotiation() {
+        var entry = new PlayerSessionRegistry.Entry("0042", p1.getId(), "P1", p2.getId());
+        connections.connect("session-a", entry);
+        when(playerService.markDisconnected("0042", p1.getId())).thenReturn(true);
+
+        listener.handleDisconnect(disconnectEvent("session-a"));
+        scheduledTasks.get(0).run();
+
+        verify(presenceEvents).disconnected(entry);
         verify(rematches, times(1)).onPlayerDisconnected("0042", p1.getId());
     }
 
@@ -142,6 +193,7 @@ class PlayerConnectionControllerTest {
         when(playerService.markDisconnected("0042", p2.getId())).thenReturn(true);
 
         listener.handleDisconnect(disconnectEvent("session-p2"));
+        scheduledTasks.get(0).run();
 
         verify(presenceEvents).disconnected(entry);
         verify(playerService).markDisconnected("0042", p2.getId());

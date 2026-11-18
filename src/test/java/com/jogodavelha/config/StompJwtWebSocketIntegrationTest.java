@@ -27,6 +27,7 @@ import org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfigur
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
@@ -46,10 +47,13 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.lang.reflect.Type;
 
+import org.springframework.messaging.simp.broker.SimpleBrokerMessageHandler;
+
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+
 
 @SpringBootTest(classes = StompJwtWebSocketIntegrationTest.TestApplication.class,
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -81,6 +85,14 @@ class StompJwtWebSocketIntegrationTest {
         @Bean RoomRepository roomRepository() { return mock(RoomRepository.class); }
         @Bean RoomSnapshotService roomSnapshotService() { return mock(RoomSnapshotService.class); }
         @Bean RematchService rematchService() { return mock(RematchService.class); }
+        @Bean(name = "turnTaskScheduler") org.springframework.scheduling.TaskScheduler turnTaskScheduler() {
+            org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler scheduler =
+                    new org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler();
+            scheduler.setPoolSize(2);
+            scheduler.setThreadNamePrefix("test-turn-timer-");
+            scheduler.initialize();
+            return scheduler;
+        }
     }
 
     @LocalServerPort int port;
@@ -90,10 +102,13 @@ class StompJwtWebSocketIntegrationTest {
     @Autowired RoomSnapshotService snapshots;
     @Autowired PlayerPresenceEventPublisher presenceEvents;
     @Autowired SimpUserRegistry users;
+    @Autowired ApplicationContext applicationContext;
+    private SimpleBrokerMessageHandler brokerHandler;
     private WebSocketStompClient stompClient;
 
     @BeforeEach
     void setUpRooms() {
+        brokerHandler = applicationContext.getBean("simpleBrokerMessageHandler", SimpleBrokerMessageHandler.class);
         reset(rooms, playerService, snapshots);
         Room room = new Room("0042", user(USER_ID, "integration-user"));
         room.join(user(OTHER_USER_ID, "other-user"));
@@ -148,8 +163,7 @@ class StompJwtWebSocketIntegrationTest {
         Client p1 = connectClient(USER_ID);
         Client p2 = connectClient(OTHER_USER_ID);
         Client p2Sibling = connectClient(OTHER_USER_ID);
-        await().atMost(5, TimeUnit.SECONDS).until(() ->
-                hasQueueSubscription(USER_ID, 1) && hasQueueSubscription(OTHER_USER_ID, 2));
+        await().atMost(5, TimeUnit.SECONDS).until(this::brokerSubscriptionsReady);
 
         presenceEvents.disconnected(new PlayerSessionRegistry.Entry("0042", OTHER_USER_ID, "P2", USER_ID));
 
@@ -198,11 +212,32 @@ class StompJwtWebSocketIntegrationTest {
         };
     }
 
-    private boolean hasQueueSubscription(UUID userId, int minimumSessions) {
+    private boolean brokerSubscriptionsReady() {
+        return brokerSubscriptionsReady(USER_ID, 1) && brokerSubscriptionsReady(OTHER_USER_ID, 2);
+    }
+
+    private boolean brokerSubscriptionsReady(UUID userId, int expectedSessions) {
         var user = users.getUser(userId.toString());
-        return user != null && user.getSessions().stream()
+        if (user == null) {
+            return false;
+        }
+        var subscribed = user.getSessions().stream()
                 .filter(session -> !session.getSubscriptions().isEmpty())
-                .count() >= minimumSessions;
+                .toList();
+        if (subscribed.size() < expectedSessions) {
+            return false;
+        }
+        for (var session : subscribed) {
+            var accessor = org.springframework.messaging.simp.SimpMessageHeaderAccessor
+                    .create(org.springframework.messaging.simp.SimpMessageType.MESSAGE);
+            accessor.setDestination("/queue/room-user" + session.getId());
+            var probe = org.springframework.messaging.support.MessageBuilder
+                    .createMessage(new byte[0], accessor.getMessageHeaders());
+            if (brokerHandler.getSubscriptionRegistry().findSubscriptions(probe).isEmpty()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private com.fasterxml.jackson.databind.JsonNode receive(BlockingQueue<com.fasterxml.jackson.databind.JsonNode> messages)

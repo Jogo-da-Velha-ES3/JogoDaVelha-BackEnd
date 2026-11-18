@@ -64,6 +64,10 @@ public class PlayerSessionRegistry {
         return new Removal(entry, lastSession);
     }
 
+    public synchronized boolean hasActiveSession(String roomCode, UUID playerId) {
+        return playerSessions.containsKey(new PlayerRoom(roomCode, playerId));
+    }
+
     public synchronized List<Entry> activeEntries() {
         return List.copyOf(sessions.values());
     }

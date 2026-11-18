@@ -3,15 +3,19 @@ package com.jogodavelha.config;
 import com.jogodavelha.auth.JwtService;
 import com.jogodavelha.room.RoomCodeAllocator;
 import com.jogodavelha.room.RoomRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
+import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
-import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.List;
 import java.util.UUID;
@@ -23,6 +27,7 @@ public class StompJwtAuthenticationInterceptor implements ChannelInterceptor {
 
     private final JwtService jwtService;
     private RoomRepository rooms;
+    private MessageChannel clientOutboundChannel;
 
     public StompJwtAuthenticationInterceptor(JwtService jwtService) {
         this.jwtService = jwtService;
@@ -33,8 +38,24 @@ public class StompJwtAuthenticationInterceptor implements ChannelInterceptor {
         this.rooms = rooms;
     }
 
+    @Autowired(required = false)
+    @Lazy
+    @Qualifier("clientOutboundChannel")
+    public void setClientOutboundChannel(MessageChannel clientOutboundChannel) {
+        this.clientOutboundChannel = clientOutboundChannel;
+    }
+
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
+        try {
+            return doPreSend(message);
+        } catch (RuntimeException exception) {
+            sendStompError(message, exception);
+            throw exception;
+        }
+    }
+
+    private Message<?> doPreSend(Message<?> message) {
         StompHeaderAccessor existingAccessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
         if (existingAccessor == null || (existingAccessor.getCommand() != StompCommand.CONNECT && existingAccessor.getCommand() != StompCommand.STOMP)) {
             if (existingAccessor == null || existingAccessor.getCommand() != StompCommand.SUBSCRIBE) return message;
@@ -73,5 +94,25 @@ public class StompJwtAuthenticationInterceptor implements ChannelInterceptor {
                 .orElseThrow(() -> new AccessDeniedException("STOMP CONNECT requires a valid Bearer token"));
         accessor.setUser(() -> userId.toString());
         return message;
+    }
+
+    private void sendStompError(Message<?> message, RuntimeException exception) {
+        if (clientOutboundChannel == null) {
+            return;
+        }
+        StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
+        String sessionId = accessor != null ? accessor.getSessionId() : null;
+        if (sessionId == null) {
+            return;
+        }
+        try {
+            StompHeaderAccessor error = StompHeaderAccessor.create(StompCommand.ERROR);
+            error.setMessage(exception.getMessage());
+            error.setSessionId(sessionId);
+            MessageHeaders headers = error.getMessageHeaders();
+            clientOutboundChannel.send(MessageBuilder.createMessage(new byte[0], headers));
+        } catch (RuntimeException ignored) {
+            // A sessão pode já ter sido encerrada; a exceção original ainda será propagada.
+        }
     }
 }
