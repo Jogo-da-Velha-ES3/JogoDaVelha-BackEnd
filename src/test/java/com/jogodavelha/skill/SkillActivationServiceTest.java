@@ -52,14 +52,17 @@ class SkillActivationServiceTest {
     }
 
     @Test
-    void appliedActivationRecordsUseEndsTurnAndPublishesAfterUpdate() {
+    void appliedActivationConsumesOnlyAbilityAndPreservesDeadline() {
         var activation = activations.activate(gameId, "CONGELAR", new SkillContext(p1, 0));
 
         assertEquals(SkillResult.APPLIED, activation.result());
         assertTrue(state.hasUsedSkill(p1, "CONGELAR"));
+        assertTrue(state.isAbilityUsedThisTurn());
+        assertFalse(state.isMoveUsedThisTurn());
+        assertEquals(20_000, state.getTurnDeadlineEpochMillis());
         assertEquals(1, effect.applies);
         verify(turns).endPlayerAction(state, p1, 1_000);
-        verify(turns).publishAndSchedule(state, Optional.empty());
+        verify(turns, never()).publishAndSchedule(any(), any());
     }
 
     @Test
@@ -83,6 +86,20 @@ class SkillActivationServiceTest {
         assertEquals(0, effect.applies);
         verify(turns, never()).endPlayerAction(any(), any(), anyLong());
         verify(turns, never()).publishAndSchedule(any(), any());
+    }
+
+    @Test
+    void differentSecondSkillIsRejectedByTurnActionLimit() {
+        state.recordAbilityAction();
+        state.setRoundSkillDeck(p1, List.of("CONGELAR", "BOMBA"));
+
+        var error = assertThrows(SkillValidationException.class,
+                () -> activations.activate(gameId, "BOMBA", new SkillContext(p1, 0)));
+
+        assertEquals(SkillValidationException.Code.SKILL_ALREADY_USED, error.getCode());
+        assertFalse(state.hasUsedSkill(p1, "BOMBA"));
+        assertEquals(0, effect.applies);
+        verify(turns, never()).endPlayerAction(any(), any(), anyLong());
     }
 
     @Test
@@ -206,7 +223,12 @@ class SkillActivationServiceTest {
     void sameCodeCanBeUsedByOpponentAndDifferentCodeBySamePlayer() throws Exception {
         activations.activate(gameId, "CONGELAR", new SkillContext(p1, 0));
         state.setCurrentTurnPlayerId(p2);
+        state.resetTurnActions();
         activations.activate(gameId, "CONGELAR", new SkillContext(p2, 0));
+        state.setCurrentTurnPlayerId(p1);
+        state.resetTurnActions();
+        assertThrows(SkillValidationException.class,
+                () -> activations.activate(gameId, "CONGELAR", new SkillContext(p1, 0)));
         assertTrue(state.hasUsedSkill(p1, "CONGELAR"));
         assertTrue(state.hasUsedSkill(p2, "CONGELAR"));
 

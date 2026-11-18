@@ -88,6 +88,9 @@ class InactivityForfeitTest {
             turns.expire(gameId, now.get());
             assertEquals(timeout + 1, stored.get().getConsecutiveTimeouts(loser.getId()));
             moves.play(gameId, winner.getId(), timeout);
+            // Complete the winner's second action so the next timeout belongs to the loser.
+            stored.get().recordAbilityAction();
+            turns.endPlayerAction(stored.get(), winner.getId(), now.get());
         }
         game.registerRoundResult(RoundResult.DRAW);
         stored.get().startRound(2, 10_000, now.get());

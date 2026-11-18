@@ -101,7 +101,7 @@ public class SkillActivationService {
             state.recordSkillUse(actor, skillCode);
             state.recordAbilityAction();
             result[0] = applied;
-            winner[0] = turns.actionResolved(state, actor, now);
+            winner[0] = turns.endPlayerAction(state, actor, now);
             committed[0] = state;
             return state;
         });
@@ -114,7 +114,10 @@ public class SkillActivationService {
             events.publishEvent(new SkillResolvedEvent(gameId, preparedContext.casterId(), skillCode,
                     preparedContext.targetPosition(), preparedContext.destinationPosition(), result[0], committed[0]));
             events.publishEvent(new com.jogodavelha.game.GameplayBoardUpdatedEvent(gameId, committed[0]));
-            turns.publishAndSchedule(committed[0], winner[0]);
+            if (committed[0].getPhase() != GamePhase.PLAYING
+                    || !preparedContext.casterId().equals(committed[0].getCurrentTurnPlayerId())) {
+                turns.publishAndSchedule(committed[0], winner[0]);
+            }
         } finally {
             com.jogodavelha.telemetry.ActionProfiler.add("events.publish", publishStart);
         }

@@ -1504,7 +1504,9 @@ incrementais; não geram snapshots completos a cada ação.
     "player": "P1",
     "startedAt": 1729934600000,
     "deadline": 1729934610000,
-    "durationSeconds": 10
+    "durationSeconds": 10,
+    "actions": { "abilityUsed": false, "moveUsed": false },
+    "stateVersion": 12
   },
   "myDeck": [],
   "outcome": null,
@@ -1519,7 +1521,7 @@ incrementais; não geram snapshots completos a cada ação.
 }
 ```
 
-`gameId` identifica a partida atual (nulo antes de sua criação). `turn.deadline` é o prazo absoluto em milissegundos Unix epoch; `turn.startedAt` é o início calculado a partir do prazo menos a duração efetiva. A duração efetiva pode ser 10 segundos, 5 segundos na morte súbita ou reduzida pela Ampulheta.
+`gameId` identifica a partida atual (nulo antes de sua criação). `turn.deadline` é o prazo absoluto em milissegundos Unix epoch; `turn.startedAt` é o início calculado a partir do prazo menos a duração efetiva. A duração efetiva pode ser 10 segundos, 5 segundos na morte súbita ou reduzida pela Ampulheta. `turn.actions.abilityUsed` e `turn.actions.moveUsed` informam o consumo no turno atual. Os indicadores começam como `false` em cada turno e são atualizados nos snapshots e em `BOARD_UPDATE`/`ABILITY_RESOLVED`. A primeira ação mantém o mesmo prazo; `TURN_START` é publicado somente quando começa um novo turno. `turn.stateVersion` identifica a revisão do estado autoritativo.
 
 **Momento de publicação:**
 - Após entrada de jogador, atualização de Draft e encerramento definitivo.
@@ -1607,7 +1609,9 @@ Publicado uma vez no início de cada turno válido:
     "startedAt": 1793102400000,
     "durationSeconds": 10,
     "consecutiveTimeouts": { "P1": 0, "P2": 1 },
-    "silenced": { "P1": false, "P2": true }
+    "silenced": { "P1": false, "P2": true },
+    "actions": { "abilityUsed": false, "moveUsed": false },
+    "stateVersion": 12
   },
   "serverTime": 1793102400000
 }
@@ -1625,6 +1629,8 @@ contém efeitos ativos com `turnsLeft`.
   "type": "BOARD_UPDATE",
   "payload": {
     "round": 1,
+    "stateVersion": 13,
+    "turn": { "actions": { "abilityUsed": false, "moveUsed": true } },
     "board": [
       { "index": 0, "owner": "P1", "effects": [] },
       { "index": 1, "owner": null, "effects": [] }
@@ -1634,7 +1640,7 @@ contém efeitos ativos com `turnsLeft`.
 }
 ```
 
-O exemplo abrevia a lista; a implementação sempre publica as 16 casas.
+O exemplo abrevia a lista; a implementação sempre publica as 16 casas. O payload também inclui `turn.actions` para sincronizar o consumo das ações no turno atual. `BOARD_UPDATE`, `ABILITY_RESOLVED` e `TURN_START` incluem `stateVersion`; clientes podem ignorar um evento de estado cuja versão seja menor que a última aplicada, evitando regressão se ações concorrentes forem entregues fora de ordem.
 
 ##### ABILITY_RESOLVED
 
@@ -1653,7 +1659,9 @@ regras da habilidade.
     "targetPosition": 5,
     "destinationPosition": 10,
     "absorbed": false,
-    "noEffect": false
+    "noEffect": false,
+    "stateVersion": 14,
+    "turn": { "actions": { "abilityUsed": true, "moveUsed": false } }
   },
   "serverTime": 1793102400000
 }
@@ -1662,7 +1670,10 @@ regras da habilidade.
 ##### TURN_TIMEOUT
 
 Publicado quando o prazo termina, antes da transição do turno ou do encerramento
-por W.O.:
+por W.O. Também é publicado se houve ação válida: o turno termina normalmente, o
+contador permanece zero e a expiração não conta como inatividade nem causa W.O.
+A BE-046 evolui o consumo para permitir uma habilidade e uma jogada em qualquer
+ordem sob o mesmo prazo; efeitos são decrementados uma vez por turno completo.
 
 ```json
 {
@@ -1751,9 +1762,10 @@ Para cada round, a ordem de publicação é:
    ainda não está correndo e ações de gameplay não são aceitas.
 9. Iniciar e publicar o primeiro `TURN_START`; só então começa a duração do turno.
 
-Nos turnos seguintes, a ação publicada é seguida pela atualização do tabuleiro e
-pelo `TURN_START` do próximo jogador. Um timeout publica `TURN_TIMEOUT`, um
-`BOARD_UPDATE` apenas quando alterar casas/efeitos, e a transição de turno. O fim
+Em cada turno, `BOARD_UPDATE`/`ABILITY_RESOLVED` refletem cada ação válida. A primeira
+ação mantém o jogador e o deadline, sem novo `TURN_START`; após a segunda ação ou
+timeout, o servidor publica a transição e o `TURN_START` do próximo jogador. Um
+timeout publica `TURN_TIMEOUT` e um `BOARD_UPDATE` apenas quando alterar casas/efeitos. O fim
 do round publica `ROUND_END` e `PHASE_CHANGE` para `ROUND_END` e aguarda 2,5 s; o fim
 da partida publica `MATCH_END` e, em seguida, `PHASE_CHANGE` para `RESULT`. O W.O.
 (por tempo ou desistência) não tem a pausa do fim do round: o `MATCH_END` sai na hora.

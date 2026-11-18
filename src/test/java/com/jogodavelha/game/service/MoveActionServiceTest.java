@@ -39,12 +39,15 @@ class MoveActionServiceTest {
                 mock(org.springframework.context.ApplicationEventPublisher.class));
     }
 
-    @Test void validMoveUpdatesStateAndEndsActionOnce() {
+    @Test void validMoveConsumesOnlyMoveAndPreservesOriginalDeadline() {
         var result = service.play(game, p1, 0);
         assertEquals('X', state.getBoard().charAt(0));
+        assertTrue(state.isMoveUsedThisTurn());
+        assertFalse(state.isAbilityUsedThisTurn());
+        assertEquals(20_000, state.getTurnDeadlineEpochMillis());
         assertSame(state, result.state());
         verify(turns).endPlayerAction(state, p1, 1000);
-        verify(turns).publishAndSchedule(state, Optional.empty());
+        verify(turns, never()).publishAndSchedule(any(), any());
     }
 
     @Test void invalidPositionDoesNotMutateOrPublish() {
@@ -54,10 +57,21 @@ class MoveActionServiceTest {
         verify(turns, never()).publishAndSchedule(any(), any());
     }
 
+    @Test void secondMoveIsRejectedWithoutChangingBoardOrConsumingFurtherState() {
+        state.recordMoveAction();
+        assertThrows(MoveValidationException.class, () -> service.play(game, p1, 1));
+        assertEquals(GameState.EMPTY_BOARD, state.getBoard());
+        assertTrue(state.isMoveUsedThisTurn());
+        verifyNoInteractions(turns);
+    }
+
     @Test void opponentAndTerminalBoardAreHandledByExistingDomainLogic() {
         assertThrows(MoveValidationException.class, () -> service.play(game, p2, 0));
         state.setBoard("XXXX------------");
-        when(turns.endPlayerAction(any(), any(), anyLong())).thenReturn(Optional.of('X'));
+        when(turns.endPlayerAction(any(), any(), anyLong())).thenAnswer(invocation -> {
+            state.setPhase(GamePhase.ROUND_FINISHED);
+            return Optional.of('X');
+        });
         var result = service.play(game, p1, 4);
         assertEquals(Optional.of('X'), result.winner());
         verify(turns).publishAndSchedule(state, Optional.of('X'));

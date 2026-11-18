@@ -176,6 +176,8 @@ class RoomSnapshotServiceTest {
         assertEquals(40_000, snapshot.turn().startedAt());
         assertEquals(50_000, snapshot.turn().deadline());
         assertEquals(10, snapshot.turn().durationSeconds());
+        assertEquals(new RoomSnapshotService.TurnActions(false, false), snapshot.turn().actions());
+        assertEquals(0, snapshot.turn().stateVersion());
         assertEquals(3, snapshot.myDeck().size());
         assertTrue(snapshot.myDeck().stream().filter(deckSlot -> deckSlot.ability().equals("BOMBA"))
                 .findFirst().orElseThrow().usedThisRound());

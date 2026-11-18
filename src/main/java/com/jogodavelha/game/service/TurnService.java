@@ -54,13 +54,8 @@ public class TurnService {
                 : GameState.DEFAULT_TURN_DURATION_MILLIS;
     }
 
-    /**
-     * Fim de ação (jogada, habilidade ou timeout): resolve a vitória, diminui contadores e,
-     * se o round continua, passa a vez com novo prazo. Puro (sem I/O nem RNG): roda dentro do mutator.
-     *
-     * @return símbolo vencedor, se houver (a vez não é passada e a fase vira ROUND_FINISHED)
-     */
-    public Optional<Character> endAction(GameState state, UUID actorId, long nowMillis) {
+    /** Resolve vitória/empate após uma ação, sem reduzir efeitos nem alternar o turno. */
+    private Optional<Character> resolveActionOutcome(GameState state, UUID actorId) {
         var frozenPositions = state.frozenSet();
         Optional<Character> winner = skillEngine.resolveWinner(state, actorId);
         if (winner.isPresent()) {
@@ -81,7 +76,7 @@ public class TurnService {
     /** Registra resultado de uma ação; alterna somente quando ambas foram consumidas. */
     public Optional<Character> actionResolved(GameState state, UUID actorId, long nowMillis) {
         state.resetTimeouts(actorId);
-        Optional<Character> winner = endAction(state, actorId, nowMillis);
+        Optional<Character> winner = resolveActionOutcome(state, actorId);
         if (state.getPhase() == GamePhase.PLAYING && state.haveBothActionsThisTurn()) {
             completeTurn(state, actorId, nowMillis);
         }
@@ -98,10 +93,7 @@ public class TurnService {
         state.resetTurnActions();
     }
 
-    /**
-     * Para jogada ou habilidade do jogador (usado pela BE-015): chamar dentro do mutator do update.
-     * Zera os timeouts consecutivos de quem agiu e passa a vez.
-     */
+    /** Para ação válida: zera inatividade e conclui o turno somente se ambas as ações foram usadas. */
     public Optional<Character> endPlayerAction(GameState state, UUID actorId, long nowMillis) {
         return actionResolved(state, actorId, nowMillis);
     }
@@ -140,7 +132,7 @@ public class TurnService {
         UUID[] timedOut = new UUID[1];
         int[] consecutiveTimeouts = new int[1];
         boolean[] boardChanged = new boolean[1];
-        boolean[] actedThisTurn = new boolean[1];
+        UUID[] expiredPlayer = new UUID[1];
         try {
             stateManager.update(gameId, state -> {
                 snapshot[0] = null; // o mutator pode reexecutar em conflito de versão
@@ -149,19 +141,19 @@ public class TurnService {
                     return state; // turno já resolvido: no-op
                 }
                 UUID player = state.getCurrentTurnPlayerId();
+                expiredPlayer[0] = player;
                 String previousBoard = state.getBoard();
                 var previousShields = new java.util.HashMap<>(state.getShieldedPositions());
                 var previousFrozen = new java.util.HashMap<>(state.getFrozenPositions());
                 var previousReinforced = new java.util.HashMap<>(state.getReinforcedPositions());
                 boolean acted = state.hasAnyActionThisTurn();
-                actedThisTurn[0] = acted;
                 if (!acted) state.recordTimeout(player);
                 consecutiveTimeouts[0] = state.getConsecutiveTimeouts(player);
                 if (!acted && state.getConsecutiveTimeouts(player) >= 3) {
                     state.setPhase(GamePhase.FINISHED);
                     winner[0] = Optional.empty();
                 } else {
-                    winner[0] = endAction(state, player, now);
+                    winner[0] = resolveActionOutcome(state, player);
                     if (state.getPhase() == GamePhase.PLAYING) completeTurn(state, player, now);
                 }
                 // Uma expiração após ação válida conclui o turno, mas não o classifica como timeout.
@@ -181,8 +173,7 @@ public class TurnService {
             return;
         }
         try {
-            if (!actedThisTurn[0])
-                events.publishEvent(new TurnTimedOutEvent(gameId, timedOut[0], consecutiveTimeouts[0], snapshot[0]));
+            events.publishEvent(new TurnTimedOutEvent(gameId, expiredPlayer[0], consecutiveTimeouts[0], snapshot[0]));
             if (boardChanged[0]) events.publishEvent(new GameplayBoardUpdatedEvent(gameId, snapshot[0]));
         } finally {
             try {

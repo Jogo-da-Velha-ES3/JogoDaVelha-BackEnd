@@ -18,8 +18,9 @@ import org.testcontainers.utility.DockerImageName;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -85,6 +86,63 @@ class GameStateManagerIT {
         assertEquals(player1Id, state.getFirstPlayerId());
         assertEquals(player1Id, state.getCurrentTurnPlayerId());
         assertEquals(0L, state.getVersion());
+    }
+
+    @Test
+    void partiallyUsedTurnSurvivesRedisReloadByAnotherManager() {
+        gameStateManager.create(gameId, player1Id, player2Id, 10_000);
+        gameStateManager.update(gameId, state -> {
+            state.recordAbilityAction();
+            return state;
+        });
+
+        GameStateManager reconnectedManager = new GameStateManager(redisTemplate, objectMapper, 1_800_000, 5);
+        GameState restored = reconnectedManager.find(gameId).orElseThrow();
+        assertTrue(restored.isAbilityUsedThisTurn());
+        assertFalse(restored.isMoveUsedThisTurn());
+    }
+
+    @Test
+    void simultaneousClaimsOfSameTurnActionCommitExactlyOnce() throws Exception {
+        gameStateManager.create(gameId, player1Id, player2Id, 10_000);
+        GameStateManager secondNode = new GameStateManager(redisTemplate, objectMapper, 1_800_000, 20);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        AtomicInteger accepted = new AtomicInteger();
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Callable<Void> claimA = claimMove(gameStateManager, ready, start, accepted);
+            Callable<Void> claimB = claimMove(secondNode, ready, start, accepted);
+            Future<Void> first = pool.submit(claimA);
+            Future<Void> second = pool.submit(claimB);
+            assertTrue(ready.await(5, TimeUnit.SECONDS));
+            start.countDown();
+            first.get(10, TimeUnit.SECONDS);
+            second.get(10, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertEquals(1, accepted.get());
+        assertTrue(secondNode.find(gameId).orElseThrow().isMoveUsedThisTurn());
+    }
+
+    private Callable<Void> claimMove(GameStateManager manager, CountDownLatch ready, CountDownLatch start,
+                                     AtomicInteger accepted) {
+        return () -> {
+            ready.countDown();
+            start.await();
+            try {
+                manager.update(gameId, state -> {
+                    if (state.isMoveUsedThisTurn()) throw new IllegalStateException("move already consumed");
+                    state.recordMoveAction();
+                    return state;
+                });
+                accepted.incrementAndGet();
+            } catch (IllegalStateException duplicate) {
+                // The competing CAS already committed the one allowed claim.
+            }
+            return null;
+        };
     }
 
     @Test

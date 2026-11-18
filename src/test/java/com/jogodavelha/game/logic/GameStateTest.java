@@ -392,4 +392,23 @@ class GameStateTest {
 
         assertEquals(phase, restored.getPhase());
     }
+
+    @Test
+    void actionFlagsPersistAndLegacyJsonDefaultsThemToAvailable() throws Exception {
+        GameState state = completeState(true);
+        state.recordAbilityAction();
+        GameState restored = objectMapper.readValue(objectMapper.writeValueAsString(state), GameState.class);
+        assertTrue(restored.isAbilityUsedThisTurn());
+        assertFalse(restored.isMoveUsedThisTurn());
+
+        GameState legacy = objectMapper.readValue("""
+                {"gameId":"%s","board":"----------------","player1Id":"%s","player2Id":"%s","firstPlayerId":"%s","currentTurnPlayerId":"%s"}
+                """.formatted(gameId, player1Id, player2Id, player1Id, player1Id), GameState.class);
+        assertFalse(legacy.isAbilityUsedThisTurn());
+        assertFalse(legacy.isMoveUsedThisTurn());
+        legacy.recordMoveAction();
+        legacy.startRound(2, 10_000, 20_000);
+        assertFalse(legacy.isAbilityUsedThisTurn());
+        assertFalse(legacy.isMoveUsedThisTurn());
+    }
 }

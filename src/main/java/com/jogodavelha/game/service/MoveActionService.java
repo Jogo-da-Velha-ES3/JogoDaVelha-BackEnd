@@ -2,6 +2,7 @@ package com.jogodavelha.game.service;
 
 import com.jogodavelha.game.GameplayBoardUpdatedEvent;
 import com.jogodavelha.game.logic.GameState;
+import com.jogodavelha.game.logic.GamePhase;
 import com.jogodavelha.game.logic.GameStateManager;
 import com.jogodavelha.game.logic.MoveValidator;
 import org.springframework.context.ApplicationEventPublisher;
@@ -55,7 +56,7 @@ public class MoveActionService {
             board.setCharAt(position, symbol);
             state.setBoard(board.toString());
             state.recordMoveAction();
-            winner[0] = turns.actionResolved(state, playerId, now);
+            winner[0] = turns.endPlayerAction(state, playerId, now);
             committed[0] = state;
             return state;
         });
@@ -63,7 +64,10 @@ public class MoveActionService {
         long publishStart = System.nanoTime();
         try {
             events.publishEvent(new GameplayBoardUpdatedEvent(gameId, committed[0]));
-            turns.publishAndSchedule(committed[0], winner[0]);
+            if (committed[0].getPhase() != GamePhase.PLAYING
+                    || !playerId.equals(committed[0].getCurrentTurnPlayerId())) {
+                turns.publishAndSchedule(committed[0], winner[0]);
+            }
         } finally {
             com.jogodavelha.telemetry.ActionProfiler.add("events.publish", publishStart);
         }
