@@ -148,16 +148,23 @@ public class RoomSnapshotService {
         Game active = games.findByRoomIdAndStatus(room.getId(), GameStatus.IN_PROGRESS).orElse(null);
         Game finished = games.findTopByRoomIdAndStatusOrderByFinishedAtDesc(room.getId(), GameStatus.FINISHED)
                 .orElse(null);
-        // Só um Draft ainda aberto é a Preparação de uma revanche. O Draft concluído é o da partida
-        // que acabou (o estado fica no Redis): numa partida rápida, o prazo de 20s dele ainda vale
-        // depois do fim e escondia o resultado (fase DRAFT, sem outcome).
-        boolean preparingNewMatch = active == null && draft != null && !draft.completed()
+        // O Draft que começou depois do fim da última partida é a Preparação de uma revanche, aberto
+        // ou já concluído: entre o fim dele e a criação da partida nova, o snapshot (publicado a cada
+        // DraftUpdated) ainda é da Preparação, não do Resultado anterior. O Draft que começou antes
+        // é o da partida que acabou (o estado fica no Redis): numa partida rápida, o prazo de 20s
+        // dele ainda vale depois do fim, por isso a comparação é pelo início, não pelo prazo.
+        boolean preparingNewMatch = active == null && draft != null
                 && (finished == null || finished.getFinishedAt() == null
-                || draft.deadlineEpochMillis() > finished.getFinishedAt().toEpochMilli());
+                || draftStartedAt(draft) >= finished.getFinishedAt().toEpochMilli());
         Game game = active != null ? active : preparingNewMatch ? null : finished;
         GameState gameState = game == null ? null : gameStates.find(game.getId()).orElse(null);
         RematchState negotiation = rematches.find(room.getId()).orElse(null);
         return new State(draft, game, gameState, negotiation);
+    }
+
+    /** O prazo do Draft é fixo: começo = prazo − 20s (o mesmo cálculo do RematchService). */
+    private static long draftStartedAt(DraftState draft) {
+        return draft.deadlineEpochMillis() - DraftState.DURATION_MILLIS;
     }
 
     private List<PlayerState> players(Room room, State state, MatchSnapshot match) {
