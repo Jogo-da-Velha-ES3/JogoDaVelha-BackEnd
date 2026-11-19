@@ -274,6 +274,29 @@ class TurnServiceTest {
     }
 
     @Test
+    void publishFailureDoesNotPreventTurnTimerScheduling() {
+        doThrow(new IllegalStateException("websocket down")).when(events).publishEvent(any(Object.class));
+        state.setTurnDeadlineEpochMillis(50_000L);
+
+        assertDoesNotThrow(() -> service.publishAndSchedule(state, Optional.empty()));
+
+        verify(scheduler).schedule(any(Runnable.class), eq(Instant.ofEpochMilli(50_000L)));
+    }
+
+    @Test
+    void startupRecoverySchedulesThePersistedDeadlineWithoutExtendingIt() {
+        state.setTurnDeadlineEpochMillis(25_000L);
+        nowMillis = 20_000L;
+        when(manager.findAllGameIds()).thenReturn(List.of(gameId));
+        when(manager.find(gameId)).thenReturn(Optional.of(state));
+
+        service.recoverPlayingTurnTimers();
+
+        verify(scheduler).schedule(any(Runnable.class), eq(Instant.ofEpochMilli(25_000L)));
+        assertEquals(25_000L, state.getTurnDeadlineEpochMillis());
+    }
+
+    @Test
     void timeoutOnFullBoardEndsRoundAsDraw() {
         state.setBoard("XOXOOXXOXOOXOXOX");
         long deadline = state.getTurnDeadlineEpochMillis();

@@ -11,6 +11,8 @@ import com.jogodavelha.game.logic.GameValidator;
 import com.jogodavelha.skill.SkillEngine;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -100,8 +102,37 @@ public class TurnService {
 
     /** Chamar DEPOIS do update bem-sucedido: publica o evento e reagenda (ou cancela) o timer. */
     public void publishAndSchedule(GameState snapshot, Optional<Character> winner) {
-        events.publishEvent(toEvent(snapshot, winner, null));
-        reschedule(snapshot);
+        try {
+            events.publishEvent(toEvent(snapshot, winner, null));
+        } catch (RuntimeException failure) {
+            log.warn("Falha ao publicar evento de turno para a partida {} (estado já persistido)",
+                    snapshot.getGameId(), failure);
+        } finally {
+            rescheduleSafely(snapshot);
+        }
+    }
+
+    /** Recupera timers a partir do deadline persistido, sem conceder novo prazo. */
+    @EventListener(ApplicationReadyEvent.class)
+    public void recoverPlayingTurnTimers() {
+        try {
+            for (UUID gameId : stateManager.findAllGameIds()) {
+                try {
+                    GameState state = stateManager.find(gameId).orElse(null);
+                    if (state == null || state.getPhase() != GamePhase.PLAYING
+                            || state.getTurnDeadlineEpochMillis() <= 0) continue;
+                    if (clock.millis() >= state.getTurnDeadlineEpochMillis()) {
+                        expire(gameId, state.getTurnDeadlineEpochMillis());
+                    } else {
+                        schedule(gameId, state.getTurnDeadlineEpochMillis());
+                    }
+                } catch (RuntimeException failure) {
+                    log.error("Falha ao recuperar timer da partida {}", gameId, failure);
+                }
+            }
+        } catch (RuntimeException failure) {
+            log.error("Falha ao listar partidas para recuperar timers de turno", failure);
+        }
     }
 
     /** Agenda a expiração do turno cujo prazo é {@code deadline}. */
@@ -138,7 +169,7 @@ public class TurnService {
                 snapshot[0] = null; // o mutator pode reexecutar em conflito de versão
                 if (state.getPhase() != GamePhase.PLAYING
                         || state.getTurnDeadlineEpochMillis() != expectedDeadline) {
-                    return state; // turno já resolvido: no-op
+                    throw new StaleTurnExpirationException(); // sem gravar uma versão artificial
                 }
                 UUID player = state.getCurrentTurnPlayerId();
                 expiredPlayer[0] = player;
@@ -165,6 +196,8 @@ public class TurnService {
                 snapshot[0] = state;
                 return state;
             });
+        } catch (StaleTurnExpirationException stale) {
+            return;
         } catch (GameStateNotFoundException e) {
             cancel(gameId);
             return;
@@ -172,16 +205,10 @@ public class TurnService {
         if (snapshot[0] == null) {
             return;
         }
-        try {
-            events.publishEvent(new TurnTimedOutEvent(gameId, expiredPlayer[0], consecutiveTimeouts[0], snapshot[0]));
-            if (boardChanged[0]) events.publishEvent(new GameplayBoardUpdatedEvent(gameId, snapshot[0]));
-        } finally {
-            try {
-                events.publishEvent(toEvent(snapshot[0], winner[0], timedOut[0]));
-            } finally {
-                reschedule(snapshot[0]);
-            }
-        }
+        publishSafely(new TurnTimedOutEvent(gameId, expiredPlayer[0], consecutiveTimeouts[0], snapshot[0]), gameId);
+        if (boardChanged[0]) publishSafely(new GameplayBoardUpdatedEvent(gameId, snapshot[0]), gameId);
+        publishSafely(toEvent(snapshot[0], winner[0], timedOut[0]), gameId);
+        rescheduleSafely(snapshot[0]);
     }
 
     private void reschedule(GameState s) {
@@ -191,6 +218,25 @@ public class TurnService {
             cancel(s.getGameId());
         }
     }
+
+    private void rescheduleSafely(GameState state) {
+        try {
+            reschedule(state);
+        } catch (RuntimeException failure) {
+            log.error("Falha ao agendar/cancelar timer da partida {}", state.getGameId(), failure);
+        }
+    }
+
+    private void publishSafely(Object event, UUID gameId) {
+        try {
+            events.publishEvent(event);
+        } catch (RuntimeException failure) {
+            log.warn("Falha ao publicar evento {} da partida {} (estado já persistido)",
+                    event.getClass().getSimpleName(), gameId, failure);
+        }
+    }
+
+    private static final class StaleTurnExpirationException extends RuntimeException { }
 
     @SuppressWarnings("unchecked")
     private static Optional<Character>[] holder() {

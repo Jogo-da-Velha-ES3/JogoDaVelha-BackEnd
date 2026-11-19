@@ -88,7 +88,8 @@ public class GameplayEventPublisher {
             if (state == null || roomCode == null) return;
             send(roomCode, "TURN_TIMEOUT", Map.of(
                     "player", slot(state, event.playerId()),
-                    "consecutiveTimeouts", event.consecutiveTimeouts()));
+                    "consecutiveTimeouts", event.consecutiveTimeouts(),
+                    "stateVersion", state.getVersion()));
         } finally {
             ActionProfiler.add("ws.turnTimeout", start);
         }

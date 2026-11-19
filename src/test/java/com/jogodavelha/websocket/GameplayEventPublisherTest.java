@@ -120,13 +120,15 @@ class GameplayEventPublisherTest {
 
     @Test
     void publishesTimeoutForTheCorrectRoomAndPlayerSlot() {
-        when(states.find(gameId)).thenReturn(java.util.Optional.of(state(GamePhase.PLAYING, "----------------")));
+        GameState timeoutState = state(GamePhase.PLAYING, "----------------");
+        timeoutState.setVersion(42);
 
-        publisher.onTurnTimedOut(new TurnTimedOutEvent(gameId, p1, 3));
+        publisher.onTurnTimedOut(new TurnTimedOutEvent(gameId, p1, 3, timeoutState));
 
         MatchLifecycleEvent event = sent("TURN_TIMEOUT");
         assertEquals("P1", event.payload().get("player"));
         assertEquals(3, event.payload().get("consecutiveTimeouts"));
+        assertEquals(42L, event.payload().get("stateVersion"));
     }
 
     @Test

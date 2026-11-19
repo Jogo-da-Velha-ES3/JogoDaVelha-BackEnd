@@ -3,6 +3,7 @@ package com.jogodavelha.skill;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jogodavelha.game.logic.*;
 import com.jogodavelha.game.service.TurnService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -28,6 +29,7 @@ class SkillActivationServiceTest {
     private SkillActivationService activations;
     private SkillEngine engine;
     private FakeEffect effect;
+    private ApplicationEventPublisher events;
 
     @BeforeEach
     void setUp() {
@@ -46,8 +48,8 @@ class SkillActivationServiceTest {
         effect = new FakeEffect();
         engine = new SkillEngine(List.of(effect), new GameValidator());
         Clock clock = Clock.fixed(Instant.ofEpochMilli(1_000), ZoneOffset.UTC);
-        activations = new SkillActivationService(states, engine, turns, clock,
-                mock(org.springframework.context.ApplicationEventPublisher.class));
+        events = mock(ApplicationEventPublisher.class);
+        activations = new SkillActivationService(states, engine, turns, clock, events);
         when(turns.endPlayerAction(any(), any(), anyLong())).thenReturn(Optional.empty());
     }
 
@@ -76,6 +78,22 @@ class SkillActivationServiceTest {
     }
 
     @Test
+    void publicationFailureDoesNotHidePersistedSkillOrSkipTurnScheduling() {
+        state.recordMoveAction();
+        when(turns.endPlayerAction(any(), any(), anyLong())).thenAnswer(invocation -> {
+            state.setCurrentTurnPlayerId(p2);
+            return Optional.empty();
+        });
+        doThrow(new IllegalStateException("websocket unavailable"))
+                .when(events).publishEvent(any(Object.class));
+
+        var activation = assertDoesNotThrow(() -> activations.activate(gameId, "CONGELAR", new SkillContext(p1, 0)));
+
+        assertTrue(activation.state().isAbilityUsedThisTurn());
+        verify(turns).publishAndSchedule(activation.state(), Optional.empty());
+    }
+
+    @Test
     void reusedSkillIsRejectedWithoutApplyingOrEndingTurn() {
         state.recordSkillUse(p1, "CONGELAR");
 
@@ -96,7 +114,7 @@ class SkillActivationServiceTest {
         var error = assertThrows(SkillValidationException.class,
                 () -> activations.activate(gameId, "BOMBA", new SkillContext(p1, 0)));
 
-        assertEquals(SkillValidationException.Code.SKILL_ALREADY_USED, error.getCode());
+        assertEquals(SkillValidationException.Code.SKILL_ACTION_ALREADY_USED, error.getCode());
         assertFalse(state.hasUsedSkill(p1, "BOMBA"));
         assertEquals(0, effect.applies);
         verify(turns, never()).endPlayerAction(any(), any(), anyLong());
@@ -249,7 +267,7 @@ class SkillActivationServiceTest {
         public boolean isOffensive() { return true; }
         public boolean hasValidTarget(GameState state, SkillContext context) {
             if (throwsOnValidate) throw new SkillValidationException(
-                    SkillValidationException.Code.SKILL_INVALID_TARGET, "Alvo inválido");
+                    SkillValidationException.Code.SKILL_INVALID_TARGET, "Alvo invÃ¡lido");
             return valid;
         }
         public void apply(GameState state, SkillContext context) { applies++; }

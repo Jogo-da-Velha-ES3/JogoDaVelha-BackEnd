@@ -8,6 +8,7 @@ import com.jogodavelha.game.logic.MoveValidator;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import lombok.extern.slf4j.Slf4j;
 
 import java.time.Clock;
 import java.util.Optional;
@@ -15,6 +16,7 @@ import java.util.UUID;
 
 /** Executes a move atomically; turn events are published only after Redis commits. */
 @Service
+@Slf4j
 public class MoveActionService {
     public record Result(GameState state, Optional<Character> winner) {}
 
@@ -46,12 +48,13 @@ public class MoveActionService {
             } catch (IllegalArgumentException exception) {
                 throw new AccessDeniedException("Jogador não pertence à partida.", exception);
             }
-            moves.validate(state, playerId, position, state.blockedFor(playerId), now);
+            moves.validateTurn(state, playerId, now);
             if (state.isMoveUsedThisTurn()) {
                 throw new com.jogodavelha.game.logic.MoveValidationException(
-                        com.jogodavelha.game.logic.MoveValidationException.Code.INVALID_PHASE,
+                        com.jogodavelha.game.logic.MoveValidationException.Code.MOVE_ALREADY_USED,
                         "A jogada deste turno já foi utilizada.");
             }
+            moves.validate(state, playerId, position, state.blockedFor(playerId), now);
             StringBuilder board = new StringBuilder(state.getBoard());
             board.setCharAt(position, symbol);
             state.setBoard(board.toString());
@@ -63,11 +66,18 @@ public class MoveActionService {
         // Must remain outside update: its mutator can be retried after a CAS conflict.
         long publishStart = System.nanoTime();
         try {
-            events.publishEvent(new GameplayBoardUpdatedEvent(gameId, committed[0]));
+            try {
+                events.publishEvent(new GameplayBoardUpdatedEvent(gameId, committed[0]));
+            } catch (RuntimeException failure) {
+                log.warn("Falha ao publicar atualização do tabuleiro da partida {} (jogada persistida)", gameId, failure);
+            }
             if (committed[0].getPhase() != GamePhase.PLAYING
                     || !playerId.equals(committed[0].getCurrentTurnPlayerId())) {
                 turns.publishAndSchedule(committed[0], winner[0]);
             }
+        } catch (RuntimeException failure) {
+            // A gravação já foi confirmada: falha de integração não deve reportar rollback ao cliente.
+            log.error("Falha pós-commit ao finalizar turno da partida {}", gameId, failure);
         } finally {
             com.jogodavelha.telemetry.ActionProfiler.add("events.publish", publishStart);
         }

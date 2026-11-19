@@ -3,6 +3,7 @@ package com.jogodavelha.game.service;
 import com.jogodavelha.game.logic.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -20,6 +21,7 @@ class MoveActionServiceTest {
     GameState state;
     GameStateManager states;
     TurnService turns;
+    ApplicationEventPublisher events;
     MoveActionService service;
 
     @BeforeEach void setup() {
@@ -34,9 +36,10 @@ class MoveActionServiceTest {
             return null;
         }).when(states).update(eq(game), any());
         when(turns.endPlayerAction(any(), any(), anyLong())).thenReturn(Optional.empty());
+        events = mock(ApplicationEventPublisher.class);
         service = new MoveActionService(states, new MoveValidator(Clock.fixed(Instant.ofEpochMilli(1000), ZoneOffset.UTC)),
                 turns, Clock.fixed(Instant.ofEpochMilli(1000), ZoneOffset.UTC),
-                mock(org.springframework.context.ApplicationEventPublisher.class));
+                events);
     }
 
     @Test void validMoveConsumesOnlyMoveAndPreservesOriginalDeadline() {
@@ -81,5 +84,20 @@ class MoveActionServiceTest {
         doThrow(new ConcurrentStateModificationException(game, 5)).when(states).update(eq(game), any());
         assertThrows(ConcurrentStateModificationException.class, () -> service.play(game, p1, 0));
         verify(turns, never()).publishAndSchedule(any(), any());
+    }
+
+    @Test void boardPublicationFailureDoesNotHidePersistedMoveOrSkipNextTurnScheduling() {
+        state.recordAbilityAction();
+        when(turns.endPlayerAction(any(), any(), anyLong())).thenAnswer(invocation -> {
+            state.setCurrentTurnPlayerId(p2);
+            return Optional.empty();
+        });
+        doThrow(new IllegalStateException("websocket unavailable"))
+                .when(events).publishEvent(any(Object.class));
+
+        var result = assertDoesNotThrow(() -> service.play(game, p1, 0));
+
+        assertTrue(result.state().isMoveUsedThisTurn());
+        verify(turns).publishAndSchedule(result.state(), Optional.empty());
     }
 }

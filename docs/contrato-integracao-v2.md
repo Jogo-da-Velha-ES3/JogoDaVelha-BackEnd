@@ -1678,7 +1678,7 @@ ordem sob o mesmo prazo; efeitos são decrementados uma vez por turno completo.
 ```json
 {
   "type": "TURN_TIMEOUT",
-  "payload": { "player": "P1", "consecutiveTimeouts": 2 },
+  "payload": { "player": "P1", "consecutiveTimeouts": 2, "stateVersion": 18 },
   "serverTime": 1793102410000
 }
 ```
@@ -1916,13 +1916,18 @@ continuam disponíveis para sincronização.
 - `SKILL_INVALID_TARGET`: Alvo inválido para habilidade
 - `SKILL_INVALID_DESTINATION`: Destino inválido (Tornado, Troca Rápida)
 - `SKILL_SILENCED`: Jogador sob Silêncio
+- `SKILL_ACTION_ALREADY_USED`: A ação de habilidade deste turno já foi utilizada
 - `SKILL_ALREADY_USED`: Habilidade já usada no round
 - `SKILL_NOT_IN_DECK`: Habilidade não pertence ao deck do round
 
 **Códigos específicos de movimento:** `INVALID_ARGUMENTS`, `INVALID_POSITION`,
 `INVALID_BOARD`, `INVALID_PHASE`, `DRAFT_IN_PROGRESS`, `ROUND_FINISHED`,
 `GAME_FINISHED`, `NOT_YOUR_TURN`, `TURN_EXPIRED`, `POSITION_OCCUPIED` e
-`POSITION_BLOCKED` (HTTP 400).
+`POSITION_BLOCKED`, `MOVE_ALREADY_USED` (HTTP 400). `MOVE_ALREADY_USED` identifica
+uma segunda jogada no mesmo turno, independente da posição solicitada.
+
+`TURN_TIMEOUT.payload.stateVersion` é a versão do estado Redis persistido pela
+transição que encerrou o turno; clientes podem usá-la para descartar eventos antigos.
 
 **Códigos para condições gerais da sala:**
 - `ROOM_BAD_REQUEST` (400): argumentos inválidos
@@ -2271,6 +2276,7 @@ O `Outcome` presente em snapshots de composicao/sincronizacao e no snapshot fina
 - `SKILL_INVALID_TARGET`: Alvo inválido (posição, ocupação, proprietário ou bloqueio)
 - `SKILL_INVALID_DESTINATION`: Destino inválido (fora do tabuleiro, ocupado, bloqueado ou não adjacente)
 - `SKILL_SILENCED`: Jogador sob Silêncio
+- `SKILL_ACTION_ALREADY_USED`: Segunda ação de habilidade no mesmo turno
 - `SKILL_ALREADY_USED`: Habilidade já usada no round atual
 - `SKILL_NOT_IN_DECK`: Habilidade não pertence ao deck do round
 
@@ -2379,6 +2385,7 @@ O `Outcome` presente em snapshots de composicao/sincronizacao e no snapshot fina
 | `SKILL_INVALID_TARGET` | 400 | Alvo inválido para habilidade | `WebSocketExceptionHandler.handleSkillValidation` |
 | `SKILL_INVALID_DESTINATION` | 400 | Destino inválido para habilidade | `WebSocketExceptionHandler.handleSkillValidation` |
 | `SKILL_SILENCED` | 400 | Jogador sob Silêncio | `WebSocketExceptionHandler.handleSkillValidation` |
+| `SKILL_ACTION_ALREADY_USED` | 400 | Ação de habilidade já utilizada no turno | `WebSocketExceptionHandler.handleSkillValidation` |
 | `SKILL_ALREADY_USED` | 400 | Habilidade já usada no round | `WebSocketExceptionHandler.handleSkillValidation` |
 | `SKILL_NOT_IN_DECK` | 400 | Habilidade não no deck do round | `WebSocketExceptionHandler.handleSkillValidation` |
 | `INVALID_ARGUMENTS` | 400 | Argumentos do movimento inválidos | `WebSocketExceptionHandler.handleMoveValidation` |
@@ -2392,6 +2399,7 @@ O `Outcome` presente em snapshots de composicao/sincronizacao e no snapshot fina
 | `TURN_EXPIRED` | 400 | Prazo do turno expirado | `WebSocketExceptionHandler.handleMoveValidation` |
 | `POSITION_OCCUPIED` | 400 | Casa ocupada | `WebSocketExceptionHandler.handleMoveValidation` |
 | `POSITION_BLOCKED` | 400 | Casa bloqueada por efeito | `WebSocketExceptionHandler.handleMoveValidation` |
+| `MOVE_ALREADY_USED` | 400 | Segunda jogada no mesmo turno | `WebSocketExceptionHandler.handleMoveValidation` |
 | `ROOM_BAD_REQUEST` | 400 | Requisição inválida | `WebSocketExceptionHandler.handleBadRequest` |
 | `ROOM_NOT_FOUND` | 404 | Sala inexistente ou encerrada | `WebSocketExceptionHandler.handleRoomNotFound` |
 | `ROOM_CONFLICT` | 409 | Ação incompatível com o estado | `WebSocketExceptionHandler.handleConflict` |

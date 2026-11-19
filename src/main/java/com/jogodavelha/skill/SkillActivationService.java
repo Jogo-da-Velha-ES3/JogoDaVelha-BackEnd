@@ -9,6 +9,7 @@ import com.jogodavelha.game.service.TurnService;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import lombok.extern.slf4j.Slf4j;
 
 import java.time.Clock;
 import java.util.Optional;
@@ -19,6 +20,7 @@ import static com.jogodavelha.game.logic.MoveValidationException.Code.*;
 
 /** Orquestra uma ativação como ação atômica persistida do jogador. */
 @Service
+@Slf4j
 public class SkillActivationService {
     public record Activation(GameState state, SkillResult result, Optional<Character> winner) {}
 
@@ -84,7 +86,7 @@ public class SkillActivationService {
                 throw new MoveValidationException(TURN_EXPIRED, "O prazo deste turno já terminou.");
             }
             if (state.isAbilityUsedThisTurn()) {
-                throw new SkillValidationException(SkillValidationException.Code.SKILL_ALREADY_USED,
+                throw new SkillValidationException(SkillValidationException.Code.SKILL_ACTION_ALREADY_USED,
                         "A ação de habilidade deste turno já foi utilizada.");
             }
             if (state.hasUsedSkill(actor, skillCode)) {
@@ -111,13 +113,23 @@ public class SkillActivationService {
         }
         long publishStart = System.nanoTime();
         try {
-            events.publishEvent(new SkillResolvedEvent(gameId, preparedContext.casterId(), skillCode,
-                    preparedContext.targetPosition(), preparedContext.destinationPosition(), result[0], committed[0]));
-            events.publishEvent(new com.jogodavelha.game.GameplayBoardUpdatedEvent(gameId, committed[0]));
+            try {
+                events.publishEvent(new SkillResolvedEvent(gameId, preparedContext.casterId(), skillCode,
+                        preparedContext.targetPosition(), preparedContext.destinationPosition(), result[0], committed[0]));
+            } catch (RuntimeException failure) {
+                log.warn("Falha ao publicar resolução da habilidade na partida {} (ação persistida)", gameId, failure);
+            }
+            try {
+                events.publishEvent(new com.jogodavelha.game.GameplayBoardUpdatedEvent(gameId, committed[0]));
+            } catch (RuntimeException failure) {
+                log.warn("Falha ao publicar atualização do tabuleiro da partida {} (ação persistida)", gameId, failure);
+            }
             if (committed[0].getPhase() != GamePhase.PLAYING
                     || !preparedContext.casterId().equals(committed[0].getCurrentTurnPlayerId())) {
                 turns.publishAndSchedule(committed[0], winner[0]);
             }
+        } catch (RuntimeException failure) {
+            log.error("Falha pós-commit ao finalizar turno da partida {}", gameId, failure);
         } finally {
             com.jogodavelha.telemetry.ActionProfiler.add("events.publish", publishStart);
         }

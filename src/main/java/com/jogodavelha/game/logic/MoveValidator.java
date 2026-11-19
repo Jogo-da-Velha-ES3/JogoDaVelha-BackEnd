@@ -24,12 +24,26 @@ public class MoveValidator {
 
     public void validate(GameState state, UUID playerId, int position, Set<Integer> blockedPositions,
                          long nowMillis) {
-        if (state == null || playerId == null || blockedPositions == null) {
-            throw new MoveValidationException(INVALID_ARGUMENTS,
-                    "Informe o estado, o jogador e as casas bloqueadas.");
+        validateTurn(state, playerId, nowMillis);
+        if (blockedPositions == null) {
+            throw new MoveValidationException(INVALID_ARGUMENTS, "Informe as casas bloqueadas.");
         }
         if (position < 0 || position >= GameState.BOARD_SIZE) {
             throw new MoveValidationException(INVALID_POSITION, "A posição deve estar entre 0 e 15.");
+        }
+        String board = state.getBoard();
+        if (board.charAt(position) != '-') {
+            throw new MoveValidationException(POSITION_OCCUPIED, "A casa já está ocupada.");
+        }
+        if (blockedPositions.contains(position)) {
+            throw new MoveValidationException(POSITION_BLOCKED, "A casa está bloqueada por Escudo.");
+        }
+    }
+
+    /** Valida contexto do turno antes de qualquer validação dependente da posição escolhida. */
+    public void validateTurn(GameState state, UUID playerId, long nowMillis) {
+        if (state == null || playerId == null) {
+            throw new MoveValidationException(INVALID_ARGUMENTS, "Informe o estado e o jogador.");
         }
 
         String board = state.getBoard();
@@ -50,12 +64,6 @@ public class MoveValidator {
         }
         if (nowMillis >= state.getTurnDeadlineEpochMillis()) {
             throw new MoveValidationException(TURN_EXPIRED, "O prazo deste turno já terminou.");
-        }
-        if (board.charAt(position) != '-') {
-            throw new MoveValidationException(POSITION_OCCUPIED, "A casa já está ocupada.");
-        }
-        if (blockedPositions.contains(position)) {
-            throw new MoveValidationException(POSITION_BLOCKED, "A casa está bloqueada por Escudo.");
         }
     }
 }
