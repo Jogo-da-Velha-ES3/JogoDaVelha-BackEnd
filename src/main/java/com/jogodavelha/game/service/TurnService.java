@@ -14,6 +14,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.TaskScheduler;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
@@ -38,7 +39,7 @@ public class TurnService {
     private final Clock clock;
     private final TaskScheduler scheduler;
     private final ApplicationEventPublisher events;
-    private final ConcurrentHashMap<UUID, ScheduledFuture<?>> timers = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, ScheduledTurn> timers = new ConcurrentHashMap<>();
 
     public TurnService(GameStateManager stateManager, SkillEngine skillEngine, Clock clock,
                        @Qualifier("turnTaskScheduler") TaskScheduler turnTaskScheduler, ApplicationEventPublisher events) {
@@ -119,12 +120,19 @@ public class TurnService {
             for (UUID gameId : stateManager.findAllGameIds()) {
                 try {
                     GameState state = stateManager.find(gameId).orElse(null);
-                    if (state == null || state.getPhase() != GamePhase.PLAYING
-                            || state.getTurnDeadlineEpochMillis() <= 0) continue;
-                    if (clock.millis() >= state.getTurnDeadlineEpochMillis()) {
-                        expire(gameId, state.getTurnDeadlineEpochMillis());
+                    if (state == null) continue;
+                    if (state.getPhase() == GamePhase.PLAYING && state.getTurnDeadlineEpochMillis() > 0) {
+                        if (clock.millis() >= state.getTurnDeadlineEpochMillis()) {
+                            expire(gameId, state.getTurnDeadlineEpochMillis());
+                        } else if (!hasLiveTimer(gameId, state.getTurnDeadlineEpochMillis())) {
+                            schedule(gameId, state.getTurnDeadlineEpochMillis());
+                        }
+                    } else if (state.getPhase() == GamePhase.ROUND_FINISHED
+                            || (state.getPhase() == GamePhase.FINISHED && hasForfeitTimeout(state))) {
+                        cancelSafely(gameId);
+                        publishSafely(toRecoveryEvent(state), gameId);
                     } else {
-                        schedule(gameId, state.getTurnDeadlineEpochMillis());
+                        cancelSafely(gameId);
                     }
                 } catch (RuntimeException failure) {
                     log.error("Falha ao recuperar timer da partida {}", gameId, failure);
@@ -135,19 +143,35 @@ public class TurnService {
         }
     }
 
-    /** Agenda a expiração do turno cujo prazo é {@code deadline}. */
-    public void schedule(UUID gameId, long deadline) {
-        ScheduledFuture<?> next = scheduler.schedule(() -> expire(gameId, deadline), Instant.ofEpochMilli(deadline));
-        ScheduledFuture<?> previous = timers.put(gameId, next);
-        if (previous != null) {
-            previous.cancel(false);
-        }
+    /** Reconcilia falhas transitórias do scheduler e reprocessa lifecycle terminal após falha de listener. */
+    @Scheduled(fixedDelayString = "${game.turn.recovery-interval-ms:1000}")
+    public void reconcilePersistedTurnWork() {
+        recoverPlayingTurnTimers();
     }
 
-    public void cancel(UUID gameId) {
-        ScheduledFuture<?> f = timers.remove(gameId);
-        if (f != null) {
-            f.cancel(false);
+    /** Agenda a expiração do turno cujo prazo é {@code deadline}. */
+    public synchronized void schedule(UUID gameId, long deadline) {
+        ScheduledTurn existing = timers.get(gameId);
+        if (existing != null && existing.deadline() == deadline && !existing.future().isDone()) return;
+        ScheduledFuture<?> next = scheduler.schedule(() -> expire(gameId, deadline), Instant.ofEpochMilli(deadline));
+        if (next == null) throw new IllegalStateException("O agendador não retornou um timer para a partida " + gameId);
+        if (existing != null) {
+            try {
+                existing.future().cancel(false);
+            } catch (RuntimeException cancellationFailure) {
+                next.cancel(false);
+                throw cancellationFailure;
+            }
+        }
+        ScheduledTurn previous = timers.put(gameId, new ScheduledTurn(deadline, next));
+        if (previous != null && previous != existing) previous.future().cancel(false);
+    }
+
+    public synchronized void cancel(UUID gameId) {
+        ScheduledTurn timer = timers.get(gameId);
+        if (timer != null) {
+            timer.future().cancel(false);
+            timers.remove(gameId, timer);
         }
     }
 
@@ -227,6 +251,31 @@ public class TurnService {
         }
     }
 
+    private void cancelSafely(UUID gameId) {
+        try {
+            cancel(gameId);
+        } catch (RuntimeException failure) {
+            log.error("Falha ao cancelar timer da partida {}; nova tentativa será feita", gameId, failure);
+        }
+    }
+
+    private boolean hasLiveTimer(UUID gameId, long deadline) {
+        ScheduledTurn timer = timers.get(gameId);
+        return timer != null && timer.deadline() == deadline && !timer.future().isDone();
+    }
+
+    private static boolean hasForfeitTimeout(GameState state) {
+        return state.getConsecutiveTimeouts(state.getCurrentTurnPlayerId()) >= 3;
+    }
+
+    private static TurnChangedEvent toRecoveryEvent(GameState state) {
+        UUID timedOutPlayer = state.getPhase() == GamePhase.FINISHED
+                && hasForfeitTimeout(state) ? state.getCurrentTurnPlayerId() : null;
+        Optional<Character> winner = state.getWinningLine() == null || state.getWinningLine().isEmpty()
+                ? Optional.empty() : Optional.of(state.getPlayerSymbol(state.getCurrentTurnPlayerId()));
+        return toEvent(state, winner, timedOutPlayer);
+    }
+
     private void publishSafely(Object event, UUID gameId) {
         try {
             events.publishEvent(event);
@@ -248,4 +297,6 @@ public class TurnService {
                 s.getRoundNumber(), s.isSuddenDeath(), s.getPhase() == GamePhase.ROUND_FINISHED,
                 winner.orElse(null), timedOut, s);
     }
+
+    private record ScheduledTurn(long deadline, ScheduledFuture<?> future) { }
 }

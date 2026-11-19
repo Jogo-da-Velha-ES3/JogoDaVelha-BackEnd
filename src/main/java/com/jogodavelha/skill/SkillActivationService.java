@@ -55,12 +55,14 @@ public class SkillActivationService {
         SkillResult[] result = new SkillResult[1];
         Optional<Character>[] winner = new Optional[]{Optional.empty()};
         GameState[] committed = new GameState[1];
+        boolean[] turnTransitioned = new boolean[1];
 
         states.update(gameId, state -> {
             // update pode reexecutar o mutator depois de conflito: resultados precisam pertencer a esta tentativa.
             result[0] = null;
             winner[0] = Optional.empty();
             committed[0] = null;
+            turnTransitioned[0] = false;
             var actor = preparedContext.casterId();
             try {
                 state.getPlayerSymbol(actor); // valida que o jogador pertence à partida
@@ -104,6 +106,8 @@ public class SkillActivationService {
             state.recordAbilityAction();
             result[0] = applied;
             winner[0] = turns.endPlayerAction(state, actor, now);
+            turnTransitioned[0] = state.getPhase() != GamePhase.PLAYING
+                    || !actor.equals(state.getCurrentTurnPlayerId());
             committed[0] = state;
             return state;
         });
@@ -124,8 +128,7 @@ public class SkillActivationService {
             } catch (RuntimeException failure) {
                 log.warn("Falha ao publicar atualização do tabuleiro da partida {} (ação persistida)", gameId, failure);
             }
-            if (committed[0].getPhase() != GamePhase.PLAYING
-                    || !preparedContext.casterId().equals(committed[0].getCurrentTurnPlayerId())) {
+            if (turnTransitioned[0]) {
                 turns.publishAndSchedule(committed[0], winner[0]);
             }
         } catch (RuntimeException failure) {

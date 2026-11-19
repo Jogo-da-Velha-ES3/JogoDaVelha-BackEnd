@@ -39,9 +39,11 @@ public class MoveActionService {
         long now = clock.millis();
         GameState[] committed = new GameState[1];
         @SuppressWarnings("unchecked") Optional<Character>[] winner = new Optional[]{Optional.empty()};
+        boolean[] turnTransitioned = new boolean[1];
         states.update(gameId, state -> {
             committed[0] = null;
             winner[0] = Optional.empty();
+            turnTransitioned[0] = false;
             char symbol;
             try {
                 symbol = state.getPlayerSymbol(playerId);
@@ -60,6 +62,8 @@ public class MoveActionService {
             state.setBoard(board.toString());
             state.recordMoveAction();
             winner[0] = turns.endPlayerAction(state, playerId, now);
+            turnTransitioned[0] = state.getPhase() != GamePhase.PLAYING
+                    || !playerId.equals(state.getCurrentTurnPlayerId());
             committed[0] = state;
             return state;
         });
@@ -71,8 +75,7 @@ public class MoveActionService {
             } catch (RuntimeException failure) {
                 log.warn("Falha ao publicar atualização do tabuleiro da partida {} (jogada persistida)", gameId, failure);
             }
-            if (committed[0].getPhase() != GamePhase.PLAYING
-                    || !playerId.equals(committed[0].getCurrentTurnPlayerId())) {
+            if (turnTransitioned[0]) {
                 turns.publishAndSchedule(committed[0], winner[0]);
             }
         } catch (RuntimeException failure) {

@@ -297,6 +297,24 @@ class TurnServiceTest {
     }
 
     @Test
+    void schedulerFailureIsRetriedByPersistedStateReconciliationWithoutDuplicatingTimer() {
+        state.setTurnDeadlineEpochMillis(50_000L);
+        nowMillis = 20_000L;
+        when(manager.findAllGameIds()).thenReturn(List.of(gameId));
+        when(manager.find(gameId)).thenReturn(Optional.of(state));
+        when(scheduler.schedule(any(Runnable.class), any(Instant.class)))
+                .thenThrow(new IllegalStateException("temporary scheduler failure"))
+                .thenAnswer(invocation -> mock(ScheduledFuture.class));
+
+        service.publishAndSchedule(state, Optional.empty());
+        service.reconcilePersistedTurnWork();
+        service.reconcilePersistedTurnWork();
+
+        verify(scheduler, times(2)).schedule(any(Runnable.class), eq(Instant.ofEpochMilli(50_000L)));
+        assertEquals(50_000L, state.getTurnDeadlineEpochMillis());
+    }
+
+    @Test
     void timeoutOnFullBoardEndsRoundAsDraw() {
         state.setBoard("XOXOOXXOXOOXOXOX");
         long deadline = state.getTurnDeadlineEpochMillis();

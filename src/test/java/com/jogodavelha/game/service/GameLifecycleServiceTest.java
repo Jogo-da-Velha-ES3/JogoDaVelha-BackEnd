@@ -438,6 +438,42 @@ class GameLifecycleServiceTest {
     }
 
     @Test
+    void websocketFailureDoesNotRollBackRoundResultOrPreventLifecyclePause() {
+        when(gameRepository.findById(game.getId())).thenReturn(Optional.of(game));
+        seedPlayingState(1, false);
+        when(games.applyRoundResult(game.getId(), 1, RoundResult.PLAYER1_WIN)).thenAnswer(invocation -> {
+            game.registerRoundResult(RoundResult.PLAYER1_WIN);
+            return new RoundUpdate(game, true);
+        });
+        doThrow(new IllegalStateException("websocket unavailable"))
+                .when(websocket).sendToTopic(anyString(), any());
+
+        assertDoesNotThrow(() -> lifecycle.finishRound(game.getId(), 1, RoundResult.PLAYER1_WIN));
+
+        assertEquals(2, game.getCurrentRound());
+        assertEquals(GameStatus.IN_PROGRESS, game.getStatus());
+        assertTrue(scheduled.stream().anyMatch(item -> item.at().equals(Instant.ofEpochMilli(
+                10_000 + GameLifecycleService.ROUND_END_MILLIS))));
+        verify(games, times(1)).applyRoundResult(game.getId(), 1, RoundResult.PLAYER1_WIN);
+    }
+
+    @Test
+    void lifecycleRecoveryResumesAfterPostgresRoundCommitWithoutApplyingItTwice() {
+        when(gameRepository.findById(game.getId())).thenReturn(Optional.of(game));
+        seedPlayingState(1, false);
+        game.registerRoundResult(RoundResult.PLAYER1_WIN); // Simulates PG commit before listener failure.
+        doThrow(new IllegalStateException("websocket unavailable"))
+                .when(websocket).sendToTopic(anyString(), any());
+
+        assertDoesNotThrow(() -> lifecycle.finishRound(game.getId(), 1, RoundResult.PLAYER1_WIN));
+        assertDoesNotThrow(() -> lifecycle.finishRound(game.getId(), 1, RoundResult.PLAYER1_WIN));
+
+        verify(games, never()).applyRoundResult(any(), anyInt(), any());
+        assertEquals(2, game.getCurrentRound());
+        assertEquals(1, scheduled.size());
+    }
+
+    @Test
     void victoryRoundEndPublishesTheWinningLineAndUpdatedSlotScore() {
         when(gameRepository.findById(game.getId())).thenReturn(Optional.of(game));
         seedPlayingState(1, false);

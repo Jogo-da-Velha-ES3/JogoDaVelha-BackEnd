@@ -25,6 +25,7 @@ Este módulo contém os serviços de gerenciamento de partidas e jogadores.
 - Timeout sem ação incrementa a contagem; timeout após uma ação válida conclui o turno sem contar inatividade. O terceiro timeout consecutivo sem ação encerra a partida por W.O.
 - Jogada/habilidade: `endPlayerAction` roda dentro do mutator do `update`; depois do commit, somente uma troca real de turno publica `TurnChangedEvent` e reagenda o timer.
 - Quem iniciar a partida ou um round deve chamar `schedule(gameId, deadline)`; ao encerrar, `cancel(gameId)`.
+- No startup e periodicamente, `TurnService` reconcilia timers com os estados Redis: restaura o deadline original, processa prazos vencidos, tenta novamente falhas transitórias do scheduler e reprocessa estados terminais cujo ciclo PostgreSQL falhou.
 
 ## Notas
 
