@@ -431,7 +431,7 @@ class RoomSnapshotServiceTest {
                 .player1Id(p1).player2Id(p2).roundNumber(1).phase(GamePhase.DRAFT).build();
         state.setInitialSkills(p1, List.of("BOMBA", "ESCUDO"));
         state.setInitialSkills(p2, List.of("CONGELAR", "SILENCIO"));
-        state.setRoundDraw(new RoundDrawState("0042", 1, 9_000, Map.of(
+        state.setRoundDraw(new RoundDrawState("0042", 1, 13_000, Map.of(
                 p1, new RoundDrawState.Player(List.of("TORNADO", "SILENCIO", "CONGELAR"), null),
                 p2, new RoundDrawState.Player(List.of("BOMBA", "ESCUDO", "AMPULHETA"), null))));
         when(gameStates.find(gameId)).thenReturn(Optional.of(state));
@@ -439,7 +439,7 @@ class RoomSnapshotServiceTest {
         var own = snapshots.compose("0042", p1);
         assertEquals(RoomSnapshotService.RoomPhase.ROUND_DRAW, own.phase());
         assertNull(own.turn());
-        assertEquals(9_000, own.drawOptions().deadline());
+        assertEquals(13_000, own.drawOptions().deadline());
         assertEquals(state.getRoundDraw().players().get(p1).options(), own.drawOptions().options());
         snapshots.publish("0042");
         var captor = org.mockito.ArgumentCaptor.forClass(Object.class);
@@ -467,7 +467,7 @@ class RoomSnapshotServiceTest {
         assertEquals(ownJson.path("serverTime"), ownJson.path("payload").path("serverTime"));
         verify(websocket).sendToUser(eq(p2.toString()), eq("/queue/room"), privateCaptor.capture());
         JsonNode opponentJson = mapper.valueToTree(privateCaptor.getValue());
-        assertEquals(9_000, opponentJson.path("payload").path("drawOptions").path("deadline").asLong());
+        assertEquals(13_000, opponentJson.path("payload").path("drawOptions").path("deadline").asLong());
         assertEquals(3, opponentJson.path("payload").path("drawOptions").path("options").size());
         verify(websocket).sendToTopic(anyString(), captor.capture());
         JsonNode publicJson = mapper.valueToTree(captor.getValue());

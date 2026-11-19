@@ -237,7 +237,7 @@ class GameLifecycleServiceTest {
                 scheduler, websocket, snapshots,
                 event -> lifecycle.onRoundDrawCompleted((RoundDrawCompleted) event), new Random(99));
         when(skillDraft.getIfAvailable()).thenReturn(restarted);
-        now.set(9_000);
+        now.set(13_000);
         restarted.resume(game.getId());
 
         assertEquals(GamePhase.PLAYING, redisState.get().getPhase());
@@ -246,7 +246,7 @@ class GameLifecycleServiceTest {
         assertEquals(0, redisState.get().getConsecutiveTimeouts(player1.getId()));
         assertEquals(0, redisState.get().getConsecutiveTimeouts(player2.getId()));
         verify(turns, never()).schedule(any(), anyLong());
-        restarted.expire(game.getId(), 1, 9_000);
+        restarted.expire(game.getId(), 1, 13_000);
         verify(turns, never()).schedule(any(), anyLong());
 
         when(games.applyRoundResult(game.getId(), 1, RoundResult.PLAYER1_WIN)).thenAnswer(ignored -> {
@@ -259,8 +259,8 @@ class GameLifecycleServiceTest {
         assertEquals(3, redisState.get().getRoundSkillDecks().get(player1.getId()).size());
         assertEquals(3, redisState.get().getRoundSkillDecks().get(player2.getId()).size());
         verify(turns, never()).schedule(any(), anyLong());
-        now.set(17_000);
-        restarted.expire(game.getId(), 2, 17_000);
+        now.set(25_000);
+        restarted.expire(game.getId(), 2, 25_000);
         assertEquals(GamePhase.PLAYING, redisState.get().getPhase());
         assertEquals(3, redisState.get().getRoundSkillDecks().get(player1.getId()).size());
         verify(turns, never()).schedule(any(), anyLong());
