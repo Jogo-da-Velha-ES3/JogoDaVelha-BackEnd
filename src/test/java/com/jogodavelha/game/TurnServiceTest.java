@@ -76,6 +76,25 @@ class TurnServiceTest {
     }
 
     @Test
+    void manualEndTurnRequiresAnActionAndCompletesWithoutTimeout() {
+        state.recordMoveAction();
+        nowMillis = state.getTurnDeadlineEpochMillis() - 1;
+        service.endTurn(gameId, p1);
+        assertEquals(p2, state.getCurrentTurnPlayerId());
+        assertFalse(state.hasAnyActionThisTurn());
+        assertEquals(0, state.getConsecutiveTimeouts(p1));
+        verify(events).publishEvent(any(TurnChangedEvent.class));
+    }
+
+    @Test
+    void manualEndTurnWithoutActionReturnsSpecificValidationCode() {
+        nowMillis = 1_000;
+        MoveValidationException exception = assertThrows(MoveValidationException.class,
+                () -> service.endTurn(gameId, p1));
+        assertEquals(MoveValidationException.Code.END_TURN_WITHOUT_ACTION, exception.getCode());
+    }
+
+    @Test
     void timeoutPublishesCounterThenRelevantBoardUpdateAndTurnTransition() {
         state.getFrozenPositions().put(7, 1);
         long deadline = state.getTurnDeadlineEpochMillis();
@@ -130,19 +149,65 @@ class TurnServiceTest {
     @Test
     void hourglassSkillShortensOnlyTheOpponentsNextTurn() {
         engine.useSkill(state, "AMPULHETA", new SkillContext(p1, null));
+        state.recordAbilityAction();
+        state.recordMoveAction();
         service.endPlayerAction(state, p1, 1000);
         assertEquals(p2, state.getCurrentTurnPlayerId());
         assertEquals(5000, state.getTurnDurationMillis());
         assertEquals(6000, state.getTurnDeadlineEpochMillis());
         assertEquals(1, state.getHourglassTurns().get(p2));
 
+        state.recordAbilityAction();
+        state.recordMoveAction();
         service.endPlayerAction(state, p2, 2000);
         assertEquals(p1, state.getCurrentTurnPlayerId());
         assertEquals(10000, state.getTurnDurationMillis());
         assertTrue(state.getHourglassTurns().isEmpty());
+        state.recordAbilityAction();
+        state.recordMoveAction();
         service.endPlayerAction(state, p1, 3000);
         assertEquals(p2, state.getCurrentTurnPlayerId());
         assertEquals(10000, state.getTurnDurationMillis());
+    }
+
+    @Test
+    void firstActionKeepsTurnDeadlineAndEffectsUntilTheSecondAction() {
+        long originalDeadline = state.getTurnDeadlineEpochMillis();
+        state.getFrozenPositions().put(8, 3);
+        state.recordAbilityAction();
+
+        service.endPlayerAction(state, p1, originalDeadline - 4_000);
+
+        assertEquals(p1, state.getCurrentTurnPlayerId());
+        assertEquals(originalDeadline, state.getTurnDeadlineEpochMillis());
+        assertEquals(3, state.getFrozenPositions().get(8));
+        assertTrue(state.isAbilityUsedThisTurn());
+        assertFalse(state.isMoveUsedThisTurn());
+
+        state.recordMoveAction();
+        service.endPlayerAction(state, p1, originalDeadline - 2_000);
+
+        assertEquals(p2, state.getCurrentTurnPlayerId());
+        assertEquals(2, state.getFrozenPositions().get(8));
+        assertFalse(state.isAbilityUsedThisTurn());
+        assertFalse(state.isMoveUsedThisTurn());
+    }
+
+    @Test
+    void validActionBeforeTimeoutDoesNotIncrementTimeoutAndTimeoutEventReportsZero() {
+        long deadline = state.getTurnDeadlineEpochMillis();
+        state.recordAbilityAction();
+        state.recordTimeout(p1);
+        service.endPlayerAction(state, p1, deadline - 1);
+        nowMillis = deadline;
+
+        service.expire(gameId, deadline);
+
+        assertEquals(0, state.getConsecutiveTimeouts(p1));
+        assertEquals(p2, state.getCurrentTurnPlayerId());
+        verify(events).publishEvent(new TurnTimedOutEvent(gameId, p1, 0, state));
+        verify(events).publishEvent(argThat((Object event) -> event instanceof TurnChangedEvent changed
+                && changed.timedOutPlayerId() == null));
     }
 
     @Test
@@ -191,26 +256,28 @@ class TurnServiceTest {
     }
 
     @Test
-    void fullBoardWithWinningLineStillEndsRoundAsDraw() {
-        // XXXX na primeira linha, tabuleiro completo: a regra absoluta prevalece sobre a vitória.
+    void fullBoardWithWinningLineEndsAsWinBeforeDraw() {
+        // Uma linha vencedora prevalece sobre o empate por tabuleiro cheio.
         state.setBoard("XXXXOOOOXOXOXOXO");
 
         Optional<Character> winner = service.endPlayerAction(state, p1, 1_000);
 
-        assertTrue(winner.isEmpty());
+        assertEquals(Optional.of('X'), winner);
         assertEquals(GamePhase.ROUND_FINISHED, state.getPhase());
-        assertTrue(state.getWinningLine().isEmpty());
+        assertEquals(List.of(0, 1, 2, 3), state.getWinningLine());
     }
 
     @Test
     void fifteenthOfSixteenCellsDoesNotEndRoundEarly() {
         state.setBoard("XOXOOXXOXOOXOXO-"); // 15/16 sem linha vencedora
-
+        long deadline = state.getTurnDeadlineEpochMillis();
+        state.recordMoveAction();
         Optional<Character> winner = service.endPlayerAction(state, p1, 1_000);
 
         assertTrue(winner.isEmpty());
         assertEquals(GamePhase.PLAYING, state.getPhase());
-        assertEquals(p2, state.getCurrentTurnPlayerId());
+        assertEquals(p1, state.getCurrentTurnPlayerId());
+        assertEquals(deadline, state.getTurnDeadlineEpochMillis());
     }
 
     @Test
@@ -223,6 +290,47 @@ class TurnServiceTest {
         assertEquals(GamePhase.ROUND_FINISHED, state.getPhase());
         verify(events).publishEvent(org.mockito.ArgumentMatchers.<Object>argThat(value -> value instanceof TurnChangedEvent event
                 && event.roundFinished() && event.winnerSymbol() == null));
+    }
+
+    @Test
+    void publishFailureDoesNotPreventTurnTimerScheduling() {
+        doThrow(new IllegalStateException("websocket down")).when(events).publishEvent(any(Object.class));
+        state.setTurnDeadlineEpochMillis(50_000L);
+
+        assertDoesNotThrow(() -> service.publishAndSchedule(state, Optional.empty()));
+
+        verify(scheduler).schedule(any(Runnable.class), eq(Instant.ofEpochMilli(50_000L)));
+    }
+
+    @Test
+    void startupRecoverySchedulesThePersistedDeadlineWithoutExtendingIt() {
+        state.setTurnDeadlineEpochMillis(25_000L);
+        nowMillis = 20_000L;
+        when(manager.findAllGameIds()).thenReturn(List.of(gameId));
+        when(manager.find(gameId)).thenReturn(Optional.of(state));
+
+        service.recoverPlayingTurnTimers();
+
+        verify(scheduler).schedule(any(Runnable.class), eq(Instant.ofEpochMilli(25_000L)));
+        assertEquals(25_000L, state.getTurnDeadlineEpochMillis());
+    }
+
+    @Test
+    void schedulerFailureIsRetriedByPersistedStateReconciliationWithoutDuplicatingTimer() {
+        state.setTurnDeadlineEpochMillis(50_000L);
+        nowMillis = 20_000L;
+        when(manager.findAllGameIds()).thenReturn(List.of(gameId));
+        when(manager.find(gameId)).thenReturn(Optional.of(state));
+        when(scheduler.schedule(any(Runnable.class), any(Instant.class)))
+                .thenThrow(new IllegalStateException("temporary scheduler failure"))
+                .thenAnswer(invocation -> mock(ScheduledFuture.class));
+
+        service.publishAndSchedule(state, Optional.empty());
+        service.reconcilePersistedTurnWork();
+        service.reconcilePersistedTurnWork();
+
+        verify(scheduler, times(2)).schedule(any(Runnable.class), eq(Instant.ofEpochMilli(50_000L)));
+        assertEquals(50_000L, state.getTurnDeadlineEpochMillis());
     }
 
     @Test
@@ -239,23 +347,27 @@ class TurnServiceTest {
     }
 
     @Test
-    void moveInTimeMakesOldTimerANoOp() {
+    void partialActionKeepsOriginalTimerAndExpiresWithoutTimeoutPenalty() {
         long oldDeadline = state.getTurnDeadlineEpochMillis();
         nowMillis = oldDeadline - 3000;
-        service.endPlayerAction(state, p1, nowMillis); // jogada válida: novo prazo
+        state.recordMoveAction();
+        service.endPlayerAction(state, p1, nowMillis);
+        assertEquals(oldDeadline, state.getTurnDeadlineEpochMillis());
         nowMillis = oldDeadline + 1;
 
         service.expire(gameId, oldDeadline);
 
         assertEquals(p2, state.getCurrentTurnPlayerId());
         assertEquals(0, state.getConsecutiveTimeouts(p1));
-        verify(events, never()).publishEvent(any(TurnChangedEvent.class));
+        verify(events).publishEvent(any(TurnChangedEvent.class));
+        verify(events).publishEvent(any(TurnTimedOutEvent.class));
     }
 
     @Test
     void endPlayerActionResetsConsecutiveTimeouts() {
         state.recordTimeout(p1);
         state.recordTimeout(p1);
+        state.recordMoveAction();
         service.endPlayerAction(state, p1, 1_000);
         assertEquals(0, state.getConsecutiveTimeouts(p1));
     }

@@ -14,12 +14,30 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+import com.jogodavelha.game.service.MoveActionService;
+import com.jogodavelha.game.service.TurnService;
+import com.jogodavelha.skill.ForceFieldEffect;
+import com.jogodavelha.skill.SkillActivationService;
+import com.jogodavelha.skill.SkillContext;
+import com.jogodavelha.skill.SkillEngine;
+import com.jogodavelha.game.logic.GameValidator;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.scheduling.TaskScheduler;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.security.SecureRandom;
+import java.util.List;
+import java.util.Optional;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -85,6 +103,363 @@ class GameStateManagerIT {
         assertEquals(player1Id, state.getFirstPlayerId());
         assertEquals(player1Id, state.getCurrentTurnPlayerId());
         assertEquals(0L, state.getVersion());
+    }
+
+    @Test
+    void partiallyUsedTurnSurvivesRedisReloadByAnotherManager() {
+        gameStateManager.create(gameId, player1Id, player2Id, 10_000);
+        gameStateManager.update(gameId, state -> {
+            state.recordAbilityAction();
+            return state;
+        });
+
+        GameStateManager reconnectedManager = new GameStateManager(redisTemplate, objectMapper, 1_800_000, 5);
+        GameState restored = reconnectedManager.find(gameId).orElseThrow();
+        assertTrue(restored.isAbilityUsedThisTurn());
+        assertFalse(restored.isMoveUsedThisTurn());
+    }
+
+    @Test
+    void simultaneousClaimsOfSameTurnActionCommitExactlyOnce() throws Exception {
+        gameStateManager.create(gameId, player1Id, player2Id, 10_000);
+        GameStateManager secondNode = new GameStateManager(redisTemplate, objectMapper, 1_800_000, 20);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        AtomicInteger accepted = new AtomicInteger();
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Callable<Void> claimA = claimMove(gameStateManager, ready, start, accepted);
+            Callable<Void> claimB = claimMove(secondNode, ready, start, accepted);
+            Future<Void> first = pool.submit(claimA);
+            Future<Void> second = pool.submit(claimB);
+            assertTrue(ready.await(5, TimeUnit.SECONDS));
+            start.countDown();
+            first.get(10, TimeUnit.SECONDS);
+            second.get(10, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertEquals(1, accepted.get());
+        assertTrue(secondNode.find(gameId).orElseThrow().isMoveUsedThisTurn());
+    }
+
+    @Test
+    void concurrentMoveAndAbilityCommitOnceEachAndCompleteOneTurn() throws Exception {
+        gameStateManager.create(gameId, player1Id, player2Id, 30_000);
+        preparePlayableState("CAMPO_DE_FORCA");
+        long now = System.currentTimeMillis();
+        ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        ScheduledFuture<?> timer = mock(ScheduledFuture.class);
+        when(scheduler.schedule(any(Runnable.class), any(Instant.class))).thenAnswer(invocation -> timer);
+        TurnService turns = turnService(events, scheduler, now);
+        MoveActionService moves = new MoveActionService(gameStateManager, new MoveValidator(
+                Clock.fixed(Instant.ofEpochMilli(now), ZoneOffset.UTC)), turns,
+                Clock.fixed(Instant.ofEpochMilli(now), ZoneOffset.UTC), events);
+        SkillActivationService skills = new SkillActivationService(gameStateManager,
+                new SkillEngine(List.of(new ForceFieldEffect()), new GameValidator()), turns,
+                Clock.fixed(Instant.ofEpochMilli(now), ZoneOffset.UTC), events);
+
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        AtomicInteger accepted = new AtomicInteger();
+        try {
+            Future<?> move = pool.submit(() -> runTogether(ready, start, () -> {
+                moves.play(gameId, player1Id, 0);
+                accepted.incrementAndGet();
+            }));
+            Future<?> skill = pool.submit(() -> runTogether(ready, start, () -> {
+                skills.activate(gameId, "CAMPO_DE_FORCA", new SkillContext(player1Id, null));
+                accepted.incrementAndGet();
+            }));
+            assertTrue(ready.await(5, TimeUnit.SECONDS));
+            start.countDown();
+            move.get(10, TimeUnit.SECONDS);
+            skill.get(10, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+        GameState saved = gameStateManager.find(gameId).orElseThrow();
+        assertEquals(2, accepted.get());
+        assertEquals(3L, saved.getVersion()); // criação, setup e dois commits de ação sob CAS
+        assertFalse(saved.isMoveUsedThisTurn());
+        assertFalse(saved.isAbilityUsedThisTurn());
+        assertEquals(player2Id, saved.getCurrentTurnPlayerId());
+        verify(events, times(1)).publishEvent(any(com.jogodavelha.game.TurnChangedEvent.class));
+    }
+
+    @Test
+    void independentManagersAndServicesCommitConcurrentMoveAndAbilityOnce() throws Exception {
+        gameStateManager.create(gameId, player1Id, player2Id, 30_000);
+        preparePlayableState("CAMPO_DE_FORCA");
+        long now = System.currentTimeMillis();
+        GameStateManager secondManager = new GameStateManager(redisTemplate, objectMapper, 1_800_000, 20);
+        AtomicInteger turnTransitions = new AtomicInteger();
+        ApplicationEventPublisher eventsA = transitionCountingPublisher(turnTransitions);
+        ApplicationEventPublisher eventsB = transitionCountingPublisher(turnTransitions);
+        TaskScheduler schedulerA = mockScheduler();
+        TaskScheduler schedulerB = mockScheduler();
+        TurnService turnsA = turnService(gameStateManager, eventsA, schedulerA, now);
+        TurnService turnsB = turnService(secondManager, eventsB, schedulerB, now);
+        MoveActionService moves = new MoveActionService(gameStateManager, new MoveValidator(
+                Clock.fixed(Instant.ofEpochMilli(now), ZoneOffset.UTC)), turnsA,
+                Clock.fixed(Instant.ofEpochMilli(now), ZoneOffset.UTC), eventsA);
+        SkillActivationService skills = new SkillActivationService(secondManager,
+                new SkillEngine(List.of(new ForceFieldEffect()), new GameValidator()), turnsB,
+                Clock.fixed(Instant.ofEpochMilli(now), ZoneOffset.UTC), eventsB);
+        AtomicInteger accepted = new AtomicInteger();
+
+        runConcurrent(() -> { moves.play(gameId, player1Id, 0); accepted.incrementAndGet(); },
+                () -> { skills.activate(gameId, "CAMPO_DE_FORCA", new SkillContext(player1Id, null)); accepted.incrementAndGet(); });
+
+        GameState saved = secondManager.find(gameId).orElseThrow();
+        assertEquals(2, accepted.get());
+        assertEquals(3L, saved.getVersion());
+        assertEquals(player2Id, saved.getCurrentTurnPlayerId());
+        assertFalse(saved.isMoveUsedThisTurn());
+        assertFalse(saved.isAbilityUsedThisTurn());
+        assertEquals(1, turnTransitions.get());
+    }
+
+    @Test
+    void restartRecoveryUsesPersistedDeadlinesAndOnlyExpiresOverduePlayingGames() {
+        UUID futureGame = UUID.randomUUID();
+        UUID expiredGame = UUID.randomUUID();
+        UUID draftGame = UUID.randomUUID();
+        long now = System.currentTimeMillis();
+        long futureDeadline = now + 60_000;
+        gameStateManager.create(futureGame, player1Id, player2Id, 30_000);
+        gameStateManager.update(futureGame, state -> {
+            state.setTurnDeadlineEpochMillis(futureDeadline);
+            state.recordAbilityAction();
+            return state;
+        });
+        gameStateManager.create(expiredGame, player1Id, player2Id, 30_000);
+        gameStateManager.update(expiredGame, state -> {
+            state.setCurrentTurnPlayerId(player1Id);
+            state.setTurnDeadlineEpochMillis(now - 1);
+            return state;
+        });
+        gameStateManager.create(draftGame, player1Id, player2Id, 30_000);
+        gameStateManager.update(draftGame, state -> {
+            state.setPhase(GamePhase.DRAFT);
+            state.setTurnDeadlineEpochMillis(futureDeadline);
+            return state;
+        });
+
+        GameStateManager restartedManager = new GameStateManager(redisTemplate, objectMapper, 1_800_000, 10);
+        TaskScheduler scheduler = mockScheduler();
+        long[] clockNow = {now};
+        Clock clock = new Clock() {
+            @Override public ZoneOffset getZone() { return ZoneOffset.UTC; }
+            @Override public Clock withZone(java.time.ZoneId zone) { return this; }
+            @Override public Instant instant() { return Instant.ofEpochMilli(clockNow[0]); }
+        };
+        TurnService restarted = new TurnService(restartedManager,
+                new SkillEngine(List.of(new ForceFieldEffect()), new GameValidator()), clock, scheduler,
+                mock(ApplicationEventPublisher.class));
+
+        restarted.recoverPlayingTurnTimers();
+
+        GameState restoredFuture = restartedManager.find(futureGame).orElseThrow();
+        assertEquals(futureDeadline, restoredFuture.getTurnDeadlineEpochMillis());
+        assertTrue(restoredFuture.isAbilityUsedThisTurn());
+        assertFalse(restoredFuture.isMoveUsedThisTurn());
+        GameState restoredExpired = restartedManager.find(expiredGame).orElseThrow();
+        assertEquals(player2Id, restoredExpired.getCurrentTurnPlayerId());
+        assertEquals(1, restoredExpired.getConsecutiveTimeouts(player1Id));
+        assertEquals(GamePhase.DRAFT, restartedManager.find(draftGame).orElseThrow().getPhase());
+        verify(scheduler).schedule(any(Runnable.class), eq(Instant.ofEpochMilli(futureDeadline)));
+        verify(scheduler, times(2)).schedule(any(Runnable.class), any(Instant.class));
+    }
+
+    @Test
+    void concurrentExpirerAndExpiredActionOnlyPerformOneTransition() throws Exception {
+        gameStateManager.create(gameId, player1Id, player2Id, 30_000);
+        long expiredAt = System.currentTimeMillis() - 1;
+        gameStateManager.update(gameId, state -> {
+            state.setCurrentTurnPlayerId(player1Id);
+            state.setTurnDeadlineEpochMillis(expiredAt);
+            return state;
+        });
+        GameState before = gameStateManager.find(gameId).orElseThrow();
+        ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        when(scheduler.schedule(any(Runnable.class), any(Instant.class)))
+                .thenAnswer(invocation -> mock(ScheduledFuture.class));
+        TurnService turns = turnService(events, scheduler, expiredAt + 1);
+        MoveActionService moves = new MoveActionService(gameStateManager, new MoveValidator(
+                Clock.fixed(Instant.ofEpochMilli(expiredAt + 1), ZoneOffset.UTC)), turns,
+                Clock.fixed(Instant.ofEpochMilli(expiredAt + 1), ZoneOffset.UTC), events);
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            Future<?> timeout = pool.submit(() -> { await(start); turns.expire(gameId, expiredAt); });
+            Future<?> action = pool.submit(() -> {
+                await(start);
+                assertThrows(MoveValidationException.class, () -> moves.play(gameId, player1Id, 0));
+            });
+            start.countDown();
+            timeout.get(10, TimeUnit.SECONDS);
+            action.get(10, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+        GameState saved = gameStateManager.find(gameId).orElseThrow();
+        assertEquals(before.getVersion() + 1, saved.getVersion());
+        assertEquals(1, saved.getConsecutiveTimeouts(player1Id));
+        assertEquals(player2Id, saved.getCurrentTurnPlayerId());
+        verify(events, times(1)).publishEvent(any(com.jogodavelha.game.TurnChangedEvent.class));
+    }
+
+    @Test
+    void concurrentDuplicateMovesPersistOnlyOneMove() throws Exception {
+        gameStateManager.create(gameId, player1Id, player2Id, 30_000);
+        preparePlayableState("CAMPO_DE_FORCA");
+        long now = System.currentTimeMillis();
+        ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        when(scheduler.schedule(any(Runnable.class), any(Instant.class)))
+                .thenAnswer(invocation -> mock(ScheduledFuture.class));
+        TurnService turns = turnService(events, scheduler, now);
+        MoveActionService moves = new MoveActionService(gameStateManager, new MoveValidator(
+                Clock.fixed(Instant.ofEpochMilli(now), ZoneOffset.UTC)), turns,
+                Clock.fixed(Instant.ofEpochMilli(now), ZoneOffset.UTC), events);
+        AtomicInteger accepted = new AtomicInteger();
+        runConcurrent(() -> attemptMove(moves, 0, accepted), () -> attemptMove(moves, 1, accepted));
+
+        GameState saved = gameStateManager.find(gameId).orElseThrow();
+        assertEquals(1, accepted.get());
+        assertTrue(saved.isMoveUsedThisTurn());
+        assertEquals(1, saved.getBoard().chars().filter(value -> value == 'X').count());
+        assertEquals(2L, saved.getVersion());
+        verify(events, times(1)).publishEvent(any(com.jogodavelha.game.GameplayBoardUpdatedEvent.class));
+    }
+
+    @Test
+    void concurrentDuplicateSkillsPersistOnlyOneActivation() throws Exception {
+        gameStateManager.create(gameId, player1Id, player2Id, 30_000);
+        preparePlayableState("CAMPO_DE_FORCA");
+        long now = System.currentTimeMillis();
+        ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        when(scheduler.schedule(any(Runnable.class), any(Instant.class)))
+                .thenAnswer(invocation -> mock(ScheduledFuture.class));
+        TurnService turns = turnService(events, scheduler, now);
+        SkillActivationService skills = new SkillActivationService(gameStateManager,
+                new SkillEngine(List.of(new ForceFieldEffect()), new GameValidator()), turns,
+                Clock.fixed(Instant.ofEpochMilli(now), ZoneOffset.UTC), events);
+        AtomicInteger accepted = new AtomicInteger();
+        runConcurrent(() -> attemptSkill(skills, accepted), () -> attemptSkill(skills, accepted));
+
+        GameState saved = gameStateManager.find(gameId).orElseThrow();
+        assertEquals(1, accepted.get());
+        assertTrue(saved.isAbilityUsedThisTurn());
+        assertTrue(saved.hasUsedSkill(player1Id, "CAMPO_DE_FORCA"));
+        assertEquals(2L, saved.getVersion());
+        verify(events, times(1)).publishEvent(any(com.jogodavelha.skill.SkillResolvedEvent.class));
+    }
+
+    private void preparePlayableState(String skill) {
+        gameStateManager.update(gameId, state -> {
+            state.setRoomCode("0042");
+            state.setCurrentTurnPlayerId(player1Id);
+            state.setTurnDeadlineEpochMillis(System.currentTimeMillis() + 20_000);
+            state.setRoundSkillDeck(player1Id, List.of(skill));
+            return state;
+        });
+    }
+
+    private TurnService turnService(ApplicationEventPublisher events, TaskScheduler scheduler, long now) {
+        return turnService(gameStateManager, events, scheduler, now);
+    }
+
+    private TurnService turnService(GameStateManager manager, ApplicationEventPublisher events,
+                                    TaskScheduler scheduler, long now) {
+        return new TurnService(manager, new SkillEngine(List.of(new ForceFieldEffect()), new GameValidator()),
+                Clock.fixed(Instant.ofEpochMilli(now), ZoneOffset.UTC), scheduler, events);
+    }
+
+    private TaskScheduler mockScheduler() {
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        when(scheduler.schedule(any(Runnable.class), any(Instant.class)))
+                .thenAnswer(invocation -> mock(ScheduledFuture.class));
+        return scheduler;
+    }
+
+    private ApplicationEventPublisher transitionCountingPublisher(AtomicInteger transitions) {
+        ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
+        doAnswer(invocation -> {
+            if (invocation.getArgument(0) instanceof com.jogodavelha.game.TurnChangedEvent) transitions.incrementAndGet();
+            return null;
+        }).when(events).publishEvent(any(Object.class));
+        return events;
+    }
+
+    private static void runTogether(CountDownLatch ready, CountDownLatch start, Runnable task) {
+        ready.countDown();
+        await(start);
+        task.run();
+    }
+
+    private static void runConcurrent(Runnable first, Runnable second) throws Exception {
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> one = pool.submit(() -> runTogether(ready, start, first));
+            Future<?> two = pool.submit(() -> runTogether(ready, start, second));
+            assertTrue(ready.await(5, TimeUnit.SECONDS));
+            start.countDown();
+            one.get(10, TimeUnit.SECONDS);
+            two.get(10, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    private void attemptMove(MoveActionService moves, int position, AtomicInteger accepted) {
+        try {
+            moves.play(gameId, player1Id, position);
+            accepted.incrementAndGet();
+        } catch (MoveValidationException expected) {
+            assertEquals(MoveValidationException.Code.MOVE_ALREADY_USED, expected.getCode());
+        }
+    }
+
+    private void attemptSkill(SkillActivationService skills, AtomicInteger accepted) {
+        try {
+            skills.activate(gameId, "CAMPO_DE_FORCA", new SkillContext(player1Id, null));
+            accepted.incrementAndGet();
+        } catch (com.jogodavelha.game.logic.SkillValidationException expected) {
+            assertEquals(com.jogodavelha.game.logic.SkillValidationException.Code.SKILL_ACTION_ALREADY_USED,
+                    expected.getCode());
+        }
+    }
+
+    private static void await(CountDownLatch latch) {
+        try { latch.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new RuntimeException(e); }
+    }
+
+    private Callable<Void> claimMove(GameStateManager manager, CountDownLatch ready, CountDownLatch start,
+                                     AtomicInteger accepted) {
+        return () -> {
+            ready.countDown();
+            start.await();
+            try {
+                manager.update(gameId, state -> {
+                    if (state.isMoveUsedThisTurn()) throw new IllegalStateException("move already consumed");
+                    state.recordMoveAction();
+                    return state;
+                });
+                accepted.incrementAndGet();
+            } catch (IllegalStateException duplicate) {
+                // The competing CAS already committed the one allowed claim.
+            }
+            return null;
+        };
     }
 
     @Test

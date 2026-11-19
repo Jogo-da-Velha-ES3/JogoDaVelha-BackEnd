@@ -60,8 +60,10 @@ class GameplayEventPublisherTest {
         assertEquals("P2", event.payload().get("player"));
         assertEquals(5_000L, event.payload().get("startedAt"));
         assertEquals(10L, event.payload().get("durationSeconds"));
+        assertEquals(0L, event.payload().get("stateVersion"));
         assertEquals(java.util.Map.of("P1", 2, "P2", 0), event.payload().get("consecutiveTimeouts"));
         assertEquals(java.util.Map.of("P1", false, "P2", true), event.payload().get("silenced"));
+        assertEquals(java.util.Map.of("abilityUsed", false, "moveUsed", false), event.payload().get("actions"));
     }
 
     @Test
@@ -81,6 +83,9 @@ class GameplayEventPublisherTest {
         assertEquals(new RoomSnapshotService.CellEffect("ESCUDO", 2), firstCell.effects().getFirst());
         assertEquals(RoomSnapshotService.Slot.P2, lastCell.owner());
         assertEquals(new RoomSnapshotService.CellEffect("CONGELAR", 1), lastCell.effects().getFirst());
+        assertEquals(java.util.Map.of("player", "P1", "actions", java.util.Map.of("abilityUsed", false, "moveUsed", false)),
+                event.payload().get("turn"));
+        assertEquals(state.getVersion(), event.payload().get("stateVersion"));
     }
 
     @Test
@@ -112,17 +117,21 @@ class GameplayEventPublisherTest {
         assertFalse(event.payload().containsKey("destinationPosition"));
         assertEquals(false, event.payload().get("absorbed"));
         assertEquals(true, event.payload().get("noEffect"));
+        assertEquals(java.util.Map.of("player", "P1", "actions", java.util.Map.of("abilityUsed", false, "moveUsed", false)),
+                event.payload().get("turn"));
     }
 
     @Test
     void publishesTimeoutForTheCorrectRoomAndPlayerSlot() {
-        when(states.find(gameId)).thenReturn(java.util.Optional.of(state(GamePhase.PLAYING, "----------------")));
+        GameState timeoutState = state(GamePhase.PLAYING, "----------------");
+        timeoutState.setVersion(42);
 
-        publisher.onTurnTimedOut(new TurnTimedOutEvent(gameId, p1, 3));
+        publisher.onTurnTimedOut(new TurnTimedOutEvent(gameId, p1, 3, timeoutState));
 
         MatchLifecycleEvent event = sent("TURN_TIMEOUT");
         assertEquals("P1", event.payload().get("player"));
         assertEquals(3, event.payload().get("consecutiveTimeouts"));
+        assertEquals(42L, event.payload().get("stateVersion"));
     }
 
     @Test

@@ -216,7 +216,8 @@ public class RoomSnapshotService {
         Turn turn = game.getStatus() == GameStatus.FINISHED || gs == null
                 || gs.getPhase() != GamePhase.PLAYING || gs.getTurnDeadlineEpochMillis() <= 0 || turnSlot == null ? null
                 : new Turn(turnSlot, gs.getTurnDeadlineEpochMillis() - gs.getTurnDurationMillis(),
-                gs.getTurnDeadlineEpochMillis(), (int) (gs.getTurnDurationMillis() / 1000));
+                gs.getTurnDeadlineEpochMillis(), (int) (gs.getTurnDurationMillis() / 1000),
+                new TurnActions(gs.isAbilityUsedThisTurn(), gs.isMoveUsedThisTurn()), gs.getVersion());
         return new MatchSnapshot(game.getCurrentRound(), game.isSuddenDeath(), turn,
                 outcome(game, room), creditedCoins(game));
     }
@@ -339,7 +340,9 @@ public class RoomSnapshotService {
     @JsonInclude(JsonInclude.Include.ALWAYS)
     public record Cell(int index, Slot owner, List<CellEffect> effects) { }
     public record CellEffect(String kind, int turnsLeft) { }
-    public record Turn(Slot player, long startedAt, long deadline, int durationSeconds) { }
+    public record Turn(Slot player, long startedAt, long deadline, int durationSeconds, TurnActions actions,
+                       long stateVersion) { }
+    public record TurnActions(boolean abilityUsed, boolean moveUsed) { }
     public record DeckSlot(String ability, String source, boolean usedThisRound) { }
     public record Outcome(String kind, Slot winner, List<Integer> score, String reason) {
         static Outcome win(Slot winner, List<Integer> score, String reason) { return new Outcome("WIN", winner, score, reason); }

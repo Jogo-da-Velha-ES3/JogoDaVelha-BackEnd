@@ -12,7 +12,9 @@ public class MoveValidationException extends RuntimeException {
         NOT_YOUR_TURN,
         TURN_EXPIRED,
         POSITION_OCCUPIED,
-        POSITION_BLOCKED
+        POSITION_BLOCKED,
+        MOVE_ALREADY_USED,
+        END_TURN_WITHOUT_ACTION
     }
 
     private final Code code;

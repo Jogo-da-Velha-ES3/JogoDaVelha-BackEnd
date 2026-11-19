@@ -46,3 +46,11 @@
 - **Erros REST/HTTP e STOMP:** As mesmas regras de padronização e sincronização se aplicam aos erros retornados pelos endpoints REST/HTTP e aos erros enviados por meio de mensagens STOMP. Os formatos específicos de cada mecanismo devem respeitar o contrato de integração acordado com o Front-End.
 - **Consistência com a implementação:** A documentação, o comportamento implementado e os testes devem estar alinhados. Não devem existir códigos, mensagens ou estruturas de erro implementados que contrariem o padrão documentado.
 - **Responsabilidade na PR:** A pessoa responsável pela alteração deve atualizar os dois documentos e os testes pertinentes. A revisão da PR deve verificar a consistência entre o `README.md`, o `docs/contrato-integracao-v2.md` e a implementação antes da aprovação.
+
+### 8. Ações do turno (BE-046)
+
+O Back-End aceita uma habilidade e uma jogada de peça por turno, em qualquer ordem, usando um único deadline. O snapshot expõe `turn.actions.abilityUsed` e `turn.actions.moveUsed`; os mesmos valores chegam nos payloads de `BOARD_UPDATE` e `ABILITY_RESOLVED`. A primeira ação não inicia outro turno nem renova o prazo. O turno termina quando ambas as ações forem usadas ou quando o deadline expirar. `TURN_TIMEOUT` continua sinalizando a expiração, inclusive após uma ação válida; nesse caso o contador de inatividade permanece zero e não há W.O. Efeitos com duração avançam uma vez ao final do turno completo.
+
+A BE-046 evolui as regras RN-ARN-02, RN-ARN-03 e RN-ARN-07 da ERS para esse ciclo de duas ações e contagem por turno completo. O PDF original da ERS permanece preservado; regras que não foram alteradas continuam vigentes.
+
+O `stateVersion` presente em snapshots de turno e nos eventos `BOARD_UPDATE`, `ABILITY_RESOLVED` e `TURN_START` é crescente por estado commitado no Redis; o cliente deve ignorar atualizações antigas após aplicar uma versão maior.

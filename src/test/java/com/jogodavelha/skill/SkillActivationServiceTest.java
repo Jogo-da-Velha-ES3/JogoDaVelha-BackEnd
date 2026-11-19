@@ -3,6 +3,7 @@ package com.jogodavelha.skill;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jogodavelha.game.logic.*;
 import com.jogodavelha.game.service.TurnService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -28,6 +29,7 @@ class SkillActivationServiceTest {
     private SkillActivationService activations;
     private SkillEngine engine;
     private FakeEffect effect;
+    private ApplicationEventPublisher events;
 
     @BeforeEach
     void setUp() {
@@ -46,20 +48,23 @@ class SkillActivationServiceTest {
         effect = new FakeEffect();
         engine = new SkillEngine(List.of(effect), new GameValidator());
         Clock clock = Clock.fixed(Instant.ofEpochMilli(1_000), ZoneOffset.UTC);
-        activations = new SkillActivationService(states, engine, turns, clock,
-                mock(org.springframework.context.ApplicationEventPublisher.class));
+        events = mock(ApplicationEventPublisher.class);
+        activations = new SkillActivationService(states, engine, turns, clock, events);
         when(turns.endPlayerAction(any(), any(), anyLong())).thenReturn(Optional.empty());
     }
 
     @Test
-    void appliedActivationRecordsUseEndsTurnAndPublishesAfterUpdate() {
+    void appliedActivationConsumesOnlyAbilityAndPreservesDeadline() {
         var activation = activations.activate(gameId, "CONGELAR", new SkillContext(p1, 0));
 
         assertEquals(SkillResult.APPLIED, activation.result());
         assertTrue(state.hasUsedSkill(p1, "CONGELAR"));
+        assertTrue(state.isAbilityUsedThisTurn());
+        assertFalse(state.isMoveUsedThisTurn());
+        assertEquals(20_000, state.getTurnDeadlineEpochMillis());
         assertEquals(1, effect.applies);
         verify(turns).endPlayerAction(state, p1, 1_000);
-        verify(turns).publishAndSchedule(state, Optional.empty());
+        verify(turns, never()).publishAndSchedule(any(), any());
     }
 
     @Test
@@ -73,6 +78,22 @@ class SkillActivationServiceTest {
     }
 
     @Test
+    void publicationFailureDoesNotHidePersistedSkillOrSkipTurnScheduling() {
+        state.recordMoveAction();
+        when(turns.endPlayerAction(any(), any(), anyLong())).thenAnswer(invocation -> {
+            state.setCurrentTurnPlayerId(p2);
+            return Optional.empty();
+        });
+        doThrow(new IllegalStateException("websocket unavailable"))
+                .when(events).publishEvent(any(Object.class));
+
+        var activation = assertDoesNotThrow(() -> activations.activate(gameId, "CONGELAR", new SkillContext(p1, 0)));
+
+        assertTrue(activation.state().isAbilityUsedThisTurn());
+        verify(turns).publishAndSchedule(activation.state(), Optional.empty());
+    }
+
+    @Test
     void reusedSkillIsRejectedWithoutApplyingOrEndingTurn() {
         state.recordSkillUse(p1, "CONGELAR");
 
@@ -83,6 +104,20 @@ class SkillActivationServiceTest {
         assertEquals(0, effect.applies);
         verify(turns, never()).endPlayerAction(any(), any(), anyLong());
         verify(turns, never()).publishAndSchedule(any(), any());
+    }
+
+    @Test
+    void differentSecondSkillIsRejectedByTurnActionLimit() {
+        state.recordAbilityAction();
+        state.setRoundSkillDeck(p1, List.of("CONGELAR", "BOMBA"));
+
+        var error = assertThrows(SkillValidationException.class,
+                () -> activations.activate(gameId, "BOMBA", new SkillContext(p1, 0)));
+
+        assertEquals(SkillValidationException.Code.SKILL_ACTION_ALREADY_USED, error.getCode());
+        assertFalse(state.hasUsedSkill(p1, "BOMBA"));
+        assertEquals(0, effect.applies);
+        verify(turns, never()).endPlayerAction(any(), any(), anyLong());
     }
 
     @Test
@@ -206,7 +241,12 @@ class SkillActivationServiceTest {
     void sameCodeCanBeUsedByOpponentAndDifferentCodeBySamePlayer() throws Exception {
         activations.activate(gameId, "CONGELAR", new SkillContext(p1, 0));
         state.setCurrentTurnPlayerId(p2);
+        state.resetTurnActions();
         activations.activate(gameId, "CONGELAR", new SkillContext(p2, 0));
+        state.setCurrentTurnPlayerId(p1);
+        state.resetTurnActions();
+        assertThrows(SkillValidationException.class,
+                () -> activations.activate(gameId, "CONGELAR", new SkillContext(p1, 0)));
         assertTrue(state.hasUsedSkill(p1, "CONGELAR"));
         assertTrue(state.hasUsedSkill(p2, "CONGELAR"));
 
@@ -227,7 +267,7 @@ class SkillActivationServiceTest {
         public boolean isOffensive() { return true; }
         public boolean hasValidTarget(GameState state, SkillContext context) {
             if (throwsOnValidate) throw new SkillValidationException(
-                    SkillValidationException.Code.SKILL_INVALID_TARGET, "Alvo inválido");
+                    SkillValidationException.Code.SKILL_INVALID_TARGET, "Alvo invÃ¡lido");
             return valid;
         }
         public void apply(GameState state, SkillContext context) { applies++; }

@@ -116,11 +116,11 @@ class SkillEngineTest {
         s.getFrozenPositions().put(0, 2);
         s.getShieldedPositions().put(5, new GameState.ShieldEffect(p1, 1));
 
-        engine.endAction(s, p1);
+        endTurn(s, p1);
         assertEquals(1, s.getFrozenPositions().get(0));
         assertTrue(s.getShieldedPositions().isEmpty());
 
-        engine.endAction(s, p2);
+        endTurn(s, p2);
         assertTrue(s.getFrozenPositions().isEmpty());
     }
 
@@ -130,16 +130,16 @@ class SkillEngineTest {
         GameState s = state("XXXX------------");
         s.getFrozenPositions().put(3, 1);
 
-        assertEquals(Optional.empty(), engine.endAction(s, p1)); // congelada ainda vale na checagem
+        assertEquals(Optional.empty(), endTurn(s, p1)); // congelada ainda vale na checagem
         assertTrue(s.getFrozenPositions().isEmpty());            // expirou depois
-        assertEquals(Optional.of('X'), engine.endAction(s, p1)); // próxima checagem já vê a vitória
+        assertEquals(Optional.of('X'), endTurn(s, p1)); // próxima checagem já vê a vitória
     }
 
     @Test
     void timeoutAlsoResolvesThenTicks() {
         GameState s = state("XXXX------------");
         s.getFrozenPositions().put(0, 1);
-        assertEquals(Optional.empty(), engine.endAction(s, p2)); // timeout do P2
+        assertEquals(Optional.empty(), endTurn(s, p2)); // timeout do P2
         assertTrue(s.getFrozenPositions().isEmpty());
     }
 
@@ -163,9 +163,9 @@ class SkillEngineTest {
     void hourglassExpiresAfterOpponentTurn() {
         GameState s = state("----------------");
         s.getHourglassTurns().put(p2, 2);
-        engine.endAction(s, p1);                                  // lançador: 2 -> 1
+        endTurn(s, p1);                                  // lançador: 2 -> 1
         assertEquals(5000, s.effectiveTurnDuration(p2, 10000));   // turno do oponente
-        engine.endAction(s, p2);                                  // 1 -> 0
+        endTurn(s, p2);                                  // 1 -> 0
         assertEquals(10000, s.effectiveTurnDuration(p2, 10000));
     }
 
@@ -183,5 +183,10 @@ class SkillEngineTest {
         assertTrue(s.getShieldedPositions().isEmpty());
         assertTrue(s.getHourglassTurns().isEmpty());
         assertEquals(1, s.getConsecutiveTimeouts(p1));
+    }
+    private Optional<Character> endTurn(GameState state, UUID actor) {
+        Optional<Character> winner = engine.resolveWinner(state, actor);
+        state.tickEffects();
+        return winner;
     }
 }

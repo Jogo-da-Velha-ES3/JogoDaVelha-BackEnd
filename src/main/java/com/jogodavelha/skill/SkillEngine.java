@@ -50,15 +50,9 @@ public class SkillEngine {
         return SkillResult.APPLIED;
     }
 
-    /*
-    * Fim da ação (jogada, habilidade ou timeout): resolveWinner com os efeitos ainda ativos
-    * e só depois diminui os contadores. Um único ponto garante a ordem
-    */
-    public Optional<Character> endAction(GameState state, UUID actorId) {
-        Optional<Character> winner = validator.resolveWinner(
-                state.getBoard(), state.frozenSet(), state.getPlayerSymbol(actorId));
-        state.tickEffects();
-        return winner;
+    /** Verifica resultado após uma ação, mantendo efeitos ativos até o fim do turno completo. */
+    public Optional<Character> resolveWinner(GameState state, UUID actorId) {
+        return validator.resolveWinner(state.getBoard(), state.frozenSet(), state.getPlayerSymbol(actorId));
     }
 
 }
