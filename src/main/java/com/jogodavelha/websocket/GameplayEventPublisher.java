@@ -47,7 +47,7 @@ public class GameplayEventPublisher {
             payload.put("round", event.state().getRoundNumber());
             payload.put("stateVersion", event.state().getVersion());
             payload.put("board", RoomSnapshotService.boardFor(event.state()));
-            payload.put("turn", Map.of("actions", actions(event.state())));
+            payload.put("turn", Map.of("player", slot(event.state(), event.state().getCurrentTurnPlayerId()), "actions", actions(event.state())));
             send(roomCode, "BOARD_UPDATE", payload);
         } finally {
             ActionProfiler.add("ws.boardUpdate", start);
@@ -71,7 +71,7 @@ public class GameplayEventPublisher {
             payload.put("absorbed", event.result() == SkillResult.BLOCKED_BY_FORCE_FIELD);
             payload.put("noEffect", event.result() == SkillResult.NO_VALID_TARGET);
             payload.put("stateVersion", state.getVersion());
-            payload.put("turn", Map.of("actions", actions(state)));
+            payload.put("turn", Map.of("player", slot(state, state.getCurrentTurnPlayerId()), "actions", actions(state)));
             send(roomCode, "ABILITY_RESOLVED", payload);
         } finally {
             ActionProfiler.add("ws.skillResolved", start);

@@ -187,11 +187,16 @@ public class GameLifecycleService implements RoundLifecycle {
     @EventListener
     @Transactional
     public void onPauseElapsed(LifecyclePauseElapsed pause) {
-        pauses.remove(pause);
-        switch (pause.step()) {
-            case VERSUS -> openRound(pause.gameId(), pause.round());
-            case ROUND_END -> continueAfterRoundEnd(pause.gameId(), pause.round());
-            case PRESENTATION -> startFirstTurn(pause.gameId(), pause.round());
+        try {
+            switch (pause.step()) {
+                case VERSUS -> openRound(pause.gameId(), pause.round());
+                case ROUND_END -> continueAfterRoundEnd(pause.gameId(), pause.round());
+                case PRESENTATION -> startFirstTurn(pause.gameId(), pause.round());
+            }
+        } finally {
+            // Keep the pause visible to the one-second reconciler until the transition
+            // commits; otherwise it may re-announce ROUND_END in this small window.
+            pauses.remove(pause);
         }
     }
 

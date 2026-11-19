@@ -76,6 +76,25 @@ class TurnServiceTest {
     }
 
     @Test
+    void manualEndTurnRequiresAnActionAndCompletesWithoutTimeout() {
+        state.recordMoveAction();
+        nowMillis = state.getTurnDeadlineEpochMillis() - 1;
+        service.endTurn(gameId, p1);
+        assertEquals(p2, state.getCurrentTurnPlayerId());
+        assertFalse(state.hasAnyActionThisTurn());
+        assertEquals(0, state.getConsecutiveTimeouts(p1));
+        verify(events).publishEvent(any(TurnChangedEvent.class));
+    }
+
+    @Test
+    void manualEndTurnWithoutActionReturnsSpecificValidationCode() {
+        nowMillis = 1_000;
+        MoveValidationException exception = assertThrows(MoveValidationException.class,
+                () -> service.endTurn(gameId, p1));
+        assertEquals(MoveValidationException.Code.END_TURN_WITHOUT_ACTION, exception.getCode());
+    }
+
+    @Test
     void timeoutPublishesCounterThenRelevantBoardUpdateAndTurnTransition() {
         state.getFrozenPositions().put(7, 1);
         long deadline = state.getTurnDeadlineEpochMillis();

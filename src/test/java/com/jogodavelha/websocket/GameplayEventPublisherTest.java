@@ -83,8 +83,9 @@ class GameplayEventPublisherTest {
         assertEquals(new RoomSnapshotService.CellEffect("ESCUDO", 2), firstCell.effects().getFirst());
         assertEquals(RoomSnapshotService.Slot.P2, lastCell.owner());
         assertEquals(new RoomSnapshotService.CellEffect("CONGELAR", 1), lastCell.effects().getFirst());
-        assertEquals(java.util.Map.of("actions", java.util.Map.of("abilityUsed", false, "moveUsed", false)),
+        assertEquals(java.util.Map.of("player", "P1", "actions", java.util.Map.of("abilityUsed", false, "moveUsed", false)),
                 event.payload().get("turn"));
+        assertEquals(state.getVersion(), event.payload().get("stateVersion"));
     }
 
     @Test
@@ -116,6 +117,8 @@ class GameplayEventPublisherTest {
         assertFalse(event.payload().containsKey("destinationPosition"));
         assertEquals(false, event.payload().get("absorbed"));
         assertEquals(true, event.payload().get("noEffect"));
+        assertEquals(java.util.Map.of("player", "P1", "actions", java.util.Map.of("abilityUsed", false, "moveUsed", false)),
+                event.payload().get("turn"));
     }
 
     @Test

@@ -8,6 +8,7 @@ import com.jogodavelha.game.logic.GameState;
 import com.jogodavelha.game.logic.GameStateManager;
 import com.jogodavelha.game.logic.GameStateNotFoundException;
 import com.jogodavelha.game.logic.GameValidator;
+import com.jogodavelha.game.logic.MoveValidationException;
 import com.jogodavelha.skill.SkillEngine;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -99,6 +100,38 @@ public class TurnService {
     /** Para ação válida: zera inatividade e conclui o turno somente se ambas as ações foram usadas. */
     public Optional<Character> endPlayerAction(GameState state, UUID actorId, long nowMillis) {
         return actionResolved(state, actorId, nowMillis);
+    }
+
+    /** Encerra manualmente um turno depois de ao menos uma ação válida. */
+    public void endTurn(UUID gameId, UUID playerId) {
+        long now = clock.millis();
+        GameState[] committed = new GameState[1];
+        stateManager.update(gameId, state -> {
+            committed[0] = null;
+            try {
+                state.getPlayerSymbol(playerId);
+            } catch (IllegalArgumentException exception) {
+                throw new org.springframework.security.access.AccessDeniedException("Jogador não pertence à partida.", exception);
+            }
+            if (!playerId.equals(state.getCurrentTurnPlayerId())) {
+                throw new org.springframework.security.access.AccessDeniedException("Não é a vez deste jogador.");
+            }
+            if (state.getPhase() != GamePhase.PLAYING || now >= state.getTurnDeadlineEpochMillis()) {
+                throw new IllegalStateException("O prazo do turno expirou ou o turno não está ativo.");
+            }
+            if (!state.hasAnyActionThisTurn()) {
+                throw new MoveValidationException(MoveValidationException.Code.END_TURN_WITHOUT_ACTION,
+                        "Realize uma ação antes de encerrar o turno.");
+            }
+            Optional<Character> winner = resolveActionOutcome(state, playerId);
+            if (state.getPhase() == GamePhase.PLAYING) completeTurn(state, playerId, now);
+            committed[0] = state;
+            return state;
+        });
+        if (committed[0] != null) {
+            publishSafely(new GameplayBoardUpdatedEvent(gameId, committed[0]), gameId);
+            publishAndSchedule(committed[0], Optional.empty());
+        }
     }
 
     /** Chamar DEPOIS do update bem-sucedido: publica o evento e reagenda (ou cancela) o timer. */
