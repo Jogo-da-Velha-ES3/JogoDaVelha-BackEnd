@@ -9,6 +9,7 @@ import com.jogodavelha.game.service.TurnService;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import lombok.extern.slf4j.Slf4j;
 
 import java.time.Clock;
 import java.util.Optional;
@@ -19,6 +20,7 @@ import static com.jogodavelha.game.logic.MoveValidationException.Code.*;
 
 /** Orquestra uma ativação como ação atômica persistida do jogador. */
 @Service
+@Slf4j
 public class SkillActivationService {
     public record Activation(GameState state, SkillResult result, Optional<Character> winner) {}
 
@@ -53,12 +55,14 @@ public class SkillActivationService {
         SkillResult[] result = new SkillResult[1];
         Optional<Character>[] winner = new Optional[]{Optional.empty()};
         GameState[] committed = new GameState[1];
+        boolean[] turnTransitioned = new boolean[1];
 
         states.update(gameId, state -> {
             // update pode reexecutar o mutator depois de conflito: resultados precisam pertencer a esta tentativa.
             result[0] = null;
             winner[0] = Optional.empty();
             committed[0] = null;
+            turnTransitioned[0] = false;
             var actor = preparedContext.casterId();
             try {
                 state.getPlayerSymbol(actor); // valida que o jogador pertence à partida
@@ -83,6 +87,10 @@ public class SkillActivationService {
             if (now >= state.getTurnDeadlineEpochMillis()) {
                 throw new MoveValidationException(TURN_EXPIRED, "O prazo deste turno já terminou.");
             }
+            if (state.isAbilityUsedThisTurn()) {
+                throw new SkillValidationException(SkillValidationException.Code.SKILL_ACTION_ALREADY_USED,
+                        "A ação de habilidade deste turno já foi utilizada.");
+            }
             if (state.hasUsedSkill(actor, skillCode)) {
                 throw new SkillValidationException(SkillValidationException.Code.SKILL_ALREADY_USED,
                         "Esta habilidade já foi utilizada neste round.");
@@ -95,8 +103,11 @@ public class SkillActivationService {
             SkillResult applied = skills.useSkill(state, skillCode, preparedContext);
             // APPLIED, NO_VALID_TARGET e BLOCKED_BY_FORCE_FIELD são ativações válidas que consomem ação.
             state.recordSkillUse(actor, skillCode);
+            state.recordAbilityAction();
             result[0] = applied;
             winner[0] = turns.endPlayerAction(state, actor, now);
+            turnTransitioned[0] = state.getPhase() != GamePhase.PLAYING
+                    || !actor.equals(state.getCurrentTurnPlayerId());
             committed[0] = state;
             return state;
         });
@@ -106,10 +117,22 @@ public class SkillActivationService {
         }
         long publishStart = System.nanoTime();
         try {
-            events.publishEvent(new SkillResolvedEvent(gameId, preparedContext.casterId(), skillCode,
-                    preparedContext.targetPosition(), preparedContext.destinationPosition(), result[0], committed[0]));
-            events.publishEvent(new com.jogodavelha.game.GameplayBoardUpdatedEvent(gameId, committed[0]));
-            turns.publishAndSchedule(committed[0], winner[0]);
+            try {
+                events.publishEvent(new SkillResolvedEvent(gameId, preparedContext.casterId(), skillCode,
+                        preparedContext.targetPosition(), preparedContext.destinationPosition(), result[0], committed[0]));
+            } catch (RuntimeException failure) {
+                log.warn("Falha ao publicar resolução da habilidade na partida {} (ação persistida)", gameId, failure);
+            }
+            try {
+                events.publishEvent(new com.jogodavelha.game.GameplayBoardUpdatedEvent(gameId, committed[0]));
+            } catch (RuntimeException failure) {
+                log.warn("Falha ao publicar atualização do tabuleiro da partida {} (ação persistida)", gameId, failure);
+            }
+            if (turnTransitioned[0]) {
+                turns.publishAndSchedule(committed[0], winner[0]);
+            }
+        } catch (RuntimeException failure) {
+            log.error("Falha pós-commit ao finalizar turno da partida {}", gameId, failure);
         } finally {
             com.jogodavelha.telemetry.ActionProfiler.add("events.publish", publishStart);
         }

@@ -3,6 +3,7 @@ package com.jogodavelha.game.service;
 import com.jogodavelha.game.logic.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -20,6 +21,7 @@ class MoveActionServiceTest {
     GameState state;
     GameStateManager states;
     TurnService turns;
+    ApplicationEventPublisher events;
     MoveActionService service;
 
     @BeforeEach void setup() {
@@ -34,17 +36,21 @@ class MoveActionServiceTest {
             return null;
         }).when(states).update(eq(game), any());
         when(turns.endPlayerAction(any(), any(), anyLong())).thenReturn(Optional.empty());
+        events = mock(ApplicationEventPublisher.class);
         service = new MoveActionService(states, new MoveValidator(Clock.fixed(Instant.ofEpochMilli(1000), ZoneOffset.UTC)),
                 turns, Clock.fixed(Instant.ofEpochMilli(1000), ZoneOffset.UTC),
-                mock(org.springframework.context.ApplicationEventPublisher.class));
+                events);
     }
 
-    @Test void validMoveUpdatesStateAndEndsActionOnce() {
+    @Test void validMoveConsumesOnlyMoveAndPreservesOriginalDeadline() {
         var result = service.play(game, p1, 0);
         assertEquals('X', state.getBoard().charAt(0));
+        assertTrue(state.isMoveUsedThisTurn());
+        assertFalse(state.isAbilityUsedThisTurn());
+        assertEquals(20_000, state.getTurnDeadlineEpochMillis());
         assertSame(state, result.state());
         verify(turns).endPlayerAction(state, p1, 1000);
-        verify(turns).publishAndSchedule(state, Optional.empty());
+        verify(turns, never()).publishAndSchedule(any(), any());
     }
 
     @Test void invalidPositionDoesNotMutateOrPublish() {
@@ -54,10 +60,21 @@ class MoveActionServiceTest {
         verify(turns, never()).publishAndSchedule(any(), any());
     }
 
+    @Test void secondMoveIsRejectedWithoutChangingBoardOrConsumingFurtherState() {
+        state.recordMoveAction();
+        assertThrows(MoveValidationException.class, () -> service.play(game, p1, 1));
+        assertEquals(GameState.EMPTY_BOARD, state.getBoard());
+        assertTrue(state.isMoveUsedThisTurn());
+        verifyNoInteractions(turns);
+    }
+
     @Test void opponentAndTerminalBoardAreHandledByExistingDomainLogic() {
         assertThrows(MoveValidationException.class, () -> service.play(game, p2, 0));
         state.setBoard("XXXX------------");
-        when(turns.endPlayerAction(any(), any(), anyLong())).thenReturn(Optional.of('X'));
+        when(turns.endPlayerAction(any(), any(), anyLong())).thenAnswer(invocation -> {
+            state.setPhase(GamePhase.ROUND_FINISHED);
+            return Optional.of('X');
+        });
         var result = service.play(game, p1, 4);
         assertEquals(Optional.of('X'), result.winner());
         verify(turns).publishAndSchedule(state, Optional.of('X'));
@@ -67,5 +84,20 @@ class MoveActionServiceTest {
         doThrow(new ConcurrentStateModificationException(game, 5)).when(states).update(eq(game), any());
         assertThrows(ConcurrentStateModificationException.class, () -> service.play(game, p1, 0));
         verify(turns, never()).publishAndSchedule(any(), any());
+    }
+
+    @Test void boardPublicationFailureDoesNotHidePersistedMoveOrSkipNextTurnScheduling() {
+        state.recordAbilityAction();
+        when(turns.endPlayerAction(any(), any(), anyLong())).thenAnswer(invocation -> {
+            state.setCurrentTurnPlayerId(p2);
+            return Optional.empty();
+        });
+        doThrow(new IllegalStateException("websocket unavailable"))
+                .when(events).publishEvent(any(Object.class));
+
+        var result = assertDoesNotThrow(() -> service.play(game, p1, 0));
+
+        assertTrue(result.state().isMoveUsedThisTurn());
+        verify(turns).publishAndSchedule(result.state(), Optional.empty());
     }
 }

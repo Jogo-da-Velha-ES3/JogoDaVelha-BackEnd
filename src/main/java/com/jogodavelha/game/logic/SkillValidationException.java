@@ -5,6 +5,7 @@ public class SkillValidationException extends RuntimeException {
         SKILL_INVALID_TARGET,
         SKILL_INVALID_DESTINATION,
         SKILL_SILENCED,
+        SKILL_ACTION_ALREADY_USED,
         SKILL_ALREADY_USED,
         SKILL_NOT_IN_DECK
     }

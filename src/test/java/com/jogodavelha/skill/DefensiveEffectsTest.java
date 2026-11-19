@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static com.jogodavelha.game.logic.SkillValidationException.Code.*;
@@ -68,7 +69,7 @@ class DefensiveEffectsTest {
     void reinforcementStopsRemovalAndMovementButNotFreeze(String code) {
         GameState state = state();
         engine.useSkill(state, "REFORCO", new SkillContext(p2, 5));
-        engine.endAction(state, p2);
+        endTurn(state, p2);
         GameState before = copy(state);
 
         var result = engine.useSkill(state, code, context(code));
@@ -89,7 +90,7 @@ class DefensiveEffectsTest {
         GameState state = state();
         engine.useSkill(state, "CAMPO_DE_FORCA", new SkillContext(p2, null));
         engine.useSkill(state, "CAMPO_DE_FORCA", new SkillContext(p1, null));
-        engine.endAction(state, p2);
+        endTurn(state, p2);
         GameState expected = copy(state);
         expected.getForceFieldTurns().remove(p2);
 
@@ -150,12 +151,12 @@ class DefensiveEffectsTest {
         GameState state = state();
         assertEquals(SkillResult.APPLIED, engine.useSkill(state, "SILENCIO", new SkillContext(p1, null)));
         assertEquals(2, state.getSilencedTurns().get(p2));
-        engine.endAction(state, p1);
+        endTurn(state, p1);
         state.setCurrentTurnPlayerId(p2);
         assertEquals(1, state.getSilencedTurns().get(p2));
         assertDoesNotThrow(() -> moves.validate(state, p2, 1, state.blockedFor(p2)));
         state.setBoard("XO---O----------");
-        engine.endAction(state, p2);
+        endTurn(state, p2);
         assertTrue(state.getSilencedTurns().isEmpty());
         assertEquals(SkillResult.APPLIED, engine.useSkill(state, "REFORCO", new SkillContext(p2, 5)));
     }
@@ -239,9 +240,9 @@ class DefensiveEffectsTest {
         GameState state = state();
         engine.useSkill(state, code, context(code));
         assertCounter(state, code, 2);
-        engine.endAction(state, p1);
+        endTurn(state, p1);
         assertCounter(state, code, 1);
-        engine.endAction(state, p2);
+        endTurn(state, p2);
         assertCounter(state, code, 0);
     }
 
@@ -292,5 +293,10 @@ class DefensiveEffectsTest {
 
     private GameState copy(GameState state) {
         return mapper.convertValue(state, GameState.class);
+    }
+    private Optional<Character> endTurn(GameState state, UUID actor) {
+        Optional<Character> winner = engine.resolveWinner(state, actor);
+        state.tickEffects();
+        return winner;
     }
 }

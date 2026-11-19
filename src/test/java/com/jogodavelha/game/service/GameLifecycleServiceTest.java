@@ -237,7 +237,7 @@ class GameLifecycleServiceTest {
                 scheduler, websocket, snapshots,
                 event -> lifecycle.onRoundDrawCompleted((RoundDrawCompleted) event), new Random(99));
         when(skillDraft.getIfAvailable()).thenReturn(restarted);
-        now.set(9_000);
+        now.set(13_000);
         restarted.resume(game.getId());
 
         assertEquals(GamePhase.PLAYING, redisState.get().getPhase());
@@ -246,7 +246,7 @@ class GameLifecycleServiceTest {
         assertEquals(0, redisState.get().getConsecutiveTimeouts(player1.getId()));
         assertEquals(0, redisState.get().getConsecutiveTimeouts(player2.getId()));
         verify(turns, never()).schedule(any(), anyLong());
-        restarted.expire(game.getId(), 1, 9_000);
+        restarted.expire(game.getId(), 1, 13_000);
         verify(turns, never()).schedule(any(), anyLong());
 
         when(games.applyRoundResult(game.getId(), 1, RoundResult.PLAYER1_WIN)).thenAnswer(ignored -> {
@@ -259,8 +259,8 @@ class GameLifecycleServiceTest {
         assertEquals(3, redisState.get().getRoundSkillDecks().get(player1.getId()).size());
         assertEquals(3, redisState.get().getRoundSkillDecks().get(player2.getId()).size());
         verify(turns, never()).schedule(any(), anyLong());
-        now.set(17_000);
-        restarted.expire(game.getId(), 2, 17_000);
+        now.set(25_000);
+        restarted.expire(game.getId(), 2, 25_000);
         assertEquals(GamePhase.PLAYING, redisState.get().getPhase());
         assertEquals(3, redisState.get().getRoundSkillDecks().get(player1.getId()).size());
         verify(turns, never()).schedule(any(), anyLong());
@@ -435,6 +435,42 @@ class GameLifecycleServiceTest {
         assertNull(roundEnd.payload().get("winner"));
         assertFalse(roundEnd.payload().containsKey("winningLine"));
         assertEquals(Map.of("P1", 0, "P2", 0), roundEnd.payload().get("score"));
+    }
+
+    @Test
+    void websocketFailureDoesNotRollBackRoundResultOrPreventLifecyclePause() {
+        when(gameRepository.findById(game.getId())).thenReturn(Optional.of(game));
+        seedPlayingState(1, false);
+        when(games.applyRoundResult(game.getId(), 1, RoundResult.PLAYER1_WIN)).thenAnswer(invocation -> {
+            game.registerRoundResult(RoundResult.PLAYER1_WIN);
+            return new RoundUpdate(game, true);
+        });
+        doThrow(new IllegalStateException("websocket unavailable"))
+                .when(websocket).sendToTopic(anyString(), any());
+
+        assertDoesNotThrow(() -> lifecycle.finishRound(game.getId(), 1, RoundResult.PLAYER1_WIN));
+
+        assertEquals(2, game.getCurrentRound());
+        assertEquals(GameStatus.IN_PROGRESS, game.getStatus());
+        assertTrue(scheduled.stream().anyMatch(item -> item.at().equals(Instant.ofEpochMilli(
+                10_000 + GameLifecycleService.ROUND_END_MILLIS))));
+        verify(games, times(1)).applyRoundResult(game.getId(), 1, RoundResult.PLAYER1_WIN);
+    }
+
+    @Test
+    void lifecycleRecoveryResumesAfterPostgresRoundCommitWithoutApplyingItTwice() {
+        when(gameRepository.findById(game.getId())).thenReturn(Optional.of(game));
+        seedPlayingState(1, false);
+        game.registerRoundResult(RoundResult.PLAYER1_WIN); // Simulates PG commit before listener failure.
+        doThrow(new IllegalStateException("websocket unavailable"))
+                .when(websocket).sendToTopic(anyString(), any());
+
+        assertDoesNotThrow(() -> lifecycle.finishRound(game.getId(), 1, RoundResult.PLAYER1_WIN));
+        assertDoesNotThrow(() -> lifecycle.finishRound(game.getId(), 1, RoundResult.PLAYER1_WIN));
+
+        verify(games, never()).applyRoundResult(any(), anyInt(), any());
+        assertEquals(2, game.getCurrentRound());
+        assertEquals(1, scheduled.size());
     }
 
     @Test

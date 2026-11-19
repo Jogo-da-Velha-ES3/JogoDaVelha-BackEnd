@@ -29,6 +29,7 @@ public class GameplayController {
     private final SkillActivationService skills;
     private final GameplayRoomResolver games;
     private final RoomLeaveService leaves;
+    private final com.jogodavelha.game.service.TurnService turns;
 
     @MessageMapping("/rooms/{code}/move")
     public void move(@DestinationVariable String code, MoveRequest request, Principal principal) {
@@ -54,6 +55,17 @@ public class GameplayController {
             }
             skills.activate(games.resolveActiveGame(code, actor), request.skillCode(),
                     new SkillContext(actor, request.targetPosition(), request.destinationPosition()));
+        } finally {
+            ActionProfiler.end();
+        }
+    }
+
+    @MessageMapping("/rooms/{code}/end-turn")
+    public void endTurn(@DestinationVariable String code, Principal principal) {
+        ActionProfiler.begin("endTurn");
+        try {
+            UUID actor = authenticatedUser(principal);
+            turns.endTurn(games.resolveActiveGame(code, actor), actor);
         } finally {
             ActionProfiler.end();
         }

@@ -41,6 +41,9 @@ public class GameState {
     private int player1ConsecutiveTimeouts;
     private int player2ConsecutiveTimeouts;
     private long version;
+    /** Ações consumidas no turno atual, separadas do uso por round. */
+    private boolean abilityUsedThisTurn;
+    private boolean moveUsedThisTurn;
     @Builder.Default
     private List<Integer> winningLine = new ArrayList<>();
 
@@ -186,7 +189,16 @@ public class GameState {
         currentTurnPlayerId = round % 2 == 1 ? firstPlayerId : opponent;
         turnDurationMillis = durationMillis;
         turnDeadlineEpochMillis = startedAtMillis + durationMillis;
+        resetTurnActions();
     }
+
+    public boolean isAbilityUsedThisTurn() { return abilityUsedThisTurn; }
+    public boolean isMoveUsedThisTurn() { return moveUsedThisTurn; }
+    public boolean hasAnyActionThisTurn() { return abilityUsedThisTurn || moveUsedThisTurn; }
+    public boolean haveBothActionsThisTurn() { return abilityUsedThisTurn && moveUsedThisTurn; }
+    public void recordAbilityAction() { abilityUsedThisTurn = true; }
+    public void recordMoveAction() { moveUsedThisTurn = true; }
+    public void resetTurnActions() { abilityUsedThisTurn = false; moveUsedThisTurn = false; }
 
     public boolean hasUsedSkill(UUID playerId, String skillCode) {
         return usedSkillsByPlayer != null

@@ -43,9 +43,11 @@ public class GameplayEventPublisher {
             if (event.state() == null) return;
             String roomCode = roomCode(event.state(), event.gameId());
             if (roomCode == null) return;
-            var payload = Map.<String, Object>of(
-                    "round", event.state().getRoundNumber(),
-                    "board", RoomSnapshotService.boardFor(event.state()));
+            var payload = new LinkedHashMap<String, Object>();
+            payload.put("round", event.state().getRoundNumber());
+            payload.put("stateVersion", event.state().getVersion());
+            payload.put("board", RoomSnapshotService.boardFor(event.state()));
+            payload.put("turn", Map.of("player", slot(event.state(), event.state().getCurrentTurnPlayerId()), "actions", actions(event.state())));
             send(roomCode, "BOARD_UPDATE", payload);
         } finally {
             ActionProfiler.add("ws.boardUpdate", start);
@@ -68,6 +70,8 @@ public class GameplayEventPublisher {
             if (event.destinationPosition() != null) payload.put("destinationPosition", event.destinationPosition());
             payload.put("absorbed", event.result() == SkillResult.BLOCKED_BY_FORCE_FIELD);
             payload.put("noEffect", event.result() == SkillResult.NO_VALID_TARGET);
+            payload.put("stateVersion", state.getVersion());
+            payload.put("turn", Map.of("player", slot(state, state.getCurrentTurnPlayerId()), "actions", actions(state)));
             send(roomCode, "ABILITY_RESOLVED", payload);
         } finally {
             ActionProfiler.add("ws.skillResolved", start);
@@ -84,7 +88,8 @@ public class GameplayEventPublisher {
             if (state == null || roomCode == null) return;
             send(roomCode, "TURN_TIMEOUT", Map.of(
                     "player", slot(state, event.playerId()),
-                    "consecutiveTimeouts", event.consecutiveTimeouts()));
+                    "consecutiveTimeouts", event.consecutiveTimeouts(),
+                    "stateVersion", state.getVersion()));
         } finally {
             ActionProfiler.add("ws.turnTimeout", start);
         }
@@ -119,6 +124,7 @@ public class GameplayEventPublisher {
 
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("player", slot(state, state.getCurrentTurnPlayerId()));
+            payload.put("stateVersion", state.getVersion());
             payload.put("startedAt", state.getTurnDeadlineEpochMillis() - state.getTurnDurationMillis());
             payload.put("durationSeconds", state.getTurnDurationMillis() / 1000);
             payload.put("consecutiveTimeouts", Map.of(
@@ -127,6 +133,7 @@ public class GameplayEventPublisher {
             payload.put("silenced", Map.of(
                     "P1", state.getSilencedTurns().getOrDefault(state.getPlayer1Id(), 0) > 0,
                     "P2", state.getSilencedTurns().getOrDefault(state.getPlayer2Id(), 0) > 0));
+            payload.put("actions", actions(state));
             send(roomCode, "TURN_START", payload);
         } finally {
             ActionProfiler.add("ws.turnStart", start);
@@ -158,5 +165,9 @@ public class GameplayEventPublisher {
         if (state.getPlayer1Id().equals(playerId)) return "P1";
         if (state.getPlayer2Id().equals(playerId)) return "P2";
         throw new IllegalArgumentException("Jogador não pertence à partida.");
+    }
+
+    private Map<String, Boolean> actions(GameState state) {
+        return Map.of("abilityUsed", state.isAbilityUsedThisTurn(), "moveUsed", state.isMoveUsedThisTurn());
     }
 }

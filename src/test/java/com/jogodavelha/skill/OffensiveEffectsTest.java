@@ -250,7 +250,7 @@ class OffensiveEffectsTest {
         assertEquals(SkillResult.NO_VALID_TARGET, engine.useSkill(state, skill, context(skill, 5, 6)));
         assertEquals(before, state);
 
-        assertTrue(engine.endAction(state, p1).isEmpty());
+        assertTrue(endTurn(state, p1).isEmpty());
         assertEquals(1, state.getReinforcedPositions().get(5));
     }
 
@@ -313,9 +313,9 @@ class OffensiveEffectsTest {
         assertEquals(2, state.getFrozenPositions().get(0));
         assertTrue(validator.resolveWinner(state.getBoard(), state.frozenSet(), 'X').isEmpty());
 
-        assertTrue(engine.endAction(state, p1).isEmpty());
+        assertTrue(endTurn(state, p1).isEmpty());
         assertEquals(1, state.getFrozenPositions().get(0));
-        assertTrue(engine.endAction(state, p2).isEmpty());
+        assertTrue(endTurn(state, p2).isEmpty());
         assertTrue(state.getFrozenPositions().isEmpty());
         assertEquals(Optional.of('O'), validator.resolveWinner(state.getBoard(), state.frozenSet(), 'X'));
     }
@@ -385,7 +385,7 @@ class OffensiveEffectsTest {
 
         manager.update(gameId, current -> {
             assertEquals(SkillResult.APPLIED, engine.useSkill(current, "BURACO_NEGRO", context));
-            engine.endAction(current, p1);
+            endTurn(current, p1);
             return current;
         });
 
@@ -430,5 +430,10 @@ class OffensiveEffectsTest {
         assertEquals('-', state.getBoard().charAt(source));
         assertEquals('O', state.getBoard().charAt(destination));
         assertEquals(1, state.getBoard().chars().filter(symbol -> symbol == 'O').count());
+    }
+    private Optional<Character> endTurn(GameState state, UUID actor) {
+        Optional<Character> winner = engine.resolveWinner(state, actor);
+        state.tickEffects();
+        return winner;
     }
 }

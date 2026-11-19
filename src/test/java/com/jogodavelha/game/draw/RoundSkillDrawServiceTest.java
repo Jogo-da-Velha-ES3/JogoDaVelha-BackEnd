@@ -120,7 +120,7 @@ class RoundSkillDrawServiceTest {
     void drawsThreeDistinctOptionsFromTheWholeCatalogAndSendsThemOnlyToTheirOwner() {
         start();
         var state = state();
-        assertEquals(9_000, state.getRoundDraw().deadline());
+        assertEquals(13_000, state.getRoundDraw().deadline());
         assertEquals(GamePhase.DRAFT, state.getPhase());
         assertTrue(state.getRoundSkillDecks().isEmpty());
         for (UUID player : List.of(p1, p2)) {
@@ -157,7 +157,7 @@ class RoundSkillDrawServiceTest {
         draws.pick("0042", p2, second, null);
         assertEquals(Set.of("CONGELAR", "SILENCIO", second), state().getRoundSkillDecks().get(p2));
         verify(completed).publishEvent(new RoundDrawCompleted(gameId, 1));
-        draws.expire(gameId, 1, 9_000);
+        draws.expire(gameId, 1, 13_000);
         verify(completed, times(1)).publishEvent(new RoundDrawCompleted(gameId, 1));
     }
 
@@ -166,8 +166,8 @@ class RoundSkillDrawServiceTest {
         start();
         String selected = option(p1);
         draws.pick("0042", p1, selected, null);
-        now.set(9_000);
-        draws.expire(gameId, 1, 9_000);
+        now.set(13_000);
+        draws.expire(gameId, 1, 13_000);
         var state = state();
         assertEquals(selected, state.getRoundDraw().players().get(p1).selected());
         var second = state.getRoundDraw().players().get(p2);
@@ -181,9 +181,9 @@ class RoundSkillDrawServiceTest {
     @Test
     void earlyTimerDoesNotResolveTheDrawAndLateManualChoiceIsRejected() {
         start();
-        draws.expire(gameId, 1, 9_000);
+        draws.expire(gameId, 1, 13_000);
         assertFalse(state().getRoundDraw().completed());
-        now.set(9_000);
+        now.set(13_000);
         assertThrows(IllegalStateException.class, () -> draws.pick("0042", p1, option(p1), null));
         assertFalse(state().getRoundDraw().completed());
         verifyNoInteractions(completed);
@@ -216,8 +216,8 @@ class RoundSkillDrawServiceTest {
     @Test
     void nextRoundRenewsDeckAndUsageWhilePreservingFixedSkillsAndTimeoutCounters() {
         start();
-        now.set(9_000);
-        draws.expire(gameId, 1, 9_000);
+        now.set(13_000);
+        draws.expire(gameId, 1, 13_000);
         String previousDrawn = state().getRoundDraw().players().get(p1).selected();
         states.update(gameId, state -> {
             state.recordSkillUse(p1, "BOMBA");
@@ -231,12 +231,12 @@ class RoundSkillDrawServiceTest {
         var previousP2 = Set.copyOf(state().getRoundSkillDecks().get(p2));
         assertEquals(3, previous.size());
         assertTrue(Collections.disjoint(previous, state().getRoundDraw().players().get(p1).options()));
-        draws.expire(gameId, 1, 9_000);
+        draws.expire(gameId, 1, 13_000);
         assertEquals(previous, state().getRoundSkillDecks().get(p1));
         assertFalse(state().hasUsedSkill(p1, "BOMBA"));
         assertEquals(1, state().getConsecutiveTimeouts(p1));
-        now.set(17_000);
-        draws.expire(gameId, 2, 17_000);
+        now.set(25_000);
+        draws.expire(gameId, 2, 25_000);
         // A partir do segundo round o timeout pula o sorteio: o deck fica exatamente como está.
         assertEquals(previous, state().getRoundSkillDecks().get(p1));
         assertEquals(previousP2, state().getRoundSkillDecks().get(p2));
@@ -284,9 +284,9 @@ class RoundSkillDrawServiceTest {
         draws.beginRound(gameId, 2, p1, p2);
 
         failNextCas.set(true);
-        now.set(18_000);
-        draws.expire(gameId, 2, 18_000);
-        draws.expire(gameId, 2, 18_000);
+        now.set(22_000);
+        draws.expire(gameId, 2, 22_000);
+        draws.expire(gameId, 2, 22_000);
 
         var state = state();
         assertEquals(p1Deck, state.getRoundSkillDecks().get(p1));
@@ -312,8 +312,8 @@ class RoundSkillDrawServiceTest {
         draws.pick("0042", p1, add, remove);
         var p1Updated = Set.copyOf(state().getRoundSkillDecks().get(p1));
 
-        now.set(18_000);
-        draws.expire(gameId, 2, 18_000);
+        now.set(22_000);
+        draws.expire(gameId, 2, 22_000);
 
         var state = state();
         assertEquals(add, state.getRoundDraw().players().get(p1).selected());
@@ -400,10 +400,10 @@ class RoundSkillDrawServiceTest {
     void duplicateTimeoutAndRedisRetryDoNotRunCompletionTwice() {
         start();
         failNextCas.set(true);
-        now.set(9_000);
-        draws.expire(gameId, 1, 9_000);
+        now.set(13_000);
+        draws.expire(gameId, 1, 13_000);
         var selected = state().getRoundDraw();
-        draws.expire(gameId, 1, 9_000);
+        draws.expire(gameId, 1, 13_000);
         assertEquals(selected, state().getRoundDraw());
         verify(completed, times(1)).publishEvent(new RoundDrawCompleted(gameId, 1));
     }
@@ -412,8 +412,8 @@ class RoundSkillDrawServiceTest {
     void timerForADeletedGameDoesNothing() {
         start();
         stored.clear();
-        now.set(9_000);
-        draws.expire(gameId, 1, 9_000);
+        now.set(13_000);
+        draws.expire(gameId, 1, 13_000);
         verifyNoInteractions(completed);
     }
 
@@ -429,8 +429,8 @@ class RoundSkillDrawServiceTest {
         start();
         assertEquals(List.of("AMPULHETA", "CONGELAR", "SILENCIO"), state().getRoundDraw().players().get(p1).options());
         assertEquals(List.of("AMPULHETA", "BOMBA", "ESCUDO"), state().getRoundDraw().players().get(p2).options());
-        now.set(9_000);
-        draws.expire(gameId, 1, 9_000);
+        now.set(13_000);
+        draws.expire(gameId, 1, 13_000);
         assertEquals("AMPULHETA", state().getRoundDraw().players().get(p1).selected());
         assertEquals("AMPULHETA", state().getRoundDraw().players().get(p2).selected());
         assertTrue(state().getChosenDrawSkills(p1).contains("AMPULHETA"));
@@ -440,9 +440,9 @@ class RoundSkillDrawServiceTest {
     @Test
     void retryAfterTheDeadlineRejectsTheChoiceInsteadOfUsingTheOldRequestTime() {
         start();
-        now.set(8_999);
+        now.set(12_999);
         failNextCas.set(true);
-        onConflict = () -> now.set(9_000);
+        onConflict = () -> now.set(13_000);
         assertThrows(IllegalStateException.class, () -> draws.pick("0042", p1, option(p1), null));
         assertNull(state().getRoundDraw().players().get(p1).selected());
         assertTrue(state().getRoundSkillDecks().isEmpty());
@@ -473,10 +473,10 @@ class RoundSkillDrawServiceTest {
         draws.resumePendingRounds();
 
         var timer = org.mockito.ArgumentCaptor.forClass(Runnable.class);
-        verify(scheduler).schedule(timer.capture(), eq(Instant.ofEpochMilli(9_000)));
+        verify(scheduler).schedule(timer.capture(), eq(Instant.ofEpochMilli(13_000)));
         assertEquals(original, state().getRoundDraw());
         verifyNoInteractions(skills, completed);
-        now.set(9_000);
+        now.set(13_000);
         timer.getValue().run();
         assertEquals(GamePhase.PLAYING, state().getPhase());
         assertEquals(3, state().getRoundSkillDecks().get(p1).size());
@@ -489,7 +489,7 @@ class RoundSkillDrawServiceTest {
         String selected = option(p1);
         draws.pick("0042", p1, selected, null);
         clearInvocations(websocket);
-        now.set(10_000);
+        now.set(14_000);
 
         restartedService().resumePendingRounds();
 
@@ -539,11 +539,11 @@ class RoundSkillDrawServiceTest {
     @Test
     void onlyTheWinningTimeoutAttemptPublishesDecksWhenTwoExpirationsOverlap() {
         start();
-        now.set(9_000);
+        now.set(13_000);
         failNextCas.set(true);
-        onConflict = () -> draws.expire(gameId, 1, 9_000);
+        onConflict = () -> draws.expire(gameId, 1, 13_000);
 
-        draws.expire(gameId, 1, 9_000);
+        draws.expire(gameId, 1, 13_000);
 
         verify(websocket, times(2)).sendToUser(eq(p1.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
         verify(websocket, times(2)).sendToUser(eq(p2.toString()), eq("/queue/room"), argThat(this::isDeckUpdate));
@@ -554,12 +554,12 @@ class RoundSkillDrawServiceTest {
     void timeoutRacingAnInFlightManualPickCommitsOnlyTheAutomaticDeckChange() {
         start();
         String manualRequest = option(p1);
-        now.set(8_999);
+        now.set(12_999);
         failNextCas.set(true);
         // The manual request passes its deadline check, then the timeout commits before its CAS retry.
         onConflict = () -> {
-            now.set(9_000);
-            draws.expire(gameId, 1, 9_000);
+            now.set(13_000);
+            draws.expire(gameId, 1, 13_000);
         };
 
         assertThrows(IllegalStateException.class, () -> draws.pick("0042", p1, manualRequest, null));

@@ -35,7 +35,7 @@ A distribuição mantém as responsabilidades centrais de **WebSocket/STOMP de g
 - **Reatribuídas:** BE-009.1 (Felipe → Rafael); BE-011 (Rafael → Felipe); BE-014 (Victor → Felipe); BE-017.1 (Victor → Lorenzo); BE-020 (Victor → Felipe); BE-024, BE-025 e BE-040 (Felipe → Victor); BE-029 (Rafael → Lorenzo); BE-039 (Lorenzo → Felipe); demais tarefas mantêm a atribuição da revisão anterior. A BE-006.1 permanece como reserva, fora do esforço planejado.
 - **Removidas:** BE-030 e BE-031 (ver seção "Tarefas removidas").
 - **Reserva (fora do prazo):** BE-006.1, recuperação de senha, que não consta na ERS.
-- **Regras já fechadas incorporadas aos cards:** duração de habilidades em turnos, ordem de verificação de vitória com Congelar, W.O. em 3 timeouts consecutivos (30/0 coins), primeiro jogador sorteado só no round 1 e depois alternado, sorteio de 8s, código de sala numérico, compra de coins simbólica.
+- **Regras já fechadas incorporadas aos cards:** duração de habilidades em turnos, ordem de verificação de vitória com Congelar, W.O. em 3 timeouts consecutivos (30/0 coins), primeiro jogador sorteado só no round 1 e depois alternado, sorteio de 12s, código de sala numérico, compra de coins simbólica.
 
 ## Cronograma consolidado
 
@@ -58,7 +58,7 @@ A distribuição mantém as responsabilidades centrais de **WebSocket/STOMP de g
 | BE-012 | 1.1.1.2 | Catálogo de habilidades (seed das 6 + 4 novas) | Rafael | 4h | 28/09/2026 | 01/10/2026 | — | Alta | 01/10 |
 | BE-012.1 | 1.1.1.2 | Corrigir catálogo de habilidades (iniciais, Campo de Força, turnos) | Rafael | 2h | 08/10/2026 | 09/10/2026 | BE-012 | Alta | — |
 | BE-013 | 1.1.2.3 | Escolha das 2 habilidades iniciais | Lorenzo | 3h | 20/10/2026 | 21/10/2026 | BE-012.1, BE-041, BE-037 | Alta | — |
-| BE-013.1 | 1.1.2.3 | Sorteio de 3 opções por round (escolha em 8s) | Lorenzo | 5h | 22/10/2026 | 24/10/2026 | BE-013, BE-017.1 | Alta | — |
+| BE-013.1 | 1.1.2.3 | Sorteio de 3 opções por round (escolha em 12s) | Lorenzo | 5h | 22/10/2026 | 24/10/2026 | BE-013, BE-017.1 | Alta | — |
 | BE-014 | 1.1.2.3 | Framework de efeitos de habilidades (SkillEngine e estado de efeitos) | Felipe | 5h | 08/10/2026 | 10/10/2026 | BE-017.1 | Alta | — |
 | BE-014.1 | 1.1.2.3 | Efeitos ofensivos: Bomba, Tornado, Buraco Negro e Congelar | Lorenzo | 7h | 11/10/2026 | 13/10/2026 | BE-014 | Alta | — |
 | BE-014.2 | 1.1.2.3 | Efeitos defensivos e de tempo: Escudo, Reforço, Campo de Força, Ampulheta, Silêncio e Troca Rápida | Lorenzo | 7h | 14/10/2026 | 16/10/2026 | BE-014 | Alta | — |
@@ -620,7 +620,7 @@ Reescrita da tarefa original (que seguia o GDD v3). Dentro do Draft, o jogador e
 
 ---
 
-### [WBS-1.1.2.3] BE-013.1 — Sorteio de 3 opções por round (escolha em 8s)
+### [WBS-1.1.2.3] BE-013.1 — Sorteio de 3 opções por round (escolha em 12s)
 
 **Labels:** back-end, feature
 **Categoria:** Habilidades
@@ -629,7 +629,7 @@ Reescrita da tarefa original (que seguia o GDD v3). Dentro do Draft, o jogador e
 **Prioridade:** Alta
 
 **Objetivo / Descrição:**
-No início de cada round, o servidor sorteia 3 habilidades (o sorteio pode incluir habilidades não compradas) e o jogador escolhe 1 delas para compor o deck de 3 daquele round (2 fixas + 1 sorteada), em até **8 segundos**; se não escolher, o servidor escolhe aleatoriamente. As 3 opções são visíveis só para o dono (envio por fila do usuário). O tempo do sorteio não conta como turno nem como timeout do W.O. O deck é refeito a cada round, e as habilidades voltam a poder ser usadas (BE-015). O "8s" assume que o sorteio citado é a janela de escolha entre as 3 opções (a ERS dizia 5s).
+No início de cada round, o servidor sorteia 3 habilidades (o sorteio pode incluir habilidades não compradas) e o jogador escolhe 1 delas para compor o deck de 3 daquele round (2 fixas + 1 sorteada), em até **12 segundos**; se não escolher, o servidor escolhe aleatoriamente. As 3 opções são visíveis só para o dono (envio por fila do usuário). O tempo do sorteio não conta como turno nem como timeout do W.O. O deck é refeito a cada round, e as habilidades voltam a poder ser usadas (BE-015). O "12s" assume que o sorteio citado é a janela de escolha entre as 3 opções (a ERS dizia 5s).
 
 **Requisitos ERS:** RF-DRAFT-03, RN-DRAFT-03, RN-DRAFT-05.
 
@@ -649,7 +649,7 @@ No início de cada round, o servidor sorteia 3 habilidades (o sorteio pode inclu
 
 **Critérios de Aceite (Definição de Pronto):**
 - [ ] Servidor sorteia 3 opções por round e o jogador recebe só as próprias
-- [ ] Sem escolha em 8s, uma opção é escolhida aleatoriamente
+- [ ] Sem escolha em 12s, uma opção é escolhida aleatoriamente
 - [ ] Deck do round contém as 2 fixas + a escolhida
 - [ ] Testes com sorteio determinístico (gerador injetado)
 - [ ] Contrato de integração atualizado (`docs/contrato-integracao.md`), quando aplicável
@@ -1671,7 +1671,7 @@ Criar o `DraftState` no Redis (etapa 1: personagem; etapa 2: 2 habilidades inici
 **Prioridade:** Alta
 
 **Objetivo / Descrição:**
-Hoje nada cria `Game` e `GameState` a partir da sala e nada chama `GameService.registerRoundResult`. Implementar: (1) início da partida ao receber o evento `DraftCompleted` da BE-037 (cria `Game` + `GameState`, primeiro jogador aleatório no round 1); (2) início de cada round: limpa o tabuleiro, alterna o primeiro jogador, chama o serviço de sorteio por interface (implementado na BE-013.1, sorteio de 8s) e começa os turnos (3º round com 5s por turno); (3) fim de round: registra o resultado (`registerRoundResult`) e aplica a regra de melhor de 3, que já existe em `Game` (1x0 após o round 2 encerra); (4) fim de partida: persiste, concede recompensas, publica `MATCH_END` (placar final, W.O., coins creditadas), limpa o Redis e atualiza a sala.
+Hoje nada cria `Game` e `GameState` a partir da sala e nada chama `GameService.registerRoundResult`. Implementar: (1) início da partida ao receber o evento `DraftCompleted` da BE-037 (cria `Game` + `GameState`, primeiro jogador aleatório no round 1); (2) início de cada round: limpa o tabuleiro, alterna o primeiro jogador, chama o serviço de sorteio por interface (implementado na BE-013.1, sorteio de 12s) e começa os turnos (3º round com 5s por turno); (3) fim de round: registra o resultado (`registerRoundResult`) e aplica a regra de melhor de 3, que já existe em `Game` (1x0 após o round 2 encerra); (4) fim de partida: persiste, concede recompensas, publica `MATCH_END` (placar final, W.O., coins creditadas), limpa o Redis e atualiza a sala.
 
 **Requisitos ERS:** RF-ARN-04, RF-ARN-05, RN-ARN-06, RF-POS-01, RF-POS-02.
 
@@ -1972,6 +1972,6 @@ Escopo back-end:
 ## Pontos em aberto (premissas adotadas nos cards)
 
 - Alvo reforçado por Reforço: a habilidade ofensiva falha, é consumida e o turno termina.
-- O "sorteio de 8 segundos" foi interpretado como a janela de escolha entre as 3 habilidades sorteadas.
+- O "sorteio de 12 segundos" foi interpretado como a janela de escolha entre as 3 habilidades sorteadas.
 - A aba "Cosméticos" da loja não está definida na ERS e ficou fora do backlog.
-- A ERS precisa ser atualizada nos pontos: código de sala numérico, "rodadas" → "turnos", Espelho → Campo de Força, W.O. em 3 timeouts, melhor de 3 (1x0 após o round 2) e sorteio de 8s.
+- A ERS precisa ser atualizada nos pontos: código de sala numérico, "rodadas" → "turnos", Espelho → Campo de Força, W.O. em 3 timeouts, melhor de 3 (1x0 após o round 2) e sorteio de 12s.
