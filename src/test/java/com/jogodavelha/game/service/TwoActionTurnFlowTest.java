@@ -9,8 +9,13 @@ import com.jogodavelha.skill.SkillActivationService;
 import com.jogodavelha.skill.SkillContext;
 import com.jogodavelha.skill.SkillEffect;
 import com.jogodavelha.skill.SkillEngine;
+import com.jogodavelha.skill.FreezeEffect;
+import com.jogodavelha.skill.ReinforcementEffect;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.TaskScheduler;
 
@@ -71,7 +76,8 @@ class TwoActionTurnFlowTest {
             @Override public Clock withZone(ZoneId zone) { return this; }
             @Override public Instant instant() { return Instant.ofEpochMilli(timerNow.get()); }
         };
-        SkillEngine engine = new SkillEngine(List.of(new TestEffect()), new GameValidator());
+        SkillEngine engine = new SkillEngine(List.of(new TestEffect(), new FreezeEffect(),
+                new ReinforcementEffect()), new GameValidator());
         turns = new TurnService(states, engine, timerClock, scheduler, events);
         moves = new MoveActionService(states, new MoveValidator(clock), turns, clock, events);
         skills = new SkillActivationService(states, engine, turns, clock, events);
@@ -221,6 +227,39 @@ class TwoActionTurnFlowTest {
         assertTrue(state.getConsecutiveTimeouts(p1) <= 1);
         verify(events, times(1)).publishEvent(any(TurnChangedEvent.class));
         verify(events, times(1)).publishEvent(any(com.jogodavelha.game.TurnTimedOutEvent.class));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"CONGELAR, 5, true", "CONGELAR, 5, false", "REFORCO, 0, true", "REFORCO, 0, false"})
+    void fourTurnEffectsDecrementOncePerTurnAndSurviveSerialization(String code, int target,
+                                                                  boolean skillFirst) throws Exception {
+        state.setBoard("X----O----------");
+        state.setRoundSkillDeck(p1, List.of(code));
+        if (!skillFirst) moves.play(gameId, p1, 1);
+
+        skills.activate(gameId, code, new SkillContext(p1, target));
+        if (skillFirst) {
+            assertEquals(p1, state.getCurrentTurnPlayerId());
+            assertEquals(deadline, state.getTurnDeadlineEpochMillis());
+            var effects = code.equals("CONGELAR") ? state.getFrozenPositions() : state.getReinforcedPositions();
+            assertEquals(4, effects.get(target));
+            moves.play(gameId, p1, 1);
+        }
+
+        ObjectMapper mapper = new ObjectMapper();
+        state = mapper.readValue(mapper.writeValueAsString(state), GameState.class);
+        for (int remaining = 3; remaining >= 0; remaining--) {
+            var effects = code.equals("CONGELAR") ? state.getFrozenPositions() : state.getReinforcedPositions();
+            assertEquals(remaining, effects.getOrDefault(target, 0));
+            if (remaining > 0) {
+                UUID actor = state.getCurrentTurnPlayerId();
+                moves.play(gameId, actor, 9 - remaining);
+                assertEquals(remaining, effects.get(target));
+                timerNow.set(state.getTurnDeadlineEpochMillis());
+                turns.expire(gameId, state.getTurnDeadlineEpochMillis());
+                assertEquals(0, state.getConsecutiveTimeouts(actor));
+            }
+        }
     }
 
     private Void attemptMove(CountDownLatch ready, CountDownLatch start, AtomicInteger accepted) {

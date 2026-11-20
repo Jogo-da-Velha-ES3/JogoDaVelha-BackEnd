@@ -2257,11 +2257,18 @@ O `Outcome` presente em snapshots de composicao/sincronizacao e no snapshot fina
 - `TORNADO`: Move peça para posição adjacente
 - `BURACO_NEGRO`: Remove peça de qualquer posição
 - `AMPULHETA`: Aumenta tempo de turno
-- `CONGELAR`: Congela peça por um turno
+- `CONGELAR`: Congela uma peça adversária por 4 turnos, impedindo que conte para vitória enquanto o efeito estiver ativo
 - `CAMPO_DE_FORCA`: Protege peça por múltiplos turnos
 - `TROCA_RAPIDA`: Troca peças de posição
-- `REFORCO`: Aumenta defesa de peça
+- `REFORCO`: Protege uma peça própria contra remoção e deslocamento por 4 turnos; não impede Congelar
 - `SILENCIO`: Impede uso de habilidades
+
+Congelar e Reforço começam com contador 4 (BE-047). Ele diminui uma vez por turno
+completo, após a verificação de vitória, incluindo o turno de ativação. As duas
+ações permitidas no mesmo turno não causam dois decrementos. `effects[].turnsLeft`
+nos snapshots e em `BOARD_UPDATE` continua informando a duração restante. Os
+contadores já salvos no Redis mantêm seu valor até expirar; novas ativações usam 4.
+As descrições retornadas pelo catálogo e inventário são alinhadas pela migration V25.
 
 **Implementação:** `Skill.code` (propriedade da entidade `Skill`)
 

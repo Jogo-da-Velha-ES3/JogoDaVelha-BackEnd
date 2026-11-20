@@ -76,7 +76,7 @@ class DefensiveEffectsTest {
 
         if (code.equals("CONGELAR")) {
             assertEquals(SkillResult.APPLIED, result);
-            assertEquals(Map.of(5, 2), state.getFrozenPositions());
+            assertEquals(Map.of(5, 4), state.getFrozenPositions());
             assertEquals(before.getBoard(), state.getBoard());
         } else {
             assertEquals(SkillResult.NO_VALID_TARGET, result);
@@ -127,7 +127,7 @@ class DefensiveEffectsTest {
 
         assertEquals(SkillResult.BLOCKED_BY_FORCE_FIELD,
                 engine.useSkill(state, "BOMBA", context("BOMBA")));
-        assertEquals(2, state.getReinforcedPositions().get(5));
+        assertEquals(4, state.getReinforcedPositions().get(5));
     }
 
     @ParameterizedTest
@@ -235,15 +235,15 @@ class DefensiveEffectsTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"ESCUDO", "REFORCO", "CAMPO_DE_FORCA", "AMPULHETA", "SILENCIO"})
-    void countersStartAtTwoTickAtEachEndActionAndExpire(String code) {
+    @CsvSource({"ESCUDO, 2", "REFORCO, 4", "CAMPO_DE_FORCA, 2", "AMPULHETA, 2", "SILENCIO, 2"})
+    void countersExpireAfterTheirConfiguredNumberOfTurns(String code, int duration) {
         GameState state = state();
         engine.useSkill(state, code, context(code));
-        assertCounter(state, code, 2);
-        endTurn(state, p1);
-        assertCounter(state, code, 1);
-        endTurn(state, p2);
-        assertCounter(state, code, 0);
+        assertCounter(state, code, duration);
+        for (int turn = 1; turn <= duration; turn++) {
+            endTurn(state, turn % 2 == 1 ? p1 : p2);
+            assertCounter(state, code, duration - turn);
+        }
     }
 
     @ParameterizedTest

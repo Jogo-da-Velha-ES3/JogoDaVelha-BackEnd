@@ -18,6 +18,6 @@ public class ReinforcementEffect implements SkillEffect {
 
     @Override
     public void apply(GameState state, SkillContext context) {
-        state.getReinforcedPositions().put(context.targetPosition(), 2);
+        state.getReinforcedPositions().put(context.targetPosition(), 4);
     }
 }
