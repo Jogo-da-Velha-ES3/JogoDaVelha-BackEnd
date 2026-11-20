@@ -1090,10 +1090,14 @@ vir do cliente. O efeito usa esse mesmo valor para escolher entre as casas vazia
 do estado atual que não estejam bloqueadas para quem usa a habilidade, inclusive
 se o update precisar ser refeito por conflito.
 
-Congelar registra contador 2. Seguindo a BE-014, `endAction` confere a vitória e
-depois reduz os contadores, já na ação que aplicou o efeito. A peça volta a contar
+Congelar registra contador 4. O servidor confere a vitória após cada ação e
+reduz o contador no fim de cada turno completo, incluindo o de ativação. A peça volta a contar
 para vitória na conferência seguinte à expiração. Congelamento acompanha a peça
 se ela for movida e é removido junto dela pela Bomba.
+
+A BE-047 amplia Congelar e Reforço para 4 turnos. A migration V25 atualiza
+somente as descrições desses dois poderes no catálogo. Efeitos já ativos no Redis
+mantêm o tempo restante; as novas ativações começam com contador 4.
 
 Os efeitos alteram apenas o `GameState`, serializado pelo manager existente. O
 chamador ainda deve validar jogador, turno e fase, executar a habilidade e chamar
@@ -1103,7 +1107,7 @@ de schema nem execução de migrations.
 ## Efeitos defensivos e de tempo (BE-014.2)
 
 - `ESCUDO`: usa uma casa vazia em `targetPosition` e a bloqueia para o oponente.
-- `REFORCO`: protege a peça própria em `targetPosition` contra Bomba, Tornado e Buraco Negro, mas não Congelar.
+- `REFORCO`: protege a peça própria em `targetPosition` por 4 turnos contra Bomba, Tornado e Buraco Negro, mas não Congelar.
 - `CAMPO_DE_FORCA`: protege quem ativou e anula a primeira ofensiva recebida, sem refletir. Retorna `BLOCKED_BY_FORCE_FIELD` e remove a proteção.
 - `AMPULHETA`: limita o próximo turno do oponente a 5s, pelo `TurnService` existente.
 - `SILENCIO`: impede habilidades no próximo turno do oponente, mas permite marcar uma peça normalmente.
@@ -1114,8 +1118,11 @@ Campo de Força, Ampulheta e Silêncio não recebem posição: use
 Troca Rápida segue a validação de destino do Tornado, inclusive `NO_VALID_TARGET`
 quando não há vizinho permitido e o destino não foi informado.
 
-Os efeitos persistentes começam com contador 2 e diminuem no fim de cada ação,
-inclusive a que os ativou. Campo de Força bloqueia Bomba, Tornado, Buraco Negro,
+Congelar e Reforço começam com contador 4; Escudo, Campo de Força, Ampulheta e
+Silêncio começam com contador 2. A contagem diminui uma vez no fim de cada turno
+completo, depois da verificação de vitória, incluindo o turno de ativação. Usar
+um poder e colocar uma peça no mesmo turno causa apenas um decremento.
+Campo de Força bloqueia Bomba, Tornado, Buraco Negro,
 Congelar, Ampulheta e Silêncio, classificados por `SkillEffect.isOffensive()`
 conforme o catálogo. O motor primeiro rejeita jogador silenciado e pedidos
 inválidos; depois consome o Campo de Força, antes de resolver Reforço ou falta

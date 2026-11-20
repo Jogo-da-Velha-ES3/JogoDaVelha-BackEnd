@@ -304,18 +304,19 @@ class OffensiveEffectsTest {
     }
 
     @Test
-    void freezeIgnoresReinforcementAndExpiresAfterTwoEndActions() {
+    void freezeIgnoresReinforcementAndExpiresAfterFourTurns() {
         GameState state = state("OOOOX-----------");
         state.getReinforcedPositions().put(0, 2);
 
         assertEquals(SkillResult.APPLIED, engine.useSkill(state, "CONGELAR", new SkillContext(p1, 0)));
         assertEquals("OOOOX-----------", state.getBoard());
-        assertEquals(2, state.getFrozenPositions().get(0));
+        assertEquals(4, state.getFrozenPositions().get(0));
         assertTrue(validator.resolveWinner(state.getBoard(), state.frozenSet(), 'X').isEmpty());
 
-        assertTrue(endTurn(state, p1).isEmpty());
-        assertEquals(1, state.getFrozenPositions().get(0));
-        assertTrue(endTurn(state, p2).isEmpty());
+        for (int turn = 1; turn <= 4; turn++) {
+            assertTrue(endTurn(state, turn % 2 == 1 ? p1 : p2).isEmpty());
+            assertEquals(4 - turn, state.getFrozenPositions().getOrDefault(0, 0));
+        }
         assertTrue(state.getFrozenPositions().isEmpty());
         assertEquals(Optional.of('O'), validator.resolveWinner(state.getBoard(), state.frozenSet(), 'X'));
     }

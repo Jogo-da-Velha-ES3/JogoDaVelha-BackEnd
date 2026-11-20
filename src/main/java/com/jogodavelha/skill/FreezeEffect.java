@@ -23,6 +23,6 @@ public class FreezeEffect implements SkillEffect {
 
     @Override
     public void apply(GameState state, SkillContext context) {
-        state.getFrozenPositions().put(context.targetPosition(), 2);
+        state.getFrozenPositions().put(context.targetPosition(), 4);
     }
 }
